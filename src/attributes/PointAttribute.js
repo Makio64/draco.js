@@ -199,6 +199,9 @@ class PointAttribute extends GeometryAttribute {
   extractTo(OutputTypedArray, numPoints) {
     const numComponents = this._numComponents;
     const array = new OutputTypedArray(numPoints * numComponents);
+    if (this._buffer === null || numPoints === 0) {
+      return array;
+    }
     const bufData = this._buffer.data;
     const dt = this._dataType;
     const isIdentity = this._identityMapping;
