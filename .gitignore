@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Excluded from this repo (per request)
+draco-main/
+test/
+CLAUDE.md
+
+# Local tooling / OS cruft
+.claude/
+.DS_Store
+
+# Leftovers from the upstream Draco C++ repo template
+.clang-format
+.cmake-format.py
+.gitattributes
+.gitmodules
+.github/

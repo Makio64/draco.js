@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>draco.js</title>
+<link rel="icon" href="data:,">
+
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: #111418; color: #e6e6e6; overflow: hidden; }
+  #app { position: fixed; inset: 0; }
+  #canvas-wrap { position: absolute; inset: 0; }
+  canvas { display: block; }
+  #panel {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 400px; max-width: calc(100vw - 24px);
+    background: rgba(20,24,30,0.92); border: 1px solid #2a3038; border-radius: 10px;
+    padding: 14px 16px; backdrop-filter: blur(6px); z-index: 10;
+  }
+  #title { text-align: center; font-size: 20px; font-weight: 700; margin: 2px 0 14px; letter-spacing: .01em; }
+  #title span { color: #6ee7b7; }
+  #github { position: absolute; top: 24px; right: 24px; z-index: 1; color: #8a93a0; }
+  #github:hover { color: #e6e6e6; }
+  #github svg { display: block; }
+  label { display: block; color: #8a93a0; font-size: 11px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  select, button { width: 100%; padding: 8px 10px; font: inherit; background: #1b2027; color: #e6e6e6;
+    border: 1px solid #313945; border-radius: 7px; }
+  button { margin-top: 8px; cursor: pointer; }
+  button:hover { background: #232a33; }
+  button:disabled { opacity: .5; cursor: default; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  th, td { text-align: right; padding: 5px 6px; border-bottom: 1px solid #232a33; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; color: #8a93a0; }
+  thead th { color: #cdd6e0; font-size: 11px; border-bottom: 1px solid #313945; }
+  .js   { color: #6ee7b7; }
+  .wasm { color: #93c5fd; }
+  .win  { color: #fbbf24; font-weight: bold; }
+  #status { margin-top: 10px; font-size: 11px; color: #8a93a0; min-height: 16px; }
+  #legend { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 40px; z-index: 10; pointer-events: none;
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap"></div>
+  <div id="panel">
+    <a id="github" href="https://github.com/mrdoob/draco.js" target="_blank" rel="noopener" aria-label="GitHub repository"><svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+    <div id="title">draco<span>.js</span></div>
+    <label for="model">Model</label>
+    <select id="model" disabled>
+      <option value="bunny.drc">bunny.drc — 1 geometry, 35k verts</option>
+      <option value="nemetona.glb">nemetona.glb — 1 geometry, 349k verts</option>
+      <option value="ferrari.glb">ferrari.glb — 51 geometries, 338k verts</option>
+      <option value="LittlestTokyo.glb">LittlestTokyo.glb — 71 geometries, 193k verts</option>
+      <option value="venice_mask.glb">venice_mask.glb — 5 geometries, 174k verts</option>
+      <option value="rolex.glb">rolex.glb — 24 geometries, 102k verts</option>
+      <option value="kira.glb">kira.glb — 43 geometries, 55k verts</option>
+      <option value="gears.glb">gears.glb — 3 geometries, 23k verts</option>
+      <option value="bath_day.glb">bath_day.glb — 22 geometries, 22k verts</option>
+      <option value="IridescentDishWithOlives.glb">IridescentDishWithOlives.glb — 4 geometries, 15k verts</option>
+      <option value="minimalistic_modern_bedroom.glb">minimalistic_modern_bedroom.glb — 4 geometries, 14k verts</option>
+      <option value="pool.glb">pool.glb — 2 geometries, 14k verts</option>
+      <option value="forest_house.glb">forest_house.glb — 12 geometries, 12k verts</option>
+      <option value="ShaderBall2.glb">ShaderBall2.glb — 3 geometries, 8k verts</option>
+      <option value="duck.drc">duck.drc — 1 geometry, 2k verts</option>
+      <option value="duck.glb">duck.glb — 1 geometry, 2k verts</option>
+      <option value="cube-edgebreaker.drc">cube-edgebreaker.drc — 1 geometry, 24 verts</option>
+      <option value="cube.drc">cube.drc — 1 geometry, 24 verts</option>
+    </select>
+
+    <table>
+      <thead>
+        <tr><th>Metric</th><th class="wasm">WASM</th><th class="js">JS</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr><td>loader size</td><td class="wasm" id="wasm-gzip">–</td><td class="js" id="js-gzip">–</td><td id="size-ratio">–</td></tr>
+        <tr><td>load + init</td><td class="wasm" id="wasm-load">–</td><td class="js" id="js-load">–</td><td id="load-ratio">–</td></tr>
+        <tr><td>parse</td><td class="wasm" id="wasm-parse">–</td><td class="js" id="js-parse">–</td><td id="parse-ratio">–</td></tr>
+        <tr><td>total</td><td class="wasm" id="wasm-total">–</td><td class="js" id="js-total">–</td><td id="total-ratio">–</td></tr>
+      </tbody>
+    </table>
+    <div id="status"></div>
+  </div>
+  <div id="legend"><span class="wasm">WASM</span><span class="js">JS</span></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// three.js's Draco decoder, vendored locally (libs/draco/).
+const DRACO_PATH = './libs/draco/';
+
+// ---------------------------------------------------------------------------
+// Scene — split comparison via the scissor test (à la three.js
+// webgl_multiple_scenes_comparison): two scenes, each holding the same model
+// decoded by one loader and centred at the origin, viewed through a shared
+// camera. Left half renders the WASM scene, right half the JS scene, with a
+// 1px gap between them.
+// ---------------------------------------------------------------------------
+const wrap = document.getElementById('canvas-wrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setClearColor(0x2a3038); // shows through the 1px gap between the views
+// PBR display pipeline so glTF materials/textures look correct. Khronos PBR
+// Neutral tone mapping is tuned for material/product viewing — it preserves
+// hue and saturation (less of the highlight desaturation ACES applies).
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.0;
+wrap.appendChild(renderer.domElement);
+
+// Image-based lighting from three's RoomEnvironment, prefiltered once via PMREM
+// and shared by both scenes (so the two decodes are lit identically).
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const sceneWASM = new THREE.Scene();
+sceneWASM.background = new THREE.Color(0x111418);
+sceneWASM.environment = envTexture;
+const sceneJS = new THREE.Scene();
+sceneJS.background = new THREE.Color(0x111418);
+sceneJS.environment = envTexture;
+const scenes = { wasm: sceneWASM, js: sceneJS };
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+camera.position.set(0, 0.4, 3.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// Fallback material for raw .drc files, which carry no embedded materials.
+const drcMaterial = new THREE.MeshStandardMaterial({ color: 0xc4c8ce, metalness: 0.0, roughness: 0.55 });
+const slots = { js: null, wasm: null }; // current model groups
+
+function resize() {
+  const W = innerWidth, H = innerHeight;
+  renderer.setSize(W, H);
+  camera.aspect = W / H;
+  // Shift the camera view downward so the model sits below the top-centered UI
+  // (a pure screen-space offset — the scene/models stay centered at the origin).
+  camera.setViewOffset(W, H, 0, -H * 0.18, W, H);
+}
+addEventListener('resize', resize); resize();
+
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  const W = innerWidth, H = innerHeight, mid = Math.floor(W / 2);
+  // Fill the whole canvas with the gap colour, then render each half clipped
+  // by the scissor, leaving the centre column (mid-1) as a 1px divider.
+  renderer.setScissorTest(false);
+  renderer.clear();
+  renderer.setScissorTest(true);
+  renderer.setViewport(0, 0, W, H);
+  renderer.setScissor(0, 0, mid - 1, H);
+  renderer.render(sceneWASM, camera);
+  renderer.setScissor(mid, 0, W - mid, H);
+  renderer.render(sceneJS, camera);
+})();
+
+// Frees the GPU resources of a previously displayed object before replacing it.
+function disposeObject(object) {
+  object.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (!o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (m === drcMaterial) continue; // shared, keep it
+      for (const key in m) {
+        const v = m[key];
+        if (v && v.isTexture) v.dispose();
+      }
+      m.dispose();
+    }
+  });
+}
+
+// Centers an object at the origin and scales it to unit radius, then shows it on
+// the given side. Both scenes share one camera, so the two decodes line up
+// exactly across the split. Takes ownership of `object` (a gltf scene or a group
+// of meshes); it is wrapped so the fit transform doesn't clobber its own matrix.
+function placeObject(object, side) {
+  const scene = scenes[side];
+  if (slots[side]) {
+    scene.remove(slots[side]);
+    disposeObject(slots[side]);
+  }
+  const box = new THREE.Box3().setFromObject(object);
+  const c = box.getCenter(new THREE.Vector3());
+  const s = 1 / (box.getBoundingSphere(new THREE.Sphere()).radius || 1);
+  const group = new THREE.Group();
+  group.add(object);
+  group.scale.setScalar(s);
+  group.position.set(-c.x * s, -c.y * s, -c.z * s);
+  scene.add(group);
+  slots[side] = group;
+}
+
+// Builds a renderable group from raw .drc geometries (no embedded materials).
+function drcGroup(geometries) {
+  const group = new THREE.Group();
+  for (const g of geometries) {
+    // glTF-Draco decode names attributes POSITION/NORMAL; three renders from
+    // lowercase position/normal, so alias them for display.
+    if (!g.getAttribute('position') && g.getAttribute('POSITION')) g.setAttribute('position', g.getAttribute('POSITION'));
+    if (!g.getAttribute('normal') && g.getAttribute('NORMAL')) g.setAttribute('normal', g.getAttribute('NORMAL'));
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    group.add(new THREE.Mesh(g, drcMaterial));
+  }
+  return group;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const status = msg => { $('status').textContent = msg; };
+const fmtMs = ms => ms.toFixed(ms < 10 ? 2 : 1) + ' ms';
+const fmtKB = b => (b / 1024).toFixed(1) + ' KB';
+// The selected model is mirrored in the URL hash (e.g. #bunny.drc) so a view can
+// be reloaded or shared. Returns the hash's model if it's a valid dropdown option.
+const modelFromHash = () => {
+  const name = decodeURIComponent(location.hash.slice(1));
+  return [...$('model').options].some(o => o.value === name) ? name : null;
+};
+// Set a ratio cell to wasmVal / jsVal. Lower is better (fewer bytes / fewer ms), so
+// >1× means JS wins (green) and <1× means JS loses (orange).
+function setRatio(id, jsVal, wasmVal, jsCellId, wasmCellId) {
+  const el = $(id);
+  const jsCell = jsCellId ? $(jsCellId) : null;
+  const wasmCell = wasmCellId ? $(wasmCellId) : null;
+  if (jsVal == null || wasmVal == null || !jsVal || !wasmVal) {
+    el.textContent = '–'; el.style.color = '';
+    if (jsCell) jsCell.style.color = '';
+    if (wasmCell) wasmCell.style.color = '';
+    return;
+  }
+  if (jsVal === wasmVal) {
+    el.textContent = '1.0×'; el.style.color = '#cdd6e0';
+    if (jsCell) jsCell.style.color = '#cdd6e0';
+    if (wasmCell) wasmCell.style.color = '#cdd6e0';
+    return;
+  }
+  const ratio = wasmVal / jsVal;
+  el.textContent = `${ratio.toFixed(1)}×`;
+  const jsWins = ratio > 1;
+  // Winner green, loser orange; the WASM cell takes the opposite tint of JS.
+  const tint = wins => wins ? 'hsl(140, 60%, 62%)' : 'hsl(25, 80%, 62%)';
+  el.style.color = tint(jsWins);
+  if (jsCell) jsCell.style.color = tint(jsWins);
+  if (wasmCell) wasmCell.style.color = tint(!jsWins);
+}
+
+// gzip a byte array in-browser via CompressionStream; null if unsupported.
+async function gzipSize(bytes) {
+  if (typeof CompressionStream === 'undefined') return null;
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+  return (await new Response(stream).arrayBuffer()).byteLength;
+}
+
+// Fetch a resource and return both its raw and gzipped byte sizes.
+async function sizeOf(url) {
+  const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+  return { raw: bytes.byteLength, gz: await gzipSize(bytes) };
+}
+
+// Decode one Draco buffer with a loader; resolves with the BufferGeometry.
+// attributeIDs/attributeTypes null → default named decode (.drc); set → glTF
+// unique-id decode (.glb primitives).
+function decodeOne(loader, buffer, attributeIDs, attributeTypes) {
+  return new Promise((resolve, reject) => {
+    loader.decodeDracoFile(buffer, resolve, attributeIDs, attributeTypes, undefined, reject);
+  });
+}
+
+// Resolve a sample's Draco decode "parts" from its already-fetched bytes. A .drc
+// is one buffer (default attributes); a .glb yields one part per
+// KHR_draco_mesh_compression primitive, decoded by its glTF unique attribute ids.
+function partsFromData(name, data) {
+  if (!name.endsWith('.glb')) return [{ buffer: data, attributeIDs: null, attributeTypes: null }];
+  const u8 = new Uint8Array(data);
+  const dv = new DataView(data);
+  const jsonLen = dv.getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(u8.subarray(20, 20 + jsonLen)));
+  const binOff = 12 + 8 + jsonLen;
+  const bin = u8.subarray(binOff + 8, binOff + 8 + dv.getUint32(binOff, true));
+  const parts = [];
+  for (const mesh of json.meshes || []) {
+    for (const prim of mesh.primitives) {
+      const ext = prim.extensions && prim.extensions.KHR_draco_mesh_compression;
+      if (!ext) continue;
+      const bv = json.bufferViews[ext.bufferView];
+      const slice = bin.slice(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
+      const attributeTypes = {};
+      for (const k in ext.attributes) attributeTypes[k] = 'Float32Array';
+      parts.push({ buffer: slice.buffer, attributeIDs: ext.attributes, attributeTypes });
+    }
+  }
+  return parts;
+}
+
+// Decode a whole model (all primitives) once; returns { ms, geometries }.
+async function decodeModel(loader, parts) {
+  const geometries = [];
+  const t0 = performance.now();
+  for (const p of parts) geometries.push(await decodeOne(loader, p.buffer.slice(0), p.attributeIDs, p.attributeTypes));
+  return { ms: performance.now() - t0, geometries };
+}
+
+// ---------------------------------------------------------------------------
+// Loaders (lazily imported + measured)
+// ---------------------------------------------------------------------------
+let jsLoader, wasmLoader;       // raw Draco loaders (timing)
+let gltfLoaderJS, gltfLoaderWASM; // full glTF loaders (visual), one per Draco decoder
+const info = { js: {}, wasm: {} };
+
+// Parse a .glb ArrayBuffer into a three.js scene (materials + textures), with
+// Draco geometry decoded by the given loader's DRACOLoader.
+function parseGLTF(gltfLoader, data) {
+  return new Promise((resolve, reject) => gltfLoader.parse(data, '', resolve, reject));
+}
+
+async function initLoaders() {
+  // A tiny model used to force each decoder to its ready state (the WASM one
+  // fetches + instantiates its .wasm lazily), so "loader load" reflects the
+  // real cold-start cost a user pays before the first decode.
+  const warmup = await (await fetch('./samples/cube.drc')).arrayBuffer();
+
+  // JS loader (this project's minified build — what you'd ship).
+  let t0 = performance.now();
+  const jsMod = await import('./build/DRACOLoader.min.js');
+  jsLoader = new jsMod.DRACOLoader();
+  (await decodeOne(jsLoader, warmup.slice(0), null, null)).dispose();
+  info.js.load = performance.now() - t0;
+
+  // preload() doesn't await the wasm, so force readiness with a warmup decode.
+  t0 = performance.now();
+  const wasmMod = await import('./libs/draco/DRACOLoader.js');
+  wasmLoader = new wasmMod.DRACOLoader();
+  wasmLoader.setDecoderConfig({ type: 'wasm' });
+  wasmLoader.setDecoderPath(DRACO_PATH);
+  wasmLoader.preload();
+  (await decodeOne(wasmLoader, warmup.slice(0), null, null)).dispose();
+  info.wasm.load = performance.now() - t0;
+
+  // glTF loaders for the visual: same GLTFLoader, one driven by each Draco
+  // decoder, so the rendered materials/textures are identical and only the
+  // geometry decoder differs across the split.
+  gltfLoaderJS = new GLTFLoader().setDRACOLoader(jsLoader);
+  gltfLoaderWASM = new GLTFLoader().setDRACOLoader(wasmLoader);
+
+  // Loader payload sizes (decoder only; three.js excluded from both). The WASM
+  // loader ships as three separately-transferred files, so sum them.
+  const js = await sizeOf('./build/DRACOLoader.min.js');
+  const wasmParts = await Promise.all([
+    sizeOf('./libs/draco/DRACOLoader.js'),
+    sizeOf(DRACO_PATH + 'draco_wasm_wrapper.js'),
+    sizeOf(DRACO_PATH + 'draco_decoder.wasm'),
+  ]);
+  info.js.gz = js.gz;
+  info.wasm.gz = wasmParts.every(p => p.gz != null) ? wasmParts.reduce((a, b) => a + b.gz, 0) : null;
+
+  const gz = b => b != null ? fmtKB(b) : 'n/a';
+  $('js-gzip').textContent = gz(info.js.gz);
+  $('wasm-gzip').textContent = gz(info.wasm.gz);
+  setRatio('size-ratio', info.js.gz, info.wasm.gz, 'js-gzip', 'wasm-gzip');
+  $('js-load').textContent = fmtMs(info.js.load);
+  $('wasm-load').textContent = fmtMs(info.wasm.load);
+  setRatio('load-ratio', info.js.load, info.wasm.load, 'js-load', 'wasm-load');
+}
+
+// ---------------------------------------------------------------------------
+// Run a model through both loaders
+// ---------------------------------------------------------------------------
+let running = false;
+async function run(name) {
+  if (running) return;
+  running = true;
+  $('model').disabled = true;
+  if (location.hash.slice(1) !== name) location.hash = name;
+  try {
+    status(`fetching ${name}…`);
+    const fileData = await (await fetch('./samples/' + name)).arrayBuffer();
+    const parts = partsFromData(name, fileData);
+    if (parts.length === 0) { status(`no Draco data in ${name}`); return; }
+
+    // --- Timing: clean Draco-only decode (no material/texture work), so the
+    // table keeps measuring the decoder, not the rest of glTF assembly. ---
+    status('decoding with JS loader…');
+    const js = await decodeModel(jsLoader, parts);
+    $('js-parse').textContent = fmtMs(js.ms);
+
+    status('decoding with WASM loader…');
+    const wasm = await decodeModel(wasmLoader, parts);
+    $('wasm-parse').textContent = fmtMs(wasm.ms);
+
+    // total = one-time loader cold-start + this model's parse.
+    const jsTotal = info.js.load + js.ms;
+    const wasmTotal = info.wasm.load + wasm.ms;
+    $('js-total').textContent = fmtMs(jsTotal);
+    $('wasm-total').textContent = fmtMs(wasmTotal);
+    setRatio('parse-ratio', js.ms, wasm.ms, 'js-parse', 'wasm-parse');
+    setRatio('total-ratio', jsTotal, wasmTotal, 'js-total', 'wasm-total');
+
+    // --- Visual: render the model with its real materials/textures. .glb goes
+    // through GLTFLoader (Draco geometry decoded by each side's loader); raw
+    // .drc has no materials, so show its geometry under a neutral material. ---
+    if (name.endsWith('.glb')) {
+      status('building scene (WASM)…');
+      placeObject((await parseGLTF(gltfLoaderWASM, fileData.slice(0))).scene, 'wasm');
+      status('building scene (JS)…');
+      placeObject((await parseGLTF(gltfLoaderJS, fileData.slice(0))).scene, 'js');
+    } else {
+      placeObject(drcGroup(wasm.geometries), 'wasm');
+      placeObject(drcGroup(js.geometries), 'js');
+    }
+
+    const n = parts.length;
+    status(`done — ${name} (${n} ${n === 1 ? 'geometry' : 'geometries'})`);
+  } catch (e) {
+    status('error: ' + e.message);
+    console.error(e);
+  } finally {
+    running = false;
+    $('model').disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+(async function () {
+  try {
+    status('loading loaders…');
+    await initLoaders();
+    const initial = modelFromHash() || $('model').value;
+    $('model').value = initial;
+    $('model').addEventListener('change', () => run($('model').value));
+    // React to back/forward or a manually edited hash.
+    addEventListener('hashchange', () => {
+      const name = modelFromHash();
+      if (name && name !== $('model').value) { $('model').value = name; run(name); }
+    });
+    await run(initial); // decode the model from the hash (or the default)
+  } catch (e) {
+    status('failed to init: ' + e.message);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>

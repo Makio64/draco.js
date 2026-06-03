@@ -1,0 +1,223 @@
+// core/DecoderBuffer.js - ported from decoder_buffer.h/cc
+
+import { decodeVarint } from './VarintDecoding.js';
+import { bitstreamVersion } from './Macros.js';
+
+class BitDecoder {
+
+  constructor() {
+    this._bitBuffer = null;
+    this._bitOffset = 0;
+    this._byteLength = 0;
+  }
+
+  reset(uint8Array, byteLength) {
+    this._bitBuffer = uint8Array;
+    this._byteLength = byteLength;
+    this._bitOffset = 0;
+  }
+
+  bitsDecoded() {
+    return this._bitOffset;
+  }
+
+  availBits() {
+    return (this._byteLength * 8) - this._bitOffset;
+  }
+
+  getBits(nbits) {
+    if (nbits > 32) return undefined;
+    const buf = this._bitBuffer;
+    let off = this._bitOffset;
+    let value = 0;
+    let bitsRead = 0;
+
+    // Read bits in bulk from byte-aligned chunks.
+    while (bitsRead < nbits) {
+      const byteOffset = off >> 3;
+      if (byteOffset >= this._byteLength) break;
+      const bitShift = off & 7;
+      // Number of bits available in this byte.
+      const bitsAvail = 8 - bitShift;
+      const bitsNeeded = nbits - bitsRead;
+      const bitsToRead = bitsAvail < bitsNeeded ? bitsAvail : bitsNeeded;
+      const mask = (1 << bitsToRead) - 1;
+      value |= ((buf[byteOffset] >> bitShift) & mask) << bitsRead;
+      bitsRead += bitsToRead;
+      off += bitsToRead;
+    }
+
+    this._bitOffset = off;
+    return value;
+  }
+
+}
+
+export class DecoderBuffer {
+
+  constructor() {
+    this._data = null;
+    this._dataView = null;
+    this._dataSize = 0;
+    this._pos = 0;
+    this._bitDecoder = new BitDecoder();
+    this._bitMode = false;
+    this._bitstreamVersion = 0;
+  }
+
+  init(data, dataSize, version) {
+    if (data instanceof ArrayBuffer) {
+      this._data = new Uint8Array(data);
+    } else if (data instanceof Uint8Array) {
+      this._data = data;
+    } else {
+      this._data = new Uint8Array(data);
+    }
+    this._dataView = new DataView(this._data.buffer, this._data.byteOffset, this._data.byteLength);
+    this._dataSize = dataSize !== undefined ? dataSize : this._data.length;
+    this._pos = 0;
+    if (version !== undefined) {
+      this._bitstreamVersion = version;
+    }
+  }
+
+  // Decode typed values (little-endian)
+  decodeUint8() {
+    if (this._pos + 1 > this._dataSize) return undefined;
+    const val = this._data[this._pos];
+    this._pos += 1;
+    return val;
+  }
+
+  decodeInt8() {
+    if (this._pos + 1 > this._dataSize) return undefined;
+    const val = this._dataView.getInt8(this._pos);
+    this._pos += 1;
+    return val;
+  }
+
+  decodeUint16() {
+    if (this._pos + 2 > this._dataSize) return undefined;
+    const val = this._dataView.getUint16(this._pos, true);
+    this._pos += 2;
+    return val;
+  }
+
+  decodeInt16() {
+    if (this._pos + 2 > this._dataSize) return undefined;
+    const val = this._dataView.getInt16(this._pos, true);
+    this._pos += 2;
+    return val;
+  }
+
+  decodeUint32() {
+    if (this._pos + 4 > this._dataSize) return undefined;
+    const val = this._dataView.getUint32(this._pos, true);
+    this._pos += 4;
+    return val;
+  }
+
+  decodeInt32() {
+    if (this._pos + 4 > this._dataSize) return undefined;
+    const val = this._dataView.getInt32(this._pos, true);
+    this._pos += 4;
+    return val;
+  }
+
+  decodeFloat32() {
+    if (this._pos + 4 > this._dataSize) return undefined;
+    const val = this._dataView.getFloat32(this._pos, true);
+    this._pos += 4;
+    return val;
+  }
+
+  decodeFloat64() {
+    if (this._pos + 8 > this._dataSize) return undefined;
+    const val = this._dataView.getFloat64(this._pos, true);
+    this._pos += 8;
+    return val;
+  }
+
+  decodeUint64() {
+    if (this._pos + 8 > this._dataSize) return undefined;
+    const lo = this._dataView.getUint32(this._pos, true);
+    const hi = this._dataView.getUint32(this._pos + 4, true);
+    this._pos += 8;
+    // Return as BigInt-free number (safe up to 2^53)
+    return hi * 0x100000000 + lo;
+  }
+
+  // Decode raw bytes into a Uint8Array
+  decodeBytes(size) {
+    if (this._pos + size > this._dataSize) return undefined;
+    const result = this._data.slice(this._pos, this._pos + size);
+    this._pos += size;
+    return result;
+  }
+
+  // Peek without advancing
+  peekUint8() {
+    if (this._pos + 1 > this._dataSize) return undefined;
+    return this._data[this._pos];
+  }
+
+  // Bit decoding
+  startBitDecoding(decodeSize) {
+    let outSize = 0;
+    if (decodeSize) {
+      if (this._bitstreamVersion < bitstreamVersion(2, 2)) {
+        outSize = this.decodeUint64();
+        if (outSize === undefined) return undefined;
+      } else {
+        outSize = decodeVarint(this, false);
+        if (outSize === undefined) return undefined;
+      }
+    }
+    this._bitMode = true;
+    this._bitDecoder.reset(
+      this._data.subarray(this._pos),
+      this._dataSize - this._pos
+    );
+    return outSize;
+  }
+
+  endBitDecoding() {
+    this._bitMode = false;
+    const bitsDecoded = this._bitDecoder.bitsDecoded();
+    const bytesDecoded = Math.ceil(bitsDecoded / 8);
+    this._pos += bytesDecoded;
+  }
+
+  decodeLeastSignificantBits32(nbits) {
+    if (!this._bitMode) return undefined;
+    return this._bitDecoder.getBits(nbits);
+  }
+
+  // Decode a varint-encoded uint32 value.
+  decodeVarintUint32() {
+    return decodeVarint(this, false);
+  }
+
+  // Decode a varint-encoded uint64 value.
+  decodeVarintUint64() {
+    return decodeVarint(this, false);
+  }
+
+  advance(bytes) {
+    this._pos += bytes;
+  }
+
+  startDecodingFrom(offset) {
+    this._pos = offset;
+  }
+
+  get bitstreamVersion() { return this._bitstreamVersion; }
+  set bitstreamVersion(v) { this._bitstreamVersion = v; }
+
+  get data() { return this._data; }
+  get dataHead() { return this._data.subarray(this._pos); }
+  get remainingSize() { return this._dataSize - this._pos; }
+  get decodedSize() { return this._pos; }
+  get bitDecoderActive() { return this._bitMode; }
+
+}
