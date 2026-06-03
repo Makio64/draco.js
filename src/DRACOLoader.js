@@ -263,15 +263,7 @@ class DRACOLoader extends Loader {
 
 			const numFaces = dracoGeometry.numFaces();
 			const index = new Uint32Array( numFaces * 3 );
-
-			for ( let i = 0; i < numFaces; i ++ ) {
-
-				const face = dracoGeometry.face( i );
-				index[ i * 3 ] = face[ 0 ];
-				index[ i * 3 + 1 ] = face[ 1 ];
-				index[ i * 3 + 2 ] = face[ 2 ];
-
-			}
+			index.set( dracoGeometry.faces_.subarray( 0, numFaces * 3 ) );
 
 			geometry.setIndex( new BufferAttribute( index, 1 ) );
 
@@ -283,26 +275,7 @@ class DRACOLoader extends Loader {
 
 	_extractAttributeData( dracoGeometry, attribute, numPoints, OutputTypedArray ) {
 
-		const numComponents = attribute.numComponents;
-		const array = new OutputTypedArray( numPoints * numComponents );
-		const temp = new Array( numComponents );
-
-		for ( let i = 0; i < numPoints; i ++ ) {
-
-			const attIndex = attribute.mappedIndex( i );
-			attribute.convertValue( attIndex, temp );
-
-			const offset = i * numComponents;
-
-			for ( let j = 0; j < numComponents; j ++ ) {
-
-				array[ offset + j ] = temp[ j ];
-
-			}
-
-		}
-
-		return array;
+		return attribute.extractTo( OutputTypedArray, numPoints );
 
 	}
 

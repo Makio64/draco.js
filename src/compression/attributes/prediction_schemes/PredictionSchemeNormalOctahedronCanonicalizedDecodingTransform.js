@@ -88,8 +88,6 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
    */
   computeOriginalValue(predVals, predOffset, corrVals, corrOffset,
     outOrigVals, outOffset) {
-    // Hoist the toolbox bounds into locals and inline isInDiamond / modMax
-    // (both tiny and called per normal) to avoid the per-normal method dispatch.
     const toolBox = this._octahedronToolBox;
     const center = toolBox._centerValue;
     const maxQuantizedValue = toolBox._maxQuantizedValue;
@@ -99,20 +97,49 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
     let predS = predVals[predOffset] - center;
     let predT = predVals[predOffset + 1] - center;
 
-    const scratch = this._scratch;
-    const predIsInDiamond =
-      (Math.abs(predS) + Math.abs(predT)) <= center;
+    const predIsInDiamond = (Math.abs(predS) + Math.abs(predT)) <= center;
     if (!predIsInDiamond) {
-      toolBox.invertDiamond(predS, predT, scratch);
-      predS = scratch[0];
-      predT = scratch[1];
+      let signS = 0;
+      let signT = 0;
+      if (predS >= 0 && predT >= 0) {
+        signS = 1; signT = 1;
+      } else if (predS <= 0 && predT <= 0) {
+        signS = -1; signT = -1;
+      } else {
+        signS = (predS > 0) ? 1 : -1;
+        signT = (predT > 0) ? 1 : -1;
+      }
+      const cornerPointS = signS * center;
+      const cornerPointT = signT * center;
+      let us = (predS * 2 - cornerPointS) | 0;
+      let ut = (predT * 2 - cornerPointT) | 0;
+      if (signS * signT >= 0) {
+        const temp = us;
+        us = -ut;
+        ut = -temp;
+      } else {
+        const temp = us;
+        us = ut;
+        ut = temp;
+      }
+      predS = ((us + cornerPointS) / 2) | 0;
+      predT = ((ut + cornerPointT) / 2) | 0;
     }
 
-    const predIsInBottomLeft = this._isInBottomLeft(predS, predT);
-    const rotationCount = this._getRotationCount(predS, predT);
+    const predIsInBottomLeft = (predS === 0 && predT === 0) || (predS < 0 && predT <= 0);
+
+    let rotationCount = 0;
+    if (predS === 0) {
+      if (predT > 0) rotationCount = 3;
+      else if (predT < 0) rotationCount = 1;
+    } else if (predS > 0) {
+      if (predT >= 0) rotationCount = 2;
+      else rotationCount = 1;
+    } else { // predS < 0
+      if (predT > 0) rotationCount = 3;
+    }
 
     if (!predIsInBottomLeft) {
-      // Inline _rotatePoint to avoid a per-normal array allocation.
       const s = predS, t = predT;
       switch (rotationCount) {
         case 1: predS = t; predT = -s; break;
@@ -131,7 +158,7 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
 
     if (!predIsInBottomLeft) {
       const s = origS, t = origT;
-      switch ((4 - rotationCount) % 4) {
+      switch ((4 - rotationCount) & 3) {
         case 1: origS = t; origT = -s; break;
         case 2: origS = -s; origT = -t; break;
         case 3: origS = -t; origT = s; break;
@@ -139,9 +166,31 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
     }
 
     if (!predIsInDiamond) {
-      this._octahedronToolBox.invertDiamond(origS, origT, scratch);
-      origS = scratch[0];
-      origT = scratch[1];
+      let signS = 0;
+      let signT = 0;
+      if (origS >= 0 && origT >= 0) {
+        signS = 1; signT = 1;
+      } else if (origS <= 0 && origT <= 0) {
+        signS = -1; signT = -1;
+      } else {
+        signS = (origS > 0) ? 1 : -1;
+        signT = (origT > 0) ? 1 : -1;
+      }
+      const cornerPointS = signS * center;
+      const cornerPointT = signT * center;
+      let us = (origS * 2 - cornerPointS) | 0;
+      let ut = (origT * 2 - cornerPointT) | 0;
+      if (signS * signT >= 0) {
+        const temp = us;
+        us = -ut;
+        ut = -temp;
+      } else {
+        const temp = us;
+        us = ut;
+        ut = temp;
+      }
+      origS = ((us + cornerPointS) / 2) | 0;
+      origT = ((ut + cornerPointT) / 2) | 0;
     }
 
     outOrigVals[outOffset] = origS + center;

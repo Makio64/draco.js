@@ -175,83 +175,184 @@ class MeshAttributeCornerTable {
     const vertexLeftmost = ct.vertexLeftmostCornerArray();
     let numNewVertices = 0;
 
-    for (let v = 0; v < numBaseVertices; ++v) {
+    const isIdentity = att ? att.isMappingIdentity : true;
+    const indicesMap = att ? att.indicesMap : null;
+    const faces = mesh ? mesh.faces_ : null;
 
-      const c = vertexLeftmost[v];
-      if (c === kInvalidCornerIndex) {
-        continue; // Isolated vertex.
-      }
+    if (!initVertexToAttributeEntryMap) {
+      for (let v = 0; v < numBaseVertices; ++v) {
+        const c = vertexLeftmost[v];
+        if (c === kInvalidCornerIndex) continue;
 
-      let firstVertId = numNewVertices++;
-      if (initVertexToAttributeEntryMap) {
-        attEntryMap[firstVertId] = att.mappedIndex(mesh.cornerToPointId(c));
-      } else {
-        attEntryMap[firstVertId] = firstVertId;
-      }
+        if (!isVertexOnSeam[v]) {
+          const firstVertId = numNewVertices++;
+          attEntryMap[firstVertId] = firstVertId;
+          leftMostMap[firstVertId] = c;
+          cornerToVertex[c] = firstVertId;
 
-      let firstC = c;
-      let actC;
+          let pv = (c % 3 === 0) ? c + 2 : c - 1;
+          let bopp = baseOpp[pv];
+          let actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          while (actC !== kInvalidCornerIndex && actC !== c) {
+            cornerToVertex[actC] = firstVertId;
+            pv = (actC % 3 === 0) ? actC + 2 : actC - 1;
+            bopp = baseOpp[pv];
+            actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          }
+        } else {
+          let firstVertId = numNewVertices++;
+          attEntryMap[firstVertId] = firstVertId;
 
-      // If vertex is on seam, swing left to find the first attribute entry.
-      // swingLeft(x) = next(seamOpp[next(x)]).
-      if (isVertexOnSeam[v]) {
+          let firstC = c;
+          let actC;
 
-        let rem = firstC - ((firstC / 3) | 0) * 3;
-        let nx = rem === 2 ? firstC - 2 : firstC + 1;
-        let opp = seamOpp[nx];
-        actC = opp < 0 ? kInvalidCornerIndex
-          : ((opp - ((opp / 3) | 0) * 3) === 2 ? opp - 2 : opp + 1);
-        while (actC !== kInvalidCornerIndex) {
-
-          firstC = actC;
-          rem = firstC - ((firstC / 3) | 0) * 3;
-          nx = rem === 2 ? firstC - 2 : firstC + 1;
-          opp = seamOpp[nx];
-          actC = opp < 0 ? kInvalidCornerIndex
-            : ((opp - ((opp / 3) | 0) * 3) === 2 ? opp - 2 : opp + 1);
-          if (actC === c) {
-            return false;
+          let nx = (firstC % 3 === 2) ? firstC - 2 : firstC + 1;
+          let opp = seamOpp[nx];
+          actC = opp < 0 ? kInvalidCornerIndex : ((opp % 3 === 2) ? opp - 2 : opp + 1);
+          while (actC !== kInvalidCornerIndex) {
+            firstC = actC;
+            nx = (firstC % 3 === 2) ? firstC - 2 : firstC + 1;
+            opp = seamOpp[nx];
+            actC = opp < 0 ? kInvalidCornerIndex : ((opp % 3 === 2) ? opp - 2 : opp + 1);
+            if (actC === c) return false;
           }
 
-        }
+          cornerToVertex[firstC] = firstVertId;
+          leftMostMap[firstVertId] = firstC;
 
-      }
-
-      cornerToVertex[firstC] = firstVertId;
-      leftMostMap[firstVertId] = firstC;
-
-      // swingRight(x) = previous(baseOpp[previous(x)]).
-      let prem = firstC - ((firstC / 3) | 0) * 3;
-      let pv = prem === 0 ? firstC + 2 : firstC - 1;
-      let bopp = baseOpp[pv];
-      actC = bopp < 0 ? kInvalidCornerIndex
-        : ((bopp - ((bopp / 3) | 0) * 3) === 0 ? bopp + 2 : bopp - 1);
-      while (actC !== kInvalidCornerIndex && actC !== firstC) {
-
-        // isCornerOppositeToSeamEdge(next(actC)).
-        const arem = actC - ((actC / 3) | 0) * 3;
-        const nAct = arem === 2 ? actC - 2 : actC + 1;
-        if (isEdgeOnSeam[nAct]) {
-
-          firstVertId = numNewVertices++;
-          if (initVertexToAttributeEntryMap) {
-            attEntryMap[firstVertId] = att.mappedIndex(mesh.cornerToPointId(actC));
-          } else {
-            attEntryMap[firstVertId] = firstVertId;
+          let pv = (firstC % 3 === 0) ? firstC + 2 : firstC - 1;
+          let bopp = baseOpp[pv];
+          actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          while (actC !== kInvalidCornerIndex && actC !== firstC) {
+            const nAct = (actC % 3 === 2) ? actC - 2 : actC + 1;
+            if (isEdgeOnSeam[nAct]) {
+              firstVertId = numNewVertices++;
+              attEntryMap[firstVertId] = firstVertId;
+              leftMostMap[firstVertId] = actC;
+            }
+            cornerToVertex[actC] = firstVertId;
+            pv = (actC % 3 === 0) ? actC + 2 : actC - 1;
+            bopp = baseOpp[pv];
+            actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
           }
-          leftMostMap[firstVertId] = actC;
-
         }
-
-        cornerToVertex[actC] = firstVertId;
-        prem = actC - ((actC / 3) | 0) * 3;
-        pv = prem === 0 ? actC + 2 : actC - 1;
-        bopp = baseOpp[pv];
-        actC = bopp < 0 ? kInvalidCornerIndex
-          : ((bopp - ((bopp / 3) | 0) * 3) === 0 ? bopp + 2 : bopp - 1);
-
       }
+    } else if (isIdentity) {
+      for (let v = 0; v < numBaseVertices; ++v) {
+        const c = vertexLeftmost[v];
+        if (c === kInvalidCornerIndex) continue;
 
+        if (!isVertexOnSeam[v]) {
+          const firstVertId = numNewVertices++;
+          attEntryMap[firstVertId] = faces[c];
+          leftMostMap[firstVertId] = c;
+          cornerToVertex[c] = firstVertId;
+
+          let pv = (c % 3 === 0) ? c + 2 : c - 1;
+          let bopp = baseOpp[pv];
+          let actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          while (actC !== kInvalidCornerIndex && actC !== c) {
+            cornerToVertex[actC] = firstVertId;
+            pv = (actC % 3 === 0) ? actC + 2 : actC - 1;
+            bopp = baseOpp[pv];
+            actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          }
+        } else {
+          let firstVertId = numNewVertices++;
+          attEntryMap[firstVertId] = faces[c];
+
+          let firstC = c;
+          let actC;
+
+          let nx = (firstC % 3 === 2) ? firstC - 2 : firstC + 1;
+          let opp = seamOpp[nx];
+          actC = opp < 0 ? kInvalidCornerIndex : ((opp % 3 === 2) ? opp - 2 : opp + 1);
+          while (actC !== kInvalidCornerIndex) {
+            firstC = actC;
+            nx = (firstC % 3 === 2) ? firstC - 2 : firstC + 1;
+            opp = seamOpp[nx];
+            actC = opp < 0 ? kInvalidCornerIndex : ((opp % 3 === 2) ? opp - 2 : opp + 1);
+            if (actC === c) return false;
+          }
+
+          cornerToVertex[firstC] = firstVertId;
+          leftMostMap[firstVertId] = firstC;
+
+          let pv = (firstC % 3 === 0) ? firstC + 2 : firstC - 1;
+          let bopp = baseOpp[pv];
+          actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          while (actC !== kInvalidCornerIndex && actC !== firstC) {
+            const nAct = (actC % 3 === 2) ? actC - 2 : actC + 1;
+            if (isEdgeOnSeam[nAct]) {
+              firstVertId = numNewVertices++;
+              attEntryMap[firstVertId] = faces[actC];
+              leftMostMap[firstVertId] = actC;
+            }
+            cornerToVertex[actC] = firstVertId;
+            pv = (actC % 3 === 0) ? actC + 2 : actC - 1;
+            bopp = baseOpp[pv];
+            actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          }
+        }
+      }
+    } else {
+      for (let v = 0; v < numBaseVertices; ++v) {
+        const c = vertexLeftmost[v];
+        if (c === kInvalidCornerIndex) continue;
+
+        if (!isVertexOnSeam[v]) {
+          const firstVertId = numNewVertices++;
+          attEntryMap[firstVertId] = indicesMap[faces[c]];
+          leftMostMap[firstVertId] = c;
+          cornerToVertex[c] = firstVertId;
+
+          let pv = (c % 3 === 0) ? c + 2 : c - 1;
+          let bopp = baseOpp[pv];
+          let actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          while (actC !== kInvalidCornerIndex && actC !== c) {
+            cornerToVertex[actC] = firstVertId;
+            pv = (actC % 3 === 0) ? actC + 2 : actC - 1;
+            bopp = baseOpp[pv];
+            actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          }
+        } else {
+          let firstVertId = numNewVertices++;
+          attEntryMap[firstVertId] = indicesMap[faces[c]];
+
+          let firstC = c;
+          let actC;
+
+          let nx = (firstC % 3 === 2) ? firstC - 2 : firstC + 1;
+          let opp = seamOpp[nx];
+          actC = opp < 0 ? kInvalidCornerIndex : ((opp % 3 === 2) ? opp - 2 : opp + 1);
+          while (actC !== kInvalidCornerIndex) {
+            firstC = actC;
+            nx = (firstC % 3 === 2) ? firstC - 2 : firstC + 1;
+            opp = seamOpp[nx];
+            actC = opp < 0 ? kInvalidCornerIndex : ((opp % 3 === 2) ? opp - 2 : opp + 1);
+            if (actC === c) return false;
+          }
+
+          cornerToVertex[firstC] = firstVertId;
+          leftMostMap[firstVertId] = firstC;
+
+          let pv = (firstC % 3 === 0) ? firstC + 2 : firstC - 1;
+          let bopp = baseOpp[pv];
+          actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          while (actC !== kInvalidCornerIndex && actC !== firstC) {
+            const nAct = (actC % 3 === 2) ? actC - 2 : actC + 1;
+            if (isEdgeOnSeam[nAct]) {
+              firstVertId = numNewVertices++;
+              attEntryMap[firstVertId] = indicesMap[faces[actC]];
+              leftMostMap[firstVertId] = actC;
+            }
+            cornerToVertex[actC] = firstVertId;
+            pv = (actC % 3 === 0) ? actC + 2 : actC - 1;
+            bopp = baseOpp[pv];
+            actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+          }
+        }
+      }
     }
 
     // Expose exact-length views (no copy) so numVertices() and the per-vertex

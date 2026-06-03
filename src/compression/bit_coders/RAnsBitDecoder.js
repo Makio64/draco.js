@@ -50,7 +50,7 @@ export class RAnsBitDecoder {
     const ans = this.ansDecoder_;
     const p = this.p_;
     if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-      ans.state = ans.state * ANS_IO_BASE + ans.buf[--ans.bufOffset];
+      ans.state = (ans.state << 8) | ans.buf[--ans.bufOffset];
     }
     const x = ans.state;
     const quot = x >>> 8;
@@ -72,7 +72,7 @@ export class RAnsBitDecoder {
     let result = 0;
     for (let i = 0; i < nbits; i++) {
       if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-        ans.state = ans.state * ANS_IO_BASE + ans.buf[--ans.bufOffset];
+        ans.state = (ans.state << 8) | ans.buf[--ans.bufOffset];
       }
       const x = ans.state;
       const quot = x >>> 8;

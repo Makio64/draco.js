@@ -63,12 +63,29 @@ class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecod
       const cornerId = dataToCornerMap[p];
       const dstOffset = p * numComponents;
 
-      const result = computeParallelogramPrediction(
-        p, cornerId, oppositeCorners, cornerToVertex, vertexToDataMap,
-        outData, numComponents, predVals
-      );
+      const oci = oppositeCorners[cornerId];
+      let hasPrediction = false;
+      if (oci >= 0) {
+        const rem = oci - ((oci / 3) | 0) * 3;
+        const nextOci = rem === 2 ? oci - 2 : oci + 1;
+        const prevOci = rem === 0 ? oci + 2 : oci - 1;
 
-      if (!result) {
+        const vertOpp = vertexToDataMap[cornerToVertex[oci]];
+        const vertNext = vertexToDataMap[cornerToVertex[nextOci]];
+        const vertPrev = vertexToDataMap[cornerToVertex[prevOci]];
+
+        if (vertOpp < p && vertNext < p && vertPrev < p) {
+          const vOppOff = vertOpp * numComponents;
+          const vNextOff = vertNext * numComponents;
+          const vPrevOff = vertPrev * numComponents;
+          for (let c = 0; c < numComponents; ++c) {
+            predVals[c] = (outData[vNextOff + c] + outData[vPrevOff + c]) - outData[vOppOff + c];
+          }
+          hasPrediction = true;
+        }
+      }
+
+      if (!hasPrediction) {
         // Parallelogram could not be computed. Use delta coding (previous value).
         const srcOffset = (p - 1) * numComponents;
         this._transform.computeOriginalValue(

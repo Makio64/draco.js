@@ -9,7 +9,8 @@ class MeshTraversalSequencer {
     this._mesh = mesh;
     this._encodingData = encodingData;
     this._traverser = null;
-    this._outPointIds = [];
+    this._outPointIds = new Int32Array(0);
+    this._numOutPoints = 0;
     // Optional per-decode cache, keyed by corner table, shared across the
     // attribute decoders of one mesh (see MeshEdgebreakerDecoderImpl).
     this._traversalCache = traversalCache;
@@ -36,9 +37,13 @@ class MeshTraversalSequencer {
       }
     }
 
-    this._outPointIds = [];
     if (!this._generateSequenceInternal()) {
       return false;
+    }
+
+    if (this._encodingData.numValues < this._encodingData._encodedAttributeValueIndexToCornerMap.length) {
+      this._encodingData._encodedAttributeValueIndexToCornerMap =
+        this._encodingData._encodedAttributeValueIndexToCornerMap.subarray(0, this._encodingData.numValues);
     }
 
     if (this._traversalCache) {
@@ -57,7 +62,7 @@ class MeshTraversalSequencer {
   }
 
   addPointId(pointId) {
-    this._outPointIds.push(pointId);
+    this._outPointIds[this._numOutPoints++] = pointId;
   }
 
   updatePointToAttributeIndexMapping(attribute) {
@@ -92,7 +97,8 @@ class MeshTraversalSequencer {
 
   _generateSequenceInternal() {
     // Preallocate.
-    this._outPointIds.length = 0;
+    this._numOutPoints = 0;
+    this._outPointIds = new Int32Array(this._mesh.numPoints());
 
     this._traverser.onTraversalStart();
     const numFaces = this._traverser.cornerTable().numFaces();
@@ -102,6 +108,10 @@ class MeshTraversalSequencer {
       }
     }
     this._traverser.onTraversalEnd();
+
+    if (this._numOutPoints < this._outPointIds.length) {
+      this._outPointIds = this._outPointIds.subarray(0, this._numOutPoints);
+    }
     return true;
   }
 

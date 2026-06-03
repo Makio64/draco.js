@@ -86,42 +86,86 @@ class PredictionSchemeNormalOctahedronDecodingTransform {
    */
   computeOriginalValue(predVals, predOffset, corrVals, corrOffset,
     outOrigVals, outOffset) {
-    const center = this._octahedronToolBox.centerValue();
+    const toolBox = this._octahedronToolBox;
+    const center = toolBox._centerValue;
+    const maxQuantizedValue = toolBox._maxQuantizedValue;
 
     const predS = predVals[predOffset] - center;
     const predT = predVals[predOffset + 1] - center;
     const corrS = corrVals[corrOffset];
     const corrT = corrVals[corrOffset + 1];
 
-    const predIsInDiamond = this._octahedronToolBox.isInDiamond(predS, predT);
+    const predIsInDiamond = (Math.abs(predS) + Math.abs(predT)) <= center;
 
     let ps = predS;
     let pt = predT;
-    const scratch = this._scratch;
     if (!predIsInDiamond) {
-      this._octahedronToolBox.invertDiamond(ps, pt, scratch);
-      ps = scratch[0];
-      pt = scratch[1];
+      let signS = 0;
+      let signT = 0;
+      if (ps >= 0 && pt >= 0) {
+        signS = 1; signT = 1;
+      } else if (ps <= 0 && pt <= 0) {
+        signS = -1; signT = -1;
+      } else {
+        signS = (ps > 0) ? 1 : -1;
+        signT = (pt > 0) ? 1 : -1;
+      }
+      const cornerPointS = signS * center;
+      const cornerPointT = signT * center;
+      let us = (ps * 2 - cornerPointS) | 0;
+      let ut = (pt * 2 - cornerPointT) | 0;
+      if (signS * signT >= 0) {
+        const temp = us;
+        us = -ut;
+        ut = -temp;
+      } else {
+        const temp = us;
+        us = ut;
+        ut = temp;
+      }
+      ps = ((us + cornerPointS) / 2) | 0;
+      pt = ((ut + cornerPointT) / 2) | 0;
     }
 
     // Unsigned addition to avoid signed overflow.
     let origS = (ps + corrS) | 0;
     let origT = (pt + corrT) | 0;
 
-    origS = this._octahedronToolBox.modMax(origS);
-    origT = this._octahedronToolBox.modMax(origT);
+    if (origS > center) origS -= maxQuantizedValue;
+    else if (origS < -center) origS += maxQuantizedValue;
+    if (origT > center) origT -= maxQuantizedValue;
+    else if (origT < -center) origT += maxQuantizedValue;
 
     if (!predIsInDiamond) {
-      this._octahedronToolBox.invertDiamond(origS, origT, scratch);
-      origS = scratch[0];
-      origT = scratch[1];
+      let signS = 0;
+      let signT = 0;
+      if (origS >= 0 && origT >= 0) {
+        signS = 1; signT = 1;
+      } else if (origS <= 0 && origT <= 0) {
+        signS = -1; signT = -1;
+      } else {
+        signS = (origS > 0) ? 1 : -1;
+        signT = (origT > 0) ? 1 : -1;
+      }
+      const cornerPointS = signS * center;
+      const cornerPointT = signT * center;
+      let us = (origS * 2 - cornerPointS) | 0;
+      let ut = (origT * 2 - cornerPointT) | 0;
+      if (signS * signT >= 0) {
+        const temp = us;
+        us = -ut;
+        ut = -temp;
+      } else {
+        const temp = us;
+        us = ut;
+        ut = temp;
+      }
+      origS = ((us + cornerPointS) / 2) | 0;
+      origT = ((ut + cornerPointT) / 2) | 0;
     }
 
-    origS = (origS + center) | 0;
-    origT = (origT + center) | 0;
-
-    outOrigVals[outOffset] = origS;
-    outOrigVals[outOffset + 1] = origT;
+    outOrigVals[outOffset] = (origS + center) | 0;
+    outOrigVals[outOffset + 1] = (origT + center) | 0;
   }
 
   /**
