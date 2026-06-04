@@ -532,6 +532,25 @@ class MeshAttributeCornerTable {
     return this.is_vertex_on_seam_;
   }
 
+  hasSameSeams(other) {
+    if (other === null || other === undefined) return false;
+    const seamA = this.is_edge_on_seam_;
+    const seamB = other.is_edge_on_seam_;
+    if (seamA.length !== seamB.length) return false;
+    for (let i = 0, l = seamA.length; i < l; ++i) {
+      if (seamA[i] !== seamB[i]) return false;
+    }
+    return true;
+  }
+
+  adoptVertexRecompute(other) {
+    this.corner_to_vertex_map_ = other.corner_to_vertex_map_;
+    this.vertex_to_attribute_entry_id_map_ = other.vertex_to_attribute_entry_id_map_;
+    this.vertex_to_left_most_corner_map_ = other.vertex_to_left_most_corner_map_;
+    this.no_interior_seams_ = other.no_interior_seams_;
+    this._effectiveOpposite = other._effectiveOpposite;
+  }
+
   isDegenerated(faceIndex) {
 
     return this.corner_table_.isDegenerated(faceIndex);

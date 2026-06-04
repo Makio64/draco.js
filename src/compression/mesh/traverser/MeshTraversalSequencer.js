@@ -102,7 +102,7 @@ class MeshTraversalSequencer {
 
     this._traverser.onTraversalStart();
     const numFaces = this._traverser.cornerTable().numFaces();
-    for (let i = 0; i < numFaces; ++i) {
+    for (let i = 0; i < numFaces && this._traverser._numVisitedFaces < numFaces; ++i) {
       if (!this._traverser.traverseFromCorner(3 * i)) {
         return false;
       }

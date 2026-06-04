@@ -8,6 +8,7 @@
   "scripts": {
     "build": "rollup -c",
     "bench": "node scripts/bench.mjs",
+    "verify": "node scripts/verify-wasm.mjs",
     "start": "npx http-server -p 8080 -c-1"
   },
   "dependencies": {

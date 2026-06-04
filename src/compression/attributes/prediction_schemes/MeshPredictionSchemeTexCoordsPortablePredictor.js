@@ -1,6 +1,8 @@
 // src/compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortablePredictor.js
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_predictor.h
 
+import { DataType } from '../../../core/DracoTypes.js';
+
 /**
  * Predictor functionality used for portable UV prediction by both encoder and
  * decoder. This implements only the decoder path (is_encoder_t = false).
@@ -16,15 +18,14 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
     this._posAttribute = null;
     this._entryToPointIdMap = null;
     this._predictedValue = new Int32Array(2);
-    this._orientations = [];
+    this._orientations = new Uint8Array(0);
+    this._numOrientations = 0;
     this._meshData = meshData;
     this._tempPos = new Array(3);
-    // Reusable scratch for the per-corner position fetches (hot loop).
-    this._nextPos = new Array(3);
-    this._prevPos = new Array(3);
     // Flat Int32 position cache indexed by data entry id (built once per
     // decode) so position fetches are array reads, not convertValue calls.
     this._posCache = null;
+    this._cornerToVertex = null;
   }
 
   /**
@@ -55,7 +56,8 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
    * @param {number} numOrientations
    */
   resizeOrientations(numOrientations) {
-    this._orientations = new Array(numOrientations);
+    this._orientations = new Uint8Array(numOrientations);
+    this._numOrientations = numOrientations;
   }
 
   /**
@@ -63,7 +65,7 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
    * @param {boolean} v
    */
   setOrientation(i, v) {
-    this._orientations[i] = v;
+    this._orientations[i] = v ? 1 : 0;
   }
 
   /**
@@ -73,29 +75,45 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
    */
   buildPositionCache(numEntries) {
     const cache = new Int32Array(numEntries * 3);
-    const tmp = this._tempPos;
     const att = this._posAttribute;
     const map = this._entryToPointIdMap;
-    for (let d = 0; d < numEntries; ++d) {
-      att.convertValue(att.mappedIndex(map[d]), tmp);
-      const o = d * 3;
-      cache[o] = tmp[0];
-      cache[o + 1] = tmp[1];
-      cache[o + 2] = tmp[2];
+    const bufData = att.buffer && att.buffer.data;
+
+    if (att.dataType === DataType.INT32 && att.numComponents === 3 && bufData) {
+      const src = new Int32Array(bufData.buffer);
+      const srcStart = (bufData.byteOffset + att.byteOffset) >> 2;
+      const stride = att.byteStride >> 2;
+      const isIdentity = att.isMappingIdentity;
+      const indicesMap = att.indicesMap;
+      if (isIdentity) {
+        for (let d = 0; d < numEntries; ++d) {
+          const srcOffset = srcStart + map[d] * stride;
+          const o = d * 3;
+          cache[o] = src[srcOffset];
+          cache[o + 1] = src[srcOffset + 1];
+          cache[o + 2] = src[srcOffset + 2];
+        }
+      } else {
+        for (let d = 0; d < numEntries; ++d) {
+          const srcOffset = srcStart + indicesMap[map[d]] * stride;
+          const o = d * 3;
+          cache[o] = src[srcOffset];
+          cache[o + 1] = src[srcOffset + 1];
+          cache[o + 2] = src[srcOffset + 2];
+        }
+      }
+    } else {
+      const tmp = this._tempPos;
+      for (let d = 0; d < numEntries; ++d) {
+        att.convertValue(att.mappedIndex(map[d]), tmp);
+        const o = d * 3;
+        cache[o] = tmp[0];
+        cache[o + 1] = tmp[1];
+        cache[o + 2] = tmp[2];
+      }
     }
     this._posCache = cache;
-  }
-
-  /**
-   * Returns the 3D position (as int64-safe values) for a given entry id.
-   * @private
-   */
-  _getPositionForEntryId(entryId, out) {
-    const c = this._posCache;
-    const o = entryId * 3;
-    out[0] = c[o];
-    out[1] = c[o + 1];
-    out[2] = c[o + 2];
+    this._cornerToVertex = this._meshData.cornerTable.cornerToVertexArray();
   }
 
   /**
@@ -106,15 +124,17 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
    * @returns {boolean}
    */
   computePredictedValue(cornerId, data, dataId) {
-    const table = this._meshData.cornerTable;
-    const nextCornerId = table.next(cornerId);
-    const prevCornerId = table.previous(cornerId);
+    const rem = cornerId - ((cornerId / 3) | 0) * 3;
+    const nextCornerId = rem === 2 ? cornerId - 2 : cornerId + 1;
+    const prevCornerId = rem === 0 ? cornerId + 2 : cornerId - 1;
 
-    const nextVertId = table.vertex(nextCornerId);
-    const prevVertId = table.vertex(prevCornerId);
+    const cornerToVertex = this._cornerToVertex;
+    const nextVertId = cornerToVertex[nextCornerId];
+    const prevVertId = cornerToVertex[prevCornerId];
 
-    const nextDataId = this._meshData.vertexToDataMap[nextVertId];
-    const prevDataId = this._meshData.vertexToDataMap[prevVertId];
+    const vertexToDataMap = this._meshData.vertexToDataMap;
+    const nextDataId = vertexToDataMap[nextVertId];
+    const prevDataId = vertexToDataMap[prevVertId];
 
     if (prevDataId < dataId && nextDataId < dataId) {
       const nDataOff = nextDataId * 2;
@@ -128,23 +148,30 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
         return true;
       }
 
-      const tipPos = this._tempPos;
-      const nextPos = this._nextPos;
-      const prevPos = this._prevPos;
-      this._getPositionForEntryId(dataId, tipPos);
-      this._getPositionForEntryId(nextDataId, nextPos);
-      this._getPositionForEntryId(prevDataId, prevPos);
+      const posCache = this._posCache;
+      let posOffset = dataId * 3;
+      const tip0 = posCache[posOffset];
+      const tip1 = posCache[posOffset + 1];
+      const tip2 = posCache[posOffset + 2];
+      posOffset = nextDataId * 3;
+      const next0 = posCache[posOffset];
+      const next1 = posCache[posOffset + 1];
+      const next2 = posCache[posOffset + 2];
+      posOffset = prevDataId * 3;
+      const prev0 = posCache[posOffset];
+      const prev1 = posCache[posOffset + 1];
+      const prev2 = posCache[posOffset + 2];
 
       // pn = prevPos - nextPos
-      const pn0 = prevPos[0] - nextPos[0];
-      const pn1 = prevPos[1] - nextPos[1];
-      const pn2 = prevPos[2] - nextPos[2];
+      const pn0 = prev0 - next0;
+      const pn1 = prev1 - next1;
+      const pn2 = prev2 - next2;
       const pnNorm2Squared = pn0 * pn0 + pn1 * pn1 + pn2 * pn2;
 
       if (pnNorm2Squared !== 0) {
-        const cn0 = tipPos[0] - nextPos[0];
-        const cn1 = tipPos[1] - nextPos[1];
-        const cn2 = tipPos[2] - nextPos[2];
+        const cn0 = tip0 - next0;
+        const cn1 = tip1 - next1;
+        const cn2 = tip2 - next2;
         const cnDotPn = pn0 * cn0 + pn1 * cn1 + pn2 * cn2;
 
         const pnUV0 = pUV0 - nUV0;
@@ -171,12 +198,12 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
         }
 
         // x_pos = nextPos + (cnDotPn * pn) / pnNorm2Squared
-        const xPos0 = nextPos[0] + Math.trunc((cnDotPn * pn0) / pnNorm2Squared);
-        const xPos1 = nextPos[1] + Math.trunc((cnDotPn * pn1) / pnNorm2Squared);
-        const xPos2 = nextPos[2] + Math.trunc((cnDotPn * pn2) / pnNorm2Squared);
-        const cx0 = tipPos[0] - xPos0;
-        const cx1 = tipPos[1] - xPos1;
-        const cx2 = tipPos[2] - xPos2;
+        const xPos0 = next0 + Math.trunc((cnDotPn * pn0) / pnNorm2Squared);
+        const xPos1 = next1 + Math.trunc((cnDotPn * pn1) / pnNorm2Squared);
+        const xPos2 = next2 + Math.trunc((cnDotPn * pn2) / pnNorm2Squared);
+        const cx0 = tip0 - xPos0;
+        const cx1 = tip1 - xPos1;
+        const cx2 = tip2 - xPos2;
         const cxNorm2Squared = cx0 * cx0 + cx1 * cx1 + cx2 * cx2;
 
         // Rotated pnUV by 90 degrees.
@@ -184,11 +211,10 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
         const cxUV0 = pnUV1 * normSquared;
         const cxUV1 = -pnUV0 * normSquared;
 
-        if (this._orientations.length === 0) {
+        if (this._numOrientations === 0) {
           return false;
         }
-        const orientation = this._orientations[this._orientations.length - 1];
-        this._orientations.length--;
+        const orientation = this._orientations[--this._numOrientations];
 
         if (orientation) {
           this._predictedValue[0] = Math.trunc((xUV0 + cxUV0) / pnNorm2Squared);

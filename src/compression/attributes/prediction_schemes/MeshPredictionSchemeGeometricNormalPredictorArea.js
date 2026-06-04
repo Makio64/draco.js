@@ -2,6 +2,7 @@
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
 // and mesh_prediction_scheme_geometric_normal_predictor_base.h
 
+import { DataType } from '../../../core/DracoTypes.js';
 import { NormalPredictionMode } from '../../config/CompressionShared.js';
 
 const UPPER_BOUND = 1 << 29;
@@ -21,14 +22,13 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._meshData = meshData;
     this._normalPredictionMode = NormalPredictionMode.TRIANGLE_AREA;
     this._tempPos = new Array(3);
-    // Reusable scratch for the per-corner position fetches (hot loop).
-    this._posNext = new Array(3);
-    this._posPrev = new Array(3);
     // Flat Int32 position cache indexed by data id (built once per decode).
     // The predictor reads the position of a corner's vertex O(valence) times
     // per ring; caching turns O(corners*valence) convertValue calls into one
     // per data entry.
     this._posCache = null;
+    this._cornerToVertex = null;
+    this._oppositeCorners = null;
   }
 
   /**
@@ -76,40 +76,47 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
    */
   buildPositionCache(numEntries) {
     const cache = new Int32Array(numEntries * 3);
-    const tmp = this._tempPos;
     const att = this._posAttribute;
     const map = this._entryToPointIdMap;
-    for (let d = 0; d < numEntries; ++d) {
-      att.convertValue(att.mappedIndex(map[d]), tmp);
-      const o = d * 3;
-      cache[o] = tmp[0];
-      cache[o + 1] = tmp[1];
-      cache[o + 2] = tmp[2];
+    const bufData = att.buffer && att.buffer.data;
+
+    if (att.dataType === DataType.INT32 && att.numComponents === 3 && bufData) {
+      const src = new Int32Array(bufData.buffer);
+      const srcStart = (bufData.byteOffset + att.byteOffset) >> 2;
+      const stride = att.byteStride >> 2;
+      const isIdentity = att.isMappingIdentity;
+      const indicesMap = att.indicesMap;
+      if (isIdentity) {
+        for (let d = 0; d < numEntries; ++d) {
+          const srcOffset = srcStart + map[d] * stride;
+          const o = d * 3;
+          cache[o] = src[srcOffset];
+          cache[o + 1] = src[srcOffset + 1];
+          cache[o + 2] = src[srcOffset + 2];
+        }
+      } else {
+        for (let d = 0; d < numEntries; ++d) {
+          const srcOffset = srcStart + indicesMap[map[d]] * stride;
+          const o = d * 3;
+          cache[o] = src[srcOffset];
+          cache[o + 1] = src[srcOffset + 1];
+          cache[o + 2] = src[srcOffset + 2];
+        }
+      }
+    } else {
+      const tmp = this._tempPos;
+      for (let d = 0; d < numEntries; ++d) {
+        att.convertValue(att.mappedIndex(map[d]), tmp);
+        const o = d * 3;
+        cache[o] = tmp[0];
+        cache[o + 1] = tmp[1];
+        cache[o + 2] = tmp[2];
+      }
     }
     this._posCache = cache;
-  }
-
-  /**
-   * Gets the 3D position for a given data id.
-   * @private
-   */
-  _getPositionForDataId(dataId, out) {
-    const c = this._posCache;
-    const o = dataId * 3;
-    out[0] = c[o];
-    out[1] = c[o + 1];
-    out[2] = c[o + 2];
-  }
-
-  /**
-   * Gets the 3D position for a given corner.
-   * @private
-   */
-  _getPositionForCorner(ci, out) {
     const table = this._meshData.cornerTable;
-    const vertId = table.vertex(ci);
-    const dataId = this._meshData.vertexToDataMap[vertId];
-    this._getPositionForDataId(dataId, out);
+    this._cornerToVertex = table.cornerToVertexArray();
+    this._oppositeCorners = table.oppositeCornerArray();
   }
 
   /**
@@ -118,28 +125,39 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
    * @param {Int32Array} prediction - output [x, y, z]
    */
   computePredictedValue(cornerId, prediction) {
-    const table = this._meshData.cornerTable;
-    const posCent = this._tempPos;
-    const posNext = this._posNext;
-    const posPrev = this._posPrev;
-    this._getPositionForCorner(cornerId, posCent);
+    const cornerToVertex = this._cornerToVertex;
+    const oppositeCorners = this._oppositeCorners;
+    const vertexToDataMap = this._meshData.vertexToDataMap;
+    const posCache = this._posCache;
+    const centerDataId = vertexToDataMap[cornerToVertex[cornerId]];
+    const centerOffset = centerDataId * 3;
+    const centX = posCache[centerOffset];
+    const centY = posCache[centerOffset + 1];
+    const centZ = posCache[centerOffset + 2];
 
     let normalX = 0, normalY = 0, normalZ = 0;
 
     // Iterate over vertex corners.
     if (this._normalPredictionMode === NormalPredictionMode.ONE_TRIANGLE) {
       // Only use the single triangle at cornerId.
-      const cNext = table.next(cornerId);
-      const cPrev = table.previous(cornerId);
-      this._getPositionForCorner(cNext, posNext);
-      this._getPositionForCorner(cPrev, posPrev);
+      const rem = cornerId - ((cornerId / 3) | 0) * 3;
+      const cNext = rem === 2 ? cornerId - 2 : cornerId + 1;
+      const cPrev = rem === 0 ? cornerId + 2 : cornerId - 1;
+      let posOffset = vertexToDataMap[cornerToVertex[cNext]] * 3;
+      const nextX = posCache[posOffset];
+      const nextY = posCache[posOffset + 1];
+      const nextZ = posCache[posOffset + 2];
+      posOffset = vertexToDataMap[cornerToVertex[cPrev]] * 3;
+      const prevX = posCache[posOffset];
+      const prevY = posCache[posOffset + 1];
+      const prevZ = posCache[posOffset + 2];
 
-      const dNextX = posNext[0] - posCent[0];
-      const dNextY = posNext[1] - posCent[1];
-      const dNextZ = posNext[2] - posCent[2];
-      const dPrevX = posPrev[0] - posCent[0];
-      const dPrevY = posPrev[1] - posCent[1];
-      const dPrevZ = posPrev[2] - posCent[2];
+      const dNextX = nextX - centX;
+      const dNextY = nextY - centY;
+      const dNextZ = nextZ - centZ;
+      const dPrevX = prevX - centX;
+      const dPrevY = prevY - centY;
+      const dPrevZ = prevZ - centZ;
 
       // Cross product.
       normalX = dNextY * dPrevZ - dNextZ * dPrevY;
@@ -157,17 +175,24 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       let leftTraversal = true;
 
       while (currentCorner >= 0) {
-        const cNext = table.next(currentCorner);
-        const cPrev = table.previous(currentCorner);
-        this._getPositionForCorner(cNext, posNext);
-        this._getPositionForCorner(cPrev, posPrev);
+        const rem = currentCorner - ((currentCorner / 3) | 0) * 3;
+        const cNext = rem === 2 ? currentCorner - 2 : currentCorner + 1;
+        const cPrev = rem === 0 ? currentCorner + 2 : currentCorner - 1;
+        let posOffset = vertexToDataMap[cornerToVertex[cNext]] * 3;
+        const nextX = posCache[posOffset];
+        const nextY = posCache[posOffset + 1];
+        const nextZ = posCache[posOffset + 2];
+        posOffset = vertexToDataMap[cornerToVertex[cPrev]] * 3;
+        const prevX = posCache[posOffset];
+        const prevY = posCache[posOffset + 1];
+        const prevZ = posCache[posOffset + 2];
 
-        const dNextX = posNext[0] - posCent[0];
-        const dNextY = posNext[1] - posCent[1];
-        const dNextZ = posNext[2] - posCent[2];
-        const dPrevX = posPrev[0] - posCent[0];
-        const dPrevY = posPrev[1] - posCent[1];
-        const dPrevZ = posPrev[2] - posCent[2];
+        const dNextX = nextX - centX;
+        const dNextY = nextY - centY;
+        const dNextZ = nextZ - centZ;
+        const dPrevX = prevX - centX;
+        const dPrevY = prevY - centY;
+        const dPrevZ = prevZ - centZ;
 
         // Cross product.
         normalX += dNextY * dPrevZ - dNextZ * dPrevY;
@@ -176,17 +201,37 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
 
         // Advance like VertexCornersIterator::Next().
         if (leftTraversal) {
-          currentCorner = table.swingLeft(currentCorner);
+          const opp = oppositeCorners[cNext];
+          if (opp < 0) {
+            currentCorner = -1;
+          } else {
+            const oppRem = opp - ((opp / 3) | 0) * 3;
+            currentCorner = oppRem === 2 ? opp - 2 : opp + 1;
+          }
           if (currentCorner < 0) {
             // Open boundary reached; cover the other side from the start.
-            currentCorner = table.swingRight(cornerId);
+            const startRem = cornerId - ((cornerId / 3) | 0) * 3;
+            const startPrev = startRem === 0 ? cornerId + 2 : cornerId - 1;
+            const startOpp = oppositeCorners[startPrev];
+            if (startOpp < 0) {
+              currentCorner = -1;
+            } else {
+              const startOppRem = startOpp - ((startOpp / 3) | 0) * 3;
+              currentCorner = startOppRem === 0 ? startOpp + 2 : startOpp - 1;
+            }
             leftTraversal = false;
           } else if (currentCorner === cornerId) {
             // Returned to the start: full ring visited.
             currentCorner = -1;
           }
         } else {
-          currentCorner = table.swingRight(currentCorner);
+          const opp = oppositeCorners[cPrev];
+          if (opp < 0) {
+            currentCorner = -1;
+          } else {
+            const oppRem = opp - ((opp / 3) | 0) * 3;
+            currentCorner = oppRem === 0 ? opp + 2 : opp - 1;
+          }
         }
       }
     }

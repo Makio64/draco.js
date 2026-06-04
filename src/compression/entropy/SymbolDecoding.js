@@ -44,13 +44,21 @@ function decodeTaggedSymbols(numValues, numComponents, srcBuffer, outValues) {
   // srcBuffer now points behind the encoded tag data (to the place where the
   // values are encoded).
   srcBuffer.startBitDecoding(false);
+  // Hoist the bit decoder out of the hot loop. After startBitDecoding(false)
+  // the buffer is guaranteed to be in bit mode, so decodeLeastSignificantBits32
+  // would always delegate straight to this._bitDecoder.getBits — call getBits
+  // directly to remove a layer of method dispatch per component.
+  const bd = srcBuffer._bitDecoder;
+  // Hoist the rANS decoder for the tag; tagDecoder.decodeSymbol() is exactly
+  // a delegation to this.ans_.ransRead().
+  const tagAns = tagDecoder.ans_;
   let valueId = 0;
   for (let i = 0; i < numValues; i += numComponents) {
     // Decode the tag.
-    const bitLength = tagDecoder.decodeSymbol();
+    const bitLength = tagAns.ransRead();
     // Decode the actual value.
     for (let j = 0; j < numComponents; ++j) {
-      const val = srcBuffer.decodeLeastSignificantBits32(bitLength);
+      const val = bd.getBits(bitLength);
       if (val === undefined) {
         return false;
       }
@@ -75,7 +83,7 @@ function decodeRawSymbolsInternal(uniqueSymbolsBitLength, numValues, srcBuffer, 
   if (!decoder.startDecoding(srcBuffer)) {
     return false;
   }
-  decoder.decodeSymbols(outValues, numValues);
+  decoder.ans_.decodeSymbols(outValues, numValues);
   decoder.endDecoding();
   return true;
 }

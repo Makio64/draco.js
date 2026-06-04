@@ -230,9 +230,7 @@ export class RAnsDecoder {
       if (cumProb > this.ransPrecision) {
         return false;
       }
-      for (let j = actProb; j < cumProb; ++j) {
-        this.lutTable[j] = i;
-      }
+      this.lutTable.fill(i, actProb, cumProb);
       actProb = cumProb;
     }
     if (cumProb !== this.ransPrecision) {

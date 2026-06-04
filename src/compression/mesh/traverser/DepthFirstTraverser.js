@@ -15,6 +15,7 @@ class DepthFirstTraverser {
     this._isFaceVisited = null;
     this._isVertexVisited = null;
     this._cornerTraversalStack = [];
+    this._numVisitedFaces = 0;
   }
 
   init(cornerTable, observer) {
@@ -24,6 +25,7 @@ class DepthFirstTraverser {
     // on every corner of the hottest decode loop (traverseFromCorner).
     this._isFaceVisited = new Uint8Array(cornerTable.numFaces());
     this._isVertexVisited = new Uint8Array(cornerTable.numVertices());
+    this._numVisitedFaces = 0;
     // Extract the corner table's connectivity as flat arrays once, so the
     // traversal reads them directly (via the monomorphic _* helpers below)
     // instead of dispatching through the corner table on every corner. The
@@ -82,6 +84,7 @@ class DepthFirstTraverser {
     const vertexLeftmost = this._vertexLeftmost;
     const stack = this._cornerTraversalStack;
     const hasOnNewFaceVisited = this._hasOnNewFaceVisited;
+    let numVisitedFaces = this._numVisitedFaces;
 
     let stackSize = 0;
     stack[stackSize++] = cornerId;
@@ -117,6 +120,7 @@ class DepthFirstTraverser {
 
       while (true) {
         isFaceVisited[faceId] = true;
+        numVisitedFaces++;
         if (hasOnNewFaceVisited) {
           observer.onNewFaceVisited(faceId);
         }
@@ -185,6 +189,7 @@ class DepthFirstTraverser {
         }
       }
     }
+    this._numVisitedFaces = numVisitedFaces;
     return true;
   }
 

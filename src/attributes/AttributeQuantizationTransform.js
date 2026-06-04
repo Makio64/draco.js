@@ -100,10 +100,15 @@ class AttributeQuantizationTransform extends AttributeTransform {
     const dstAddr = targetAttribute.getAddress(0);
     const dstF32 = new Float32Array(dstAddr.buffer, dstAddr.byteOffset, total);
 
+    // Mirror Draco C++ float32 arithmetic so the result is bit-identical to the
+    // WASM decoder: `value` (int) is converted to float, multiplied by the
+    // float `delta` (both rounded to float32), then added to the float32 min.
+    // The Float32Array store performs the final round of the addition.
+    const fround = Math.fround;
     let o = 0;
     for (let i = 0; i < numValues; i++) {
       for (let c = 0; c < numComponents; c++) {
-        dstF32[o] = srcI32[o] * delta + minValues[c];
+        dstF32[o] = fround(fround(srcI32[o]) * delta) + minValues[c];
         o++;
       }
     }
