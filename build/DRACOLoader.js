@@ -1820,14 +1820,9 @@ class GeometryAttribute {
     this._attributeType = attributeType;
   }
 
-  // Returns the byte position of the attribute entry in the data buffer.
-  getBytePos(attIndex) {
-    return this._byteOffset + this._byteStride * attIndex;
-  }
-
   // Returns a Uint8Array subarray pointing to the attribute entry in the buffer.
   getAddress(attIndex) {
-    const bytePos = this.getBytePos(attIndex);
+    const bytePos = this._byteOffset + this._byteStride * attIndex;
     return this._buffer.data.subarray(bytePos);
   }
 
@@ -2365,10 +2360,6 @@ class AttributesDecoder extends AttributesDecoderInterface {
     return true;
   }
 
-  get pointCloud() {
-    return this._pointCloud;
-  }
-
 }
 
 // compression/attributes/SequentialAttributeDecoder.js - ported from compression/attributes/sequential_attribute_decoder.h/cc
@@ -2559,22 +2550,6 @@ class PredictionSchemeDecoderInterface {
   }
 
   /**
-   * Returns the transform type used by the prediction scheme.
-   * @returns {number}
-   */
-  getTransformType() {
-    return -1;
-  }
-
-  /**
-   * Returns the encoded/decoded attribute.
-   * @returns {object|null}
-   */
-  getAttribute() {
-    return null;
-  }
-
-  /**
    * Decodes prediction scheme-specific data from the input buffer.
    * @param {DecoderBuffer} buffer
    * @returns {boolean}
@@ -2633,11 +2608,6 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
     return true;
   }
 
-  /** @returns {object} */
-  getAttribute() {
-    return this._attribute;
-  }
-
   /** @returns {number} */
   getNumParentAttributes() {
     return 0;
@@ -2662,16 +2632,6 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
   /** @returns {boolean} */
   areCorrectionsPositive() {
     return this._transform.areCorrectionsPositive();
-  }
-
-  /** @returns {number} */
-  getTransformType() {
-    return this._transform.getType();
-  }
-
-  /** @returns {object} */
-  get attribute() {
-    return this._attribute;
   }
 
   /** @returns {object} */
@@ -2768,14 +2728,6 @@ class MeshPredictionSchemeDecoder extends PredictionSchemeDecoder {
   constructor(attribute, transform, meshData) {
     super(attribute, transform);
     this._meshData = meshData;
-  }
-
-  /**
-   * Returns the mesh data used by this prediction scheme.
-   * @returns {object}
-   */
-  get meshData() {
-    return this._meshData;
   }
 
 }
@@ -4589,11 +4541,6 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     return false;
   }
 
-  /** @returns {number} */
-  getNormalPredictionMode() {
-    return this._normalPredictionMode;
-  }
-
   /**
    * Precomputes the integer position of every data entry once, so the hot
    * per-corner ring traversal reads from a flat Int32Array instead of going
@@ -4964,9 +4911,6 @@ class MeshPredictionSchemeData {
   }
 
   /** @returns {object} */
-  get mesh() { return this._mesh; }
-
-  /** @returns {object} */
   get cornerTable() { return this._cornerTable; }
 
   /** @returns {Array|Int32Array} */
@@ -5155,20 +5099,6 @@ class PredictionSchemeWrapDecodingTransform {
   }
 
   /**
-   * @returns {number}
-   */
-  numComponents() {
-    return this._numComponents;
-  }
-
-  /**
-   * @returns {number}
-   */
-  quantizationBits() {
-    return -1;
-  }
-
-  /**
    * Computes the original value from predicted and correction values,
    * unwrapping values that fall outside the [min, max] range.
    * @param {Int32Array|TypedArray} predictedVals
@@ -5246,13 +5176,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
   constructor() {
     super();
     this._predictionScheme = null;
-  }
-
-  init(decoder, attributeId) {
-    if (!super.init(decoder, attributeId)) {
-      return false;
-    }
-    return true;
   }
 
   transformAttributeToOriginalFormat(pointIds) {
@@ -6798,7 +6721,6 @@ class DepthFirstTraverser {
     this._vertexLeftmost = cornerTable.vertexLeftmostCornerArray();
     this._numCorners = cornerTable.numCorners();
     this._cornerTraversalStack = new Int32Array(this._numCorners);
-    this._hasOnNewFaceVisited = typeof observer.onNewFaceVisited === 'function';
   }
 
   cornerTable() {
@@ -6820,7 +6742,6 @@ class DepthFirstTraverser {
     const oppositeCorners = this._oppositeCorners;
     const vertexLeftmost = this._vertexLeftmost;
     const stack = this._cornerTraversalStack;
-    const hasOnNewFaceVisited = this._hasOnNewFaceVisited;
     let numVisitedFaces = this._numVisitedFaces;
 
     let stackSize = 0;
@@ -6858,9 +6779,6 @@ class DepthFirstTraverser {
       while (true) {
         isFaceVisited[faceId] = true;
         numVisitedFaces++;
-        if (hasOnNewFaceVisited) {
-          observer.onNewFaceVisited(faceId);
-        }
 
         const vertId = cornerToVertex[cornerId];
         if (vertId === kInvalidVertexIndex$1) {
@@ -6965,7 +6883,6 @@ class MaxPredictionDegreeTraverser {
     // Flat connectivity arrays (see DepthFirstTraverser for why).
     this._cornerToVertex = null;
     this._oppositeCorners = null;
-    this._hasOnNewFaceVisited = false;
     // Identifies the traversal order for the shared traversal cache
     // (MESH_TRAVERSAL_PREDICTION_DEGREE). See MeshTraversalSequencer.
     this._traversalMethodId = 1;
@@ -6979,7 +6896,6 @@ class MaxPredictionDegreeTraverser {
     this._numVisitedFaces = 0;
     this._cornerToVertex = cornerTable.cornerToVertexArray();
     this._oppositeCorners = cornerTable.oppositeCornerArray();
-    this._hasOnNewFaceVisited = typeof observer.onNewFaceVisited === 'function';
     this._traversalStacks = [[], [], []]; // kMaxPriority buckets
     this._bestPriority = 0;
   }
@@ -7052,7 +6968,6 @@ class MaxPredictionDegreeTraverser {
     const isFaceVisited = this._isFaceVisited;
     const isVertexVisited = this._isVertexVisited;
     const observer = this._observer;
-    const hasOnNewFaceVisited = this._hasOnNewFaceVisited;
 
     // Traversal starts from |cornerId|; it follows the right or left
     // neighboring faces based on their prediction degree.
@@ -7091,9 +7006,6 @@ class MaxPredictionDegreeTraverser {
         faceId = (cornerId / 3) | 0;
         isFaceVisited[faceId] = 1;
         this._numVisitedFaces++;
-        if (hasOnNewFaceVisited) {
-          observer.onNewFaceVisited(faceId);
-        }
 
         // If the newly reached vertex hasn't been visited, mark and notify.
         const vertId = cornerToVertex[cornerId];
@@ -7649,22 +7561,12 @@ class MeshEdgebreakerDecoderImpl {
     this._decoder = null;
     this._cornerTable = null;
     this._cornerTraversalStack = [];
-    this._vertexTraversalLength = [];
     this._topologySplitData = [];
     this._holeEventData = [];
     this._initFaceConfigurations = [];
     this._initCorners = [];
-    this._lastSymbolId = -1;
-    this._lastVertId = -1;
-    this._lastFaceId = -1;
-    this._visitedFaces = [];
-    this._visitedVerts = [];
     this._isVertHole = [];
-    this._numNewVertices = 0;
-    this._newToParentVertexMap = new Map();
     this._numEncodedVertices = 0;
-    this._processedCornerIds = [];
-    this._processedConnectivityCorners = [];
     this._posEncodingData = new MeshAttributeIndicesEncodingData();
     this._posDataDecoderId = -1;
     // Per-decode cache of vertex-traversal results, keyed by corner table, so
@@ -7812,9 +7714,8 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   decodeConnectivity() {
-    this._numNewVertices = 0;
-    this._newToParentVertexMap.clear();
-
+    // Bitstreams < 2.2 prefix a new-vertex count here; it is read only to
+    // advance the cursor (the value is unused by this decoder).
     if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
       let numNewVerts;
       if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
@@ -7824,7 +7725,6 @@ class MeshEdgebreakerDecoderImpl {
         numNewVerts = decodeVarint(this._decoder.buffer());
         if (numNewVerts === undefined) return false;
       }
-      this._numNewVertices = numNewVerts;
     }
 
     let numEncodedVertices;
@@ -7896,19 +7796,12 @@ class MeshEdgebreakerDecoderImpl {
       return false; // Split symbols are a sub-set of all symbols.
     }
     // Decode topology (connectivity).
-    this._vertexTraversalLength = [];
     this._cornerTable = new CornerTable();
     this._vertexTraversalCache = new Map();
-    this._processedCornerIds = [];
-    this._processedConnectivityCorners = [];
     this._topologySplitData = [];
     this._holeEventData = [];
     this._initFaceConfigurations = [];
     this._initCorners = [];
-
-    this._lastSymbolId = -1;
-    this._lastFaceId = -1;
-    this._lastVertId = -1;
 
     this._attributeData = [];
     for (let i = 0; i < numAttributeData; ++i) {
