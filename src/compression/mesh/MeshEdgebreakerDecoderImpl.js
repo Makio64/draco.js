@@ -21,6 +21,15 @@ import { MeshAttributeCornerTable } from '../../mesh/MeshAttributeCornerTable.js
 const kInvalidCornerIndex = -1;
 const kInvalidVertexIndex = -1;
 
+// Reads a count that is encoded as a varint in bitstream >= 2.0 and as a raw
+// little-endian uint32 below it. Returns the value, or undefined on a short
+// read. Used by the many version-gated header reads below.
+function decodeVarintOrUint32(buffer, bitstreamVersion) {
+  return bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)
+    ? buffer.decodeUint32()
+    : decodeVarint(buffer);
+}
+
 // Implementation of the edgebreaker decoder that decodes data encoded with the
 // MeshEdgebreakerEncoderImpl class. The implementation is based on the
 // algorithm presented in Isenburg et al'02 "Spirale Reversi: Reverse
@@ -187,34 +196,19 @@ class MeshEdgebreakerDecoderImpl {
     // Bitstreams < 2.2 prefix a new-vertex count here; it is read only to
     // advance the cursor (the value is unused by this decoder).
     if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      let numNewVerts;
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        numNewVerts = this._decoder.buffer().decodeUint32();
-        if (numNewVerts === undefined) return false;
-      } else {
-        numNewVerts = decodeVarint(this._decoder.buffer());
-        if (numNewVerts === undefined) return false;
-      }
+      const numNewVerts = decodeVarintOrUint32(
+        this._decoder.buffer(), this._decoder.bitstreamVersion());
+      if (numNewVerts === undefined) return false;
     }
 
-    let numEncodedVertices;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numEncodedVertices = this._decoder.buffer().decodeUint32();
-      if (numEncodedVertices === undefined) return false;
-    } else {
-      numEncodedVertices = decodeVarint(this._decoder.buffer());
-      if (numEncodedVertices === undefined) return false;
-    }
+    const numEncodedVertices = decodeVarintOrUint32(
+      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    if (numEncodedVertices === undefined) return false;
     this._numEncodedVertices = numEncodedVertices;
 
-    let numFaces;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numFaces = this._decoder.buffer().decodeUint32();
-      if (numFaces === undefined) return false;
-    } else {
-      numFaces = decodeVarint(this._decoder.buffer());
-      if (numFaces === undefined) return false;
-    }
+    const numFaces = decodeVarintOrUint32(
+      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    if (numFaces === undefined) return false;
 
     if (numFaces > 0x7FFFFFFF / 3) {
       return false; // Draco cannot handle this many faces.
@@ -236,14 +230,9 @@ class MeshEdgebreakerDecoderImpl {
     const numAttributeData = this._decoder.buffer().decodeUint8();
     if (numAttributeData === undefined) return false;
 
-    let numEncodedSymbols;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numEncodedSymbols = this._decoder.buffer().decodeUint32();
-      if (numEncodedSymbols === undefined) return false;
-    } else {
-      numEncodedSymbols = decodeVarint(this._decoder.buffer());
-      if (numEncodedSymbols === undefined) return false;
-    }
+    const numEncodedSymbols = decodeVarintOrUint32(
+      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    if (numEncodedSymbols === undefined) return false;
 
     if (numFaces < numEncodedSymbols) {
       return false;
@@ -253,14 +242,9 @@ class MeshEdgebreakerDecoderImpl {
       return false;
     }
 
-    let numEncodedSplitSymbols;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numEncodedSplitSymbols = this._decoder.buffer().decodeUint32();
-      if (numEncodedSplitSymbols === undefined) return false;
-    } else {
-      numEncodedSplitSymbols = decodeVarint(this._decoder.buffer());
-      if (numEncodedSplitSymbols === undefined) return false;
-    }
+    const numEncodedSplitSymbols = decodeVarintOrUint32(
+      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    if (numEncodedSplitSymbols === undefined) return false;
 
     if (numEncodedSplitSymbols > numEncodedSymbols) {
       return false; // Split symbols are a sub-set of all symbols.
@@ -295,14 +279,9 @@ class MeshEdgebreakerDecoderImpl {
 
     let topologySplitDecodedBytes = -1;
     if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      let encodedConnectivitySize;
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        encodedConnectivitySize = this._decoder.buffer().decodeUint32();
-        if (encodedConnectivitySize === undefined) return false;
-      } else {
-        encodedConnectivitySize = decodeVarint(this._decoder.buffer());
-        if (encodedConnectivitySize === undefined) return false;
-      }
+      const encodedConnectivitySize = decodeVarintOrUint32(
+        this._decoder.buffer(), this._decoder.bitstreamVersion());
+      if (encodedConnectivitySize === undefined) return false;
       if (encodedConnectivitySize === 0 ||
           encodedConnectivitySize > this._decoder.buffer().remainingSize) {
         return false;
@@ -805,14 +784,9 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   _decodeHoleAndTopologySplitEvents(decoderBuffer) {
-    let numTopologySplits;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numTopologySplits = decoderBuffer.decodeUint32();
-      if (numTopologySplits === undefined) return -1;
-    } else {
-      numTopologySplits = decodeVarint(decoderBuffer);
-      if (numTopologySplits === undefined) return -1;
-    }
+    const numTopologySplits = decodeVarintOrUint32(
+      decoderBuffer, this._decoder.bitstreamVersion());
+    if (numTopologySplits === undefined) return -1;
 
     if (numTopologySplits > 0) {
       if (numTopologySplits > this._cornerTable.numFaces()) {

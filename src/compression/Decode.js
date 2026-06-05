@@ -15,67 +15,23 @@ import { PointCloudSequentialDecoder } from './point_cloud/PointCloudSequentialD
 import { PointCloudKdTreeDecoder } from './point_cloud/PointCloudKdTreeDecoder.js';
 import { MeshSequentialDecoder } from './mesh/MeshSequentialDecoder.js';
 import { MeshEdgebreakerDecoder } from './mesh/MeshEdgebreakerDecoder.js';
+import { PointCloudDecoder } from './point_cloud/PointCloudDecoder.js';
 
-// Decodes the Draco header from the buffer. Returns { header, ok, message }.
-function decodeHeader(buffer) {
+// Reads the Draco header from a read-only copy of inBuffer (without advancing
+// the original), so the geometry type can be checked before picking a decoder.
+// Reuses PointCloudDecoder.decodeHeader and adapts its Status to a plain object.
+// Returns { ok, header, message }.
+function peekHeader(inBuffer) {
+
+  const tempBuffer = new DecoderBuffer();
+  tempBuffer.init(inBuffer.data, inBuffer.data.length);
+  tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
+  // Restore position to match the original buffer's current position.
+  tempBuffer.advance(inBuffer.decodedSize);
 
   const header = new DracoHeader();
-
-  // Read 5-byte magic string "DRACO"
-  for (let i = 0; i < 5; ++i) {
-
-    const byte = buffer.decodeInt8();
-    if (byte === undefined) {
-      return { header: null, ok: false, message: 'Failed to read header magic bytes.' };
-    }
-
-    header.dracoString[i] = byte;
-
-  }
-
-  // Verify magic string
-  const magic = String.fromCharCode(
-    header.dracoString[0] & 0xFF,
-    header.dracoString[1] & 0xFF,
-    header.dracoString[2] & 0xFF,
-    header.dracoString[3] & 0xFF,
-    header.dracoString[4] & 0xFF
-  );
-
-  if (magic !== 'DRACO') {
-    return { header: null, ok: false, message: 'Not a Draco encoded file.' };
-  }
-
-  // Read version
-  header.versionMajor = buffer.decodeUint8();
-  if (header.versionMajor === undefined) {
-    return { header: null, ok: false, message: 'Failed to read version major.' };
-  }
-
-  header.versionMinor = buffer.decodeUint8();
-  if (header.versionMinor === undefined) {
-    return { header: null, ok: false, message: 'Failed to read version minor.' };
-  }
-
-  // Read encoder type
-  header.encoderType = buffer.decodeUint8();
-  if (header.encoderType === undefined) {
-    return { header: null, ok: false, message: 'Failed to read encoder type.' };
-  }
-
-  // Read encoder method
-  header.encoderMethod = buffer.decodeUint8();
-  if (header.encoderMethod === undefined) {
-    return { header: null, ok: false, message: 'Failed to read encoder method.' };
-  }
-
-  // Read flags
-  header.flags = buffer.decodeUint16();
-  if (header.flags === undefined) {
-    return { header: null, ok: false, message: 'Failed to read flags.' };
-  }
-
-  return { header, ok: true, message: '' };
+  const status = PointCloudDecoder.decodeHeader(tempBuffer, header);
+  return { ok: status.ok(), header, message: status.errorMsg };
 
 }
 
@@ -128,14 +84,7 @@ class Decoder {
   // POINT_CLOUD, TRIANGULAR_MESH, or INVALID_GEOMETRY_TYPE on error.
   static getEncodedGeometryType(inBuffer) {
 
-    // Use a copy of the buffer so we don't advance the original position.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    // Restore position to match the original buffer's current position.
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
+    const result = peekHeader(inBuffer);
     if (!result.ok) {
       return EncodedGeometryType.INVALID_GEOMETRY_TYPE;
     }
@@ -199,13 +148,7 @@ class Decoder {
   // Returns { ok, message }.
   decodeBufferToPointCloud(inBuffer, outGeometry) {
 
-    // Read header from a temporary copy to check type without advancing inBuffer.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
+    const result = peekHeader(inBuffer);
     if (!result.ok) {
       return { ok: false, message: result.message };
     }
@@ -223,13 +166,7 @@ class Decoder {
   // Returns { ok, message }.
   decodeBufferToMesh(inBuffer, outGeometry) {
 
-    // Read header from a temporary copy to check type without advancing inBuffer.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
+    const result = peekHeader(inBuffer);
     if (!result.ok) {
       return { ok: false, message: result.message };
     }
@@ -252,4 +189,4 @@ class Decoder {
 
 }
 
-export { Decoder, decodeHeader };
+export { Decoder };

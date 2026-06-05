@@ -2,43 +2,19 @@
 // Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_canonicalized_decoding_transform.h
 
 import { PredictionSchemeTransformType } from '../../config/CompressionShared.js';
-import { OctahedronToolBox } from '../NormalCompressionUtils.js';
+import { PredictionSchemeNormalOctahedronTransformBase } from './PredictionSchemeNormalOctahedronTransformBase.js';
 
 /**
  * Decodes correction values that were transformed using the canonicalized
  * octahedral normal transform back to original values.
  */
-class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
-
-  constructor() {
-    this._octahedronToolBox = new OctahedronToolBox();
-  }
+class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends PredictionSchemeNormalOctahedronTransformBase {
 
   /**
    * @returns {number}
    */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON_CANONICALIZED;
-  }
-
-  /**
-   * @returns {boolean}
-   */
-  areCorrectionsPositive() {
-    return true;
-  }
-
-  /**
-   * Dummy init to fulfill interface.
-   * @param {number} numComponents
-   */
-  init(numComponents) {}
-
-  /**
-   * @returns {number}
-   */
-  quantizationBits() {
-    return this._octahedronToolBox.quantizationBits();
   }
 
   /**
@@ -181,22 +157,6 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
 
     outOrigVals[outOffset] = origS + center;
     outOrigVals[outOffset + 1] = origT + center;
-  }
-
-  /**
-   * @private
-   * @param {number} maxQuantizedValue
-   * @returns {boolean}
-   */
-  _setMaxQuantizedValue(maxQuantizedValue) {
-    if (maxQuantizedValue % 2 === 0) return false;
-    let q = 0;
-    let v = maxQuantizedValue;
-    while (v > 0) {
-      v >>>= 1;
-      q++;
-    }
-    return this._octahedronToolBox.setQuantizationBits(q);
   }
 
 }
