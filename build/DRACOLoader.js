@@ -690,17 +690,6 @@ class Mesh extends PointCloud {
 
   }
 
-  // Returns the point id for a corner index (plain integer). With the flat face
-  // layout the corner index is a direct index into faces_.
-  cornerToPointId(ci) {
-
-    if (ci < 0) {
-      return -1;
-    }
-    return this.faces_[ci];
-
-  }
-
 }
 
 // core/Status.js - ported from status.h/cc
@@ -728,405 +717,26 @@ function okStatus() {
   return new Status(StatusCode.OK);
 }
 
-// metadata/Metadata.js - ported from metadata/metadata.h/cc
-
-// EntryValue wraps a Uint8Array buffer that stores arbitrary typed data.
-class EntryValue {
-
-  constructor(data) {
-
-    if (data instanceof Uint8Array) {
-
-      this.data = new Uint8Array(data);
-
-    } else if (typeof data === 'string') {
-
-      const encoder = new TextEncoder();
-      this.data = encoder.encode(data);
-
-    } else if (ArrayBuffer.isView(data)) {
-
-      this.data = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-
-    } else if (typeof data === 'number') {
-
-      // Store as int32 by default
-      const buf = new ArrayBuffer(4);
-      new Int32Array(buf)[0] = data;
-      this.data = new Uint8Array(buf);
-
-    } else {
-
-      this.data = new Uint8Array(0);
-
-    }
-
-  }
-
-  getValueAsInt32() {
-
-    if (this.data.length !== 4) return null;
-    return new Int32Array(this.data.buffer, this.data.byteOffset, 1)[0];
-
-  }
-
-  getValueAsDouble() {
-
-    if (this.data.length !== 8) return null;
-    return new Float64Array(this.data.buffer, this.data.byteOffset, 1)[0];
-
-  }
-
-  getValueAsString() {
-
-    if (this.data.length === 0) return null;
-    const decoder = new TextDecoder();
-    return decoder.decode(this.data);
-
-  }
-
-  getValueAsBinary() {
-
-    return this.data;
-
-  }
-
-}
-
-class Metadata {
-
-  constructor(other) {
-
-    // entries_: Map<string, EntryValue>
-    this.entries_ = new Map();
-    // sub_metadatas_: Map<string, Metadata>
-    this.sub_metadatas_ = new Map();
-
-    if (other instanceof Metadata) {
-
-      for (const [key, value] of other.entries_) {
-
-        this.entries_.set(key, new EntryValue(value.data));
-
-      }
-
-      for (const [key, value] of other.sub_metadatas_) {
-
-        this.sub_metadatas_.set(key, new Metadata(value));
-
-      }
-
-    }
-
-  }
-
-  addEntryInt(name, value) {
-
-    const buf = new ArrayBuffer(4);
-    new Int32Array(buf)[0] = value;
-    this.entries_.set(name, new EntryValue(new Uint8Array(buf)));
-
-  }
-
-  getEntryInt(name) {
-
-    const entry = this.entries_.get(name);
-    if (entry === undefined) return null;
-    return entry.getValueAsInt32();
-
-  }
-
-  addEntryIntArray(name, values) {
-
-    const buf = new Int32Array(values);
-    this.entries_.set(name, new EntryValue(new Uint8Array(buf.buffer)));
-
-  }
-
-  getEntryIntArray(name) {
-
-    const entry = this.entries_.get(name);
-    if (entry === undefined) return null;
-    if (entry.data.length === 0 || entry.data.length % 4 !== 0) return null;
-    const result = new Int32Array(entry.data.buffer, entry.data.byteOffset, entry.data.length / 4);
-    return Array.from(result);
-
-  }
-
-  addEntryDouble(name, value) {
-
-    const buf = new ArrayBuffer(8);
-    new Float64Array(buf)[0] = value;
-    this.entries_.set(name, new EntryValue(new Uint8Array(buf)));
-
-  }
-
-  getEntryDouble(name) {
-
-    const entry = this.entries_.get(name);
-    if (entry === undefined) return null;
-    return entry.getValueAsDouble();
-
-  }
-
-  addEntryDoubleArray(name, values) {
-
-    const buf = new Float64Array(values);
-    this.entries_.set(name, new EntryValue(new Uint8Array(buf.buffer)));
-
-  }
-
-  getEntryDoubleArray(name) {
-
-    const entry = this.entries_.get(name);
-    if (entry === undefined) return null;
-    if (entry.data.length === 0 || entry.data.length % 8 !== 0) return null;
-    const result = new Float64Array(entry.data.buffer, entry.data.byteOffset, entry.data.length / 8);
-    return Array.from(result);
-
-  }
-
-  addEntryString(name, value) {
-
-    this.entries_.set(name, new EntryValue(value));
-
-  }
-
-  getEntryString(name) {
-
-    const entry = this.entries_.get(name);
-    if (entry === undefined) return null;
-    return entry.getValueAsString();
-
-  }
-
-  addEntryBinary(name, value) {
-
-    this.entries_.set(name, new EntryValue(new Uint8Array(value)));
-
-  }
-
-  getEntryBinary(name) {
-
-    const entry = this.entries_.get(name);
-    if (entry === undefined) return null;
-    return entry.getValueAsBinary();
-
-  }
-
-  addSubMetadata(name, subMetadata) {
-
-    if (this.sub_metadatas_.has(name)) {
-      return false;
-    }
-
-    this.sub_metadatas_.set(name, subMetadata);
-    return true;
-
-  }
-
-  getSubMetadata(name) {
-
-    return this.sub_metadatas_.get(name) || null;
-
-  }
-
-  removeEntry(name) {
-
-    this.entries_.delete(name);
-
-  }
-
-  numEntries() {
-
-    return this.entries_.size;
-
-  }
-
-  entries() {
-
-    return this.entries_;
-
-  }
-
-  subMetadatas() {
-
-    return this.sub_metadatas_;
-
-  }
-
-}
-
-// metadata/GeometryMetadata.js - ported from metadata/geometry_metadata.h/cc
-
-
-class AttributeMetadata extends Metadata {
-
-  constructor(other) {
-
-    if (other instanceof AttributeMetadata) {
-
-      super(other);
-      this.att_unique_id_ = other.att_unique_id_;
-
-    } else if (other instanceof Metadata) {
-
-      super(other);
-      this.att_unique_id_ = 0;
-
-    } else {
-
-      super();
-      this.att_unique_id_ = 0;
-
-    }
-
-  }
-
-  setAttUniqueId(attUniqueId) {
-
-    this.att_unique_id_ = attUniqueId;
-
-  }
-
-  attUniqueId() {
-
-    return this.att_unique_id_;
-
-  }
-
-}
-
-class GeometryMetadata extends Metadata {
-
-  constructor(other) {
-
-    if (other instanceof GeometryMetadata) {
-
-      super(other);
-      this.att_metadatas_ = [];
-
-      for (let i = 0; i < other.att_metadatas_.length; ++i) {
-
-        this.att_metadatas_.push(new AttributeMetadata(other.att_metadatas_[i]));
-
-      }
-
-    } else if (other instanceof Metadata) {
-
-      super(other);
-      this.att_metadatas_ = [];
-
-    } else {
-
-      super();
-      this.att_metadatas_ = [];
-
-    }
-
-  }
-
-  getAttributeMetadataByStringEntry(entryName, entryValue) {
-
-    for (const attMetadata of this.att_metadatas_) {
-
-      const value = attMetadata.getEntryString(entryName);
-      if (value === null) continue;
-      if (value === entryValue) {
-        return attMetadata;
-      }
-
-    }
-
-    return null;
-
-  }
-
-  addAttributeMetadata(attMetadata) {
-
-    if (!attMetadata) {
-      return false;
-    }
-
-    this.att_metadatas_.push(attMetadata);
-    return true;
-
-  }
-
-  deleteAttributeMetadataByUniqueId(attUniqueId) {
-
-    if (attUniqueId < 0) return;
-
-    for (let i = 0; i < this.att_metadatas_.length; ++i) {
-
-      if (this.att_metadatas_[i].attUniqueId() === attUniqueId) {
-
-        this.att_metadatas_.splice(i, 1);
-        return;
-
-      }
-
-    }
-
-  }
-
-  getAttributeMetadataByUniqueId(attUniqueId) {
-
-    if (attUniqueId < 0) return null;
-
-    for (const attMetadata of this.att_metadatas_) {
-
-      if (attMetadata.attUniqueId() === attUniqueId) {
-        return attMetadata;
-      }
-
-    }
-
-    return null;
-
-  }
-
-  attributeMetadatas() {
-
-    return this.att_metadatas_;
-
-  }
-
-}
-
 // metadata/MetadataDecoder.js - ported from metadata/metadata_decoder.h/cc
+//
+// The decoder does not surface metadata on the output geometry, so this only
+// parses the metadata structure far enough to consume the exact bytes it
+// occupies, keeping the rest of the bitstream aligned. (A full port that builds
+// Metadata objects lives in the git history if the content is ever needed.)
 
 
-// Class for decoding the metadata.
+// Limit metadata nesting depth to avoid stack overflow.
+const kMaxSubmetadataLevel = 1000;
+
 class MetadataDecoder {
 
   constructor() {
-
     this.buffer_ = null;
-
   }
 
-  // Decodes metadata from the buffer into the provided Metadata object.
-  // Returns true on success.
-  decodeMetadata(inBuffer, metadata) {
-
-    if (!metadata) {
-      return false;
-    }
-
-    this.buffer_ = inBuffer;
-    return this._decodeMetadata(metadata);
-
-  }
-
-  // Decodes geometry metadata (including attribute metadata) from the buffer.
-  // Returns true on success.
-  decodeGeometryMetadata(inBuffer, metadata) {
-
-    if (!metadata) {
-      return false;
-    }
-
+  // Skips the geometry metadata (per-attribute metadata followed by the
+  // geometry-level metadata) in the buffer. Returns true on success.
+  skipGeometryMetadata(inBuffer) {
     this.buffer_ = inBuffer;
 
     const numAttMetadata = decodeVarint(this.buffer_);
@@ -1134,163 +744,84 @@ class MetadataDecoder {
       return false;
     }
 
-    // Decode attribute metadata.
     for (let i = 0; i < numAttMetadata; ++i) {
-
-      const attUniqueId = decodeVarint(this.buffer_);
-      if (attUniqueId === undefined) {
+      // Attribute unique id, then the attribute's metadata block.
+      if (decodeVarint(this.buffer_) === undefined) {
         return false;
       }
-
-      const attMetadata = new AttributeMetadata();
-      attMetadata.setAttUniqueId(attUniqueId);
-
-      if (!this._decodeMetadata(attMetadata)) {
+      if (!this._skipMetadata(0)) {
         return false;
       }
-
-      metadata.addAttributeMetadata(attMetadata);
-
     }
 
-    return this._decodeMetadata(metadata);
-
+    return this._skipMetadata(0);
   }
 
-  // Internal iterative metadata decoder using a stack to avoid deep recursion.
-  _decodeMetadata(metadata) {
+  // Reads (and discards) one metadata block: its key-value entries and any
+  // nested sub-metadata. Mirrors the byte layout decoded by the C++
+  // MetadataDecoder. Sub-blocks are read depth-first in stream order, matching
+  // the reference's stack-based traversal.
+  _skipMetadata(level) {
+    if (level > kMaxSubmetadataLevel) {
+      return false;
+    }
 
-    // Limit metadata nesting depth to avoid stack overflow.
-    const kMaxSubmetadataLevel = 1000;
-
-    const metadataStack = [];
-    metadataStack.push({
-      parentMetadata: null,
-      decodedMetadata: metadata,
-      level: 0
-    });
-
-    while (metadataStack.length > 0) {
-
-      const mp = metadataStack.pop();
-      let currentMetadata = mp.decodedMetadata;
-
-      if (mp.parentMetadata !== null) {
-
-        if (mp.level > kMaxSubmetadataLevel) {
-          return false;
-        }
-
-        const subMetadataName = this._decodeName();
-        if (subMetadataName === null) {
-          return false;
-        }
-
-        const subMetadata = new Metadata();
-        currentMetadata = subMetadata;
-
-        if (!mp.parentMetadata.addSubMetadata(subMetadataName, subMetadata)) {
-          return false;
-        }
-
-      }
-
-      if (currentMetadata === null) {
+    const numEntries = decodeVarint(this.buffer_);
+    if (numEntries === undefined) {
+      return false;
+    }
+    for (let i = 0; i < numEntries; ++i) {
+      if (!this._skipEntry()) {
         return false;
       }
+    }
 
-      // Decode entries.
-      const numEntries = decodeVarint(this.buffer_);
-      if (numEntries === undefined) {
+    const numSubMetadata = decodeVarint(this.buffer_);
+    if (numSubMetadata === undefined) {
+      return false;
+    }
+    if (numSubMetadata > this.buffer_.remainingSize) {
+      // The decoded number of metadata items is unreasonably high.
+      return false;
+    }
+    for (let i = 0; i < numSubMetadata; ++i) {
+      // Sub-metadata name, then the sub-metadata block.
+      if (!this._skipName()) {
         return false;
       }
-
-      for (let i = 0; i < numEntries; ++i) {
-
-        if (!this._decodeEntry(currentMetadata)) {
-          return false;
-        }
-
-      }
-
-      // Decode sub-metadata count.
-      const numSubMetadata = decodeVarint(this.buffer_);
-      if (numSubMetadata === undefined) {
+      if (!this._skipMetadata(level + 1)) {
         return false;
       }
-
-      if (numSubMetadata > this.buffer_.remainingSize) {
-        // The decoded number of metadata items is unreasonably high.
-        return false;
-      }
-
-      for (let i = 0; i < numSubMetadata; ++i) {
-
-        metadataStack.push({
-          parentMetadata: currentMetadata,
-          decodedMetadata: null,
-          level: mp.parentMetadata ? mp.level + 1 : mp.level
-        });
-
-      }
-
     }
 
     return true;
-
   }
 
-  // Decodes a single key-value entry and adds it to the metadata.
-  _decodeEntry(metadata) {
-
-    const entryName = this._decodeName();
-    if (entryName === null) {
+  // Skips a single key-value entry: name followed by a length-prefixed value.
+  _skipEntry() {
+    if (!this._skipName()) {
       return false;
     }
-
     const dataSize = decodeVarint(this.buffer_);
-    if (dataSize === undefined) {
+    if (dataSize === undefined || dataSize === 0) {
       return false;
     }
-
-    if (dataSize === 0) {
-      return false;
-    }
-
     if (dataSize > this.buffer_.remainingSize) {
       return false;
     }
-
-    const entryValue = this.buffer_.decodeBytes(dataSize);
-    if (entryValue === undefined) {
-      return false;
-    }
-
-    metadata.addEntryBinary(entryName, entryValue);
-    return true;
-
+    return this.buffer_.decodeBytes(dataSize) !== undefined;
   }
 
-  // Decodes a name string (uint8 length prefix followed by ASCII bytes).
-  _decodeName() {
-
+  // Skips a name (uint8 length prefix followed by that many bytes).
+  _skipName() {
     const nameLen = this.buffer_.decodeUint8();
     if (nameLen === undefined) {
-      return null;
+      return false;
     }
-
     if (nameLen === 0) {
-      return '';
+      return true;
     }
-
-    const nameBytes = this.buffer_.decodeBytes(nameLen);
-    if (nameBytes === undefined) {
-      return null;
-    }
-
-    const decoder = new TextDecoder();
-    return decoder.decode(nameBytes);
-
+    return this.buffer_.decodeBytes(nameLen) !== undefined;
   }
 
 }
@@ -1533,13 +1064,11 @@ class PointCloudDecoder {
   }
 
   _decodeMetadata() {
-    // Decode the geometry metadata from the bitstream. The content is not
-    // surfaced on the output geometry, but it must be decoded so the bytes are
-    // consumed and the rest of the bitstream stays aligned (otherwise a file
-    // with metadata decodes to garbage / empty geometry).
-    const metadata = new GeometryMetadata();
+    // Skip over the geometry metadata so the bytes are consumed and the rest of
+    // the bitstream stays aligned (the content is not surfaced on the output
+    // geometry; otherwise a metadata-bearing file decodes to empty geometry).
     const metadataDecoder = new MetadataDecoder();
-    if (!metadataDecoder.decodeGeometryMetadata(this._buffer, metadata)) {
+    if (!metadataDecoder.skipGeometryMetadata(this._buffer)) {
       return new Status(StatusCode.DRACO_ERROR, 'Failed to decode metadata.');
     }
     return okStatus();
@@ -1817,10 +1346,6 @@ class RAnsDecoder {
     return this.state === this.lRansBase;
   }
 
-  readerHasError() {
-    return this.state < this.lRansBase && this.bufOffset === 0;
-  }
-
   ransRead() {
     // Cache state in locals for the renormalization loop; properties are read
     // once and written back once. ransRead runs once per decoded symbol.
@@ -2012,16 +1537,6 @@ class RAnsSymbolDecoder {
       return false;
     }
     return true;
-  }
-
-  decodeSymbol() {
-    return this.ans_.ransRead();
-  }
-
-  // Decodes |count| symbols directly into out[0..count). See
-  // RAnsDecoder.decodeSymbols.
-  decodeSymbols(out, count) {
-    this.ans_.decodeSymbols(out, count);
   }
 
   endDecoding() {
@@ -2228,7 +1743,6 @@ class DataBuffer {
 
   constructor() {
     this._data = new Uint8Array(0);
-    this._updateCount = 0;
   }
 
   update(data, size, offset = 0) {
@@ -2243,13 +1757,11 @@ class DataBuffer {
       const src = new Uint8Array(data.buffer || data, data.byteOffset || 0, size);
       this._data.set(src, offset);
     }
-    this._updateCount++;
     return true;
   }
 
   resize(newSize) {
     this._resize(newSize);
-    this._updateCount++;
   }
 
   write(bytePos, inArray, dataSize) {
@@ -2267,7 +1779,6 @@ class DataBuffer {
 
   get data() { return this._data; }
   get dataSize() { return this._data.length; }
-  get updateCount() { return this._updateCount; }
 
   _resize(newSize) {
     if (newSize === this._data.length) return;
@@ -2307,10 +1818,6 @@ class GeometryAttribute {
     this._byteStride = byteStride;
     this._byteOffset = byteOffset;
     this._attributeType = attributeType;
-  }
-
-  isValid() {
-    return this._buffer !== null;
   }
 
   // Returns the byte position of the attribute entry in the data buffer.
@@ -2359,21 +1866,16 @@ class GeometryAttribute {
   }
 
   get attributeType() { return this._attributeType; }
-  set attributeType(type) { this._attributeType = type; }
 
   get dataType() { return this._dataType; }
 
   get numComponents() { return this._numComponents; }
-
-  get normalized() { return this._normalized; }
-  set normalized(value) { this._normalized = value; }
 
   get buffer() { return this._buffer; }
 
   get byteStride() { return this._byteStride; }
 
   get byteOffset() { return this._byteOffset; }
-  set byteOffset(value) { this._byteOffset = value; }
 
   get uniqueId() { return this._uniqueId; }
   set uniqueId(id) { this._uniqueId = id; }
@@ -2434,12 +1936,6 @@ class PointAttribute extends GeometryAttribute {
     return true;
   }
 
-  // Resizes the attribute storage.
-  resize(newNumUniqueEntries) {
-    this._numUniqueEntries = newNumUniqueEntries;
-    this._attributeBuffer.resize(newNumUniqueEntries * this.byteStride);
-  }
-
   get size() {
     return this._numUniqueEntries;
   }
@@ -2486,18 +1982,9 @@ class PointAttribute extends GeometryAttribute {
     this._indicesMap.fill(kInvalidAttributeValueIndex);
   }
 
-  // Sets an explicit map entry for a specific point index.
-  setPointMapEntry(pointIndex, entryIndex) {
-    this._indicesMap[pointIndex] = entryIndex;
-  }
-
   // Set attribute transform data for the attribute.
   setAttributeTransformData(transformData) {
     this._attributeTransformData = transformData;
-  }
-
-  getAttributeTransformData() {
-    return this._attributeTransformData;
   }
 
   // Converts the attribute value at the given index into the output array.
@@ -2903,14 +2390,6 @@ class SequentialAttributeDecoder {
     this._decoder = decoder;
     this._attribute = decoder.pointCloud().attribute(attributeId);
     this._attributeId = attributeId;
-    return true;
-  }
-
-  // Initialization for a specific attribute. This can be used mostly for
-  // standalone decoding of an attribute without a PointCloudDecoder.
-  initializeStandalone(attribute) {
-    this._attribute = attribute;
-    this._attributeId = -1;
     return true;
   }
 
@@ -3949,31 +3428,6 @@ class RAnsBitDecoder {
     }
     ans.state = x - xn - p;
     return false;
-  }
-
-  // Decode the next |nbits| and return the sequence in a uint32. |nbits| must be
-  // > 0 and <= 32.
-  decodeLeastSignificantBits32(nbits) {
-    const ans = this.ansDecoder_;
-    const p = this.p_;
-    let result = 0;
-    for (let i = 0; i < nbits; i++) {
-      if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-        ans.state = (ans.state << 8) | ans.buf[--ans.bufOffset];
-      }
-      const x = ans.state;
-      const quot = x >>> 8;
-      const rem = x & 0xFF;
-      const xn = quot * p;
-      if (rem < p) {
-        ans.state = xn + rem;
-        result = (result << 1) + 1;
-      } else {
-        ans.state = x - xn - p;
-        result = result << 1;
-      }
-    }
-    return result;
   }
 
   endDecoding() {}
@@ -6110,11 +5564,6 @@ class AttributeTransformData {
 
 class AttributeTransform {
 
-  // Virtual: try to init transform from attribute.
-  initFromAttribute(/* attribute */) {
-    return false;
-  }
-
   // Virtual: copy parameter values into the provided AttributeTransformData.
   copyToAttributeTransformData(/* outData */) {
     // Must be overridden.
@@ -6187,24 +5636,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
     this._quantizationBits = -1;
     this._minValues = [];
     this._range = 0;
-  }
-
-  // Try to init transform from attribute's existing transform data.
-  initFromAttribute(attribute) {
-    const transformData = attribute.getAttributeTransformData();
-    if (!transformData || transformData.transformType !== AttributeTransformType.QUANTIZATION_TRANSFORM) {
-      return false;
-    }
-    let byteOffset = 0;
-    this._quantizationBits = transformData.getParameterValue(byteOffset, 'int32');
-    byteOffset += 4;
-    this._minValues = new Array(attribute.numComponents);
-    for (let i = 0; i < attribute.numComponents; i++) {
-      this._minValues[i] = transformData.getParameterValue(byteOffset, 'float32');
-      byteOffset += 4;
-    }
-    this._range = transformData.getParameterValue(byteOffset, 'float32');
-    return true;
   }
 
   // Copy parameter values into the provided AttributeTransformData instance.
@@ -6288,8 +5719,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
 
   get quantizationBits() { return this._quantizationBits; }
   get range() { return this._range; }
-  get minValues() { return this._minValues; }
-  get isInitialized() { return this._quantizationBits !== -1; }
 
   minValue(axis) { return this._minValues[axis]; }
 
@@ -6449,16 +5878,6 @@ class AttributeOctahedronTransform extends AttributeTransform {
   constructor() {
     super();
     this._quantizationBits = -1;
-  }
-
-  // Try to init transform from attribute's existing transform data.
-  initFromAttribute(attribute) {
-    const transformData = attribute.getAttributeTransformData();
-    if (!transformData || transformData.transformType !== AttributeTransformType.OCTAHEDRON_TRANSFORM) {
-      return false;
-    }
-    this._quantizationBits = transformData.getParameterValue(0, 'int32');
-    return true;
   }
 
   // Copy parameter values into the provided AttributeTransformData instance.
@@ -7386,31 +6805,6 @@ class DepthFirstTraverser {
     return this._cornerTable;
   }
 
-  // Connectivity accessors operating on the extracted flat arrays. They mirror
-  // the corner table's methods exactly but are monomorphic (the receiver is
-  // always this traverser and the arrays are always typed), so the JIT inlines
-  // them. next/previous are only ever called with a valid (>= 0) corner here.
-  _next(c) {
-    return (c % 3) === 2 ? c - 2 : c + 1;
-  }
-  _previous(c) {
-    return (c % 3) === 0 ? c + 2 : c - 1;
-  }
-  _vertex(c) {
-    return this._cornerToVertex[c];
-  }
-  _getRightCorner(c) {
-    return this._oppositeCorners[this._next(c)];
-  }
-  _getLeftCorner(c) {
-    return this._oppositeCorners[this._previous(c)];
-  }
-  _isOnBoundary(v) {
-    const lc = this._vertexLeftmost[v];
-    if (lc === undefined || lc < 0) return true;
-    return this._oppositeCorners[this._next(lc)] < 0;
-  }
-
   onTraversalStart() {}
   onTraversalEnd() {}
 
@@ -8111,11 +7505,6 @@ class MeshAttributeCornerTable {
 
   }
 
-  isCornerOnSeam(corner) {
-
-    return this.is_vertex_on_seam_[this.corner_table_.vertex(corner)];
-
-  }
 
   swingRight(corner) {
 
@@ -8239,18 +7628,6 @@ class MeshAttributeCornerTable {
   isDegenerated(faceIndex) {
 
     return this.corner_table_.isDegenerated(faceIndex);
-
-  }
-
-  noInteriorSeams() {
-
-    return this.no_interior_seams_;
-
-  }
-
-  cornerTable() {
-
-    return this.corner_table_;
 
   }
 
@@ -8693,17 +8070,6 @@ class MeshEdgebreakerDecoderImpl {
     return true;
   }
 
-  _setOppositeCorners(corner0, corner1) {
-    this._cornerTable.setOppositeCorner(corner0, corner1);
-    this._cornerTable.setOppositeCorner(corner1, corner0);
-  }
-
-  _isFaceVisited(cornerId) {
-    if (cornerId < 0) {
-      return true; // Invalid corner signalizes that the face does not exist.
-    }
-    return this._visitedFaces[this._cornerTable.face(cornerId)];
-  }
 
   _decodeConnectivity(numSymbols) {
     // Algorithm does the reverse decoding of the symbols encoded with the
@@ -9585,11 +8951,6 @@ class CornerTable {
     return rem === 0 ? corner + 2 : corner - 1;
   }
 
-  face(corner) {
-    if (corner < 0) return -1;
-    return (corner / 3) | 0;
-  }
-
   // Get the vertex at a corner.
   vertex(corner) {
     if (corner < 0 || corner >= this._numCorners) return -1;
@@ -9602,12 +8963,6 @@ class CornerTable {
     return this._oppositeCorners[corner];
   }
 
-  // Get the left-most corner of a vertex.
-  leftMostCorner(vertex) {
-    if (vertex < 0 || vertex >= this._numVertices) return -1;
-    return this._vertexCorners[vertex];
-  }
-
   // --- Flat-array accessors used by DepthFirstTraverser to avoid polymorphic
   // per-corner method dispatch in the traversal hot loop. ---
   cornerToVertexArray() {
@@ -9618,23 +8973,6 @@ class CornerTable {
   }
   vertexLeftmostCornerArray() {
     return this._vertexCorners;
-  }
-
-  // Map a corner to a vertex.
-  mapCornerToVertex(corner, vertex) {
-    this._cornerToVertex[corner] = vertex;
-  }
-
-  // Set the opposite corner.
-  setOppositeCorner(corner, opposite) {
-    this._oppositeCorners[corner] = opposite;
-  }
-
-  // Set the left-most corner of a vertex.
-  setLeftMostCorner(vertex, corner) {
-    if (vertex >= 0 && vertex < this._numVertices) {
-      this._vertexCorners[vertex] = corner;
-    }
   }
 
   // Add a new vertex. Mirrors C++ CornerTable::AddNewVertex() which does
@@ -9652,31 +8990,6 @@ class CornerTable {
     }
     this._vertexCorners[newVertex] = -1;
     return newVertex;
-  }
-
-  // Make a vertex isolated (no corners point to it).
-  makeVertexIsolated(vertex) {
-    if (vertex >= 0 && vertex < this._numVertices) {
-      this._vertexCorners[vertex] = -1;
-    }
-  }
-
-  // GetLeftCorner(c) = Opposite(Previous(c))
-  getLeftCorner(corner) {
-    if (corner < 0) return -1;
-    return this.opposite(this.previous(corner));
-  }
-
-  // GetRightCorner(c) = Opposite(Next(c))
-  getRightCorner(corner) {
-    if (corner < 0) return -1;
-    return this.opposite(this.next(corner));
-  }
-
-  isOnBoundary(vert) {
-    const corner = this.leftMostCorner(vert);
-    if (corner < 0) return true;
-    return this.swingLeft(corner) < 0;
   }
 
   // Swing left: go to the next corner around a vertex in the CCW direction.
