@@ -25,18 +25,15 @@ modest amount of decode speed for a much smaller, simpler-to-deploy loader.
 ## Status
 
 Targets **Draco bitstream version 2.2** — what current Draco encoders and glTF
-exporters produce. (Older bitstreams aren't a support goal, though many still
-decode.)
+exporters produce.
 
-Both triangle-mesh connectivity paths are implemented — EdgeBreaker (what
-glTF/Draco content uses in practice) and sequential — covering positions,
-normals, colors, texture coords, and generic attributes, with every prediction
-scheme (delta, parallelogram / multi- / constrained-multi-parallelogram,
-octahedral-normal, geometric-normal, and portable texcoords), both the
-depth-first and max-prediction-degree attribute traversals, and quantization /
-octahedral transforms. Geometry metadata is parsed (so metadata-bearing files
-decode correctly) but not surfaced on the returned geometry. **Point-cloud**
-decoding (sequential and KD-tree) is not implemented yet.
+Not implemented:
+
+- **Point-cloud decoding** (sequential and KD-tree) — only triangle meshes are
+  decoded.
+- **Metadata content** — geometry metadata is parsed (so metadata-bearing files
+  still decode correctly) but is not surfaced on the returned geometry.
+- **Older bitstreams** (< 2.2) — not a support goal, though many still decode.
 
 ## Usage
 
