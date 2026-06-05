@@ -4324,7 +4324,7 @@ class MeshPredictionSchemeTexCoordsPortableDecoder extends MeshPredictionSchemeD
  *   maxValue: maxQuantizedValue - 1 (even)
  *   centerValue: maxValue / 2
  */
-let OctahedronToolBox$1 = class OctahedronToolBox {
+class OctahedronToolBox {
 
   constructor() {
     this._quantizationBits = -1;
@@ -4476,7 +4476,7 @@ let OctahedronToolBox$1 = class OctahedronToolBox {
     }
   }
 
-};
+}
 
 // src/compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalPredictorArea.js
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
@@ -4755,7 +4755,7 @@ class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDec
   constructor(attribute, transform, meshData) {
     super(attribute, transform, meshData);
     this._predictor = new MeshPredictionSchemeGeometricNormalPredictorArea(meshData);
-    this._octahedronToolBox = new OctahedronToolBox$1();
+    this._octahedronToolBox = new OctahedronToolBox();
     this._flipNormalBitDecoder = new RAnsBitDecoder();
   }
 
@@ -5722,80 +5722,6 @@ class SequentialQuantizationAttributeDecoder extends SequentialIntegerAttributeD
 // attributes/AttributeOctahedronTransform.js - ported from attributes/attribute_octahedron_transform.h/cc
 
 
-// Inline OctahedronToolBox math (ported from normal_compression_utils.h).
-// Only the decode-side method QuantizedOctahedralCoordsToUnitVector is needed.
-class OctahedronToolBox {
-
-  constructor() {
-    this._quantizationBits = -1;
-    this._maxQuantizedValue = -1;
-    this._maxValue = -1;
-    this._dequantizationScale = 1.0;
-    this._centerValue = -1;
-  }
-
-  setQuantizationBits(q) {
-    if (q < 2 || q > 30) {
-      return false;
-    }
-    this._quantizationBits = q;
-    this._maxQuantizedValue = ((1 << q) >>> 0) - 1;
-    this._maxValue = this._maxQuantizedValue - 1;
-    // C++ (normal_compression_utils.h): dequantization_scale_ = 2.f / max_value_
-    // evaluated in float32. Keep it float32 so the unit-vector conversion below
-    // is bit-identical to the WASM decoder.
-    this._dequantizationScale = Math.fround(2.0 / Math.fround(this._maxValue));
-    this._centerValue = (this._maxValue / 2) | 0;
-    return true;
-  }
-
-  // Converts quantized octahedral coordinates to a unit vector. All arithmetic
-  // is rounded to float32 (Math.fround) to match Draco's WASM decoder exactly:
-  // `in_s * dequantization_scale_ - 1.f` is evaluated in float32 in C++.
-  quantizedOctahedralCoordsToUnitVector(inS, inT, outVector) {
-    const fround = Math.fround;
-    this._octahedralCoordsToUnitVector(
-      fround(fround(fround(inS) * this._dequantizationScale) - 1.0),
-      fround(fround(fround(inT) * this._dequantizationScale) - 1.0),
-      outVector
-    );
-  }
-
-  _octahedralCoordsToUnitVector(inSScaled, inTScaled, outVector) {
-    // float32 throughout (see comment above) so normals are bit-identical to WASM.
-    const fround = Math.fround;
-    let y = inSScaled;
-    let z = inTScaled;
-
-    // Remaining coordinate can be computed by projecting (y, z) onto the
-    // surface of the octahedron.
-    const x = fround(fround(1.0 - Math.abs(y)) - Math.abs(z));
-
-    // x is a signed distance from the diagonal edges of the diamond.
-    // Positive => right hemisphere, negative => left hemisphere.
-    let xOffset = -x;
-    if (xOffset < 0) xOffset = 0;
-
-    // Mirror (y, z) along nearest diagonal edge for points on left hemisphere.
-    y = fround(y + (y < 0 ? xOffset : -xOffset));
-    z = fround(z + (z < 0 ? xOffset : -xOffset));
-
-    // Normalize the computed vector.
-    const normSquared = fround(fround(fround(x * x) + fround(y * y)) + fround(z * z));
-    if (normSquared < 1e-6) {
-      outVector[0] = 0;
-      outVector[1] = 0;
-      outVector[2] = 0;
-    } else {
-      const d = fround(1.0 / fround(Math.sqrt(normSquared)));
-      outVector[0] = fround(x * d);
-      outVector[1] = fround(y * d);
-      outVector[2] = fround(z * d);
-    }
-  }
-
-}
-
 class AttributeOctahedronTransform extends AttributeTransform {
 
   constructor() {
@@ -5859,25 +5785,18 @@ class AttributeOctahedronTransform extends AttributeTransform {
 
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_canonicalized_decoding_transform.h
+// src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronTransformBase.js
+// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_transform_base.h
+//
+// Shared base for the octahedral-normal decoding transforms. Holds the
+// OctahedronToolBox and the quantization-bit plumbing; each subclass supplies
+// its own getType / decodeTransformData / computeOriginalValue.
 
 
-/**
- * Decodes correction values that were transformed using the canonicalized
- * octahedral normal transform back to original values.
- */
-class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
+class PredictionSchemeNormalOctahedronTransformBase {
 
   constructor() {
-    this._octahedronToolBox = new OctahedronToolBox$1();
-  }
-
-  /**
-   * @returns {number}
-   */
-  getType() {
-    return PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON_CANONICALIZED;
+    this._octahedronToolBox = new OctahedronToolBox();
   }
 
   /**
@@ -5888,7 +5807,7 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
   }
 
   /**
-   * Dummy init to fulfill interface.
+   * Dummy init to fulfill the transform interface.
    * @param {number} numComponents
    */
   init(numComponents) {}
@@ -5898,6 +5817,41 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
    */
   quantizationBits() {
     return this._octahedronToolBox.quantizationBits();
+  }
+
+  /**
+   * @protected
+   * @param {number} maxQuantizedValue
+   * @returns {boolean}
+   */
+  _setMaxQuantizedValue(maxQuantizedValue) {
+    if (maxQuantizedValue % 2 === 0) return false;
+    let q = 0;
+    let v = maxQuantizedValue;
+    while (v > 0) {
+      v >>>= 1;
+      q++;
+    }
+    return this._octahedronToolBox.setQuantizationBits(q);
+  }
+
+}
+
+// src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform.js
+// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_canonicalized_decoding_transform.h
+
+
+/**
+ * Decodes correction values that were transformed using the canonicalized
+ * octahedral normal transform back to original values.
+ */
+class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends PredictionSchemeNormalOctahedronTransformBase {
+
+  /**
+   * @returns {number}
+   */
+  getType() {
+    return PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON_CANONICALIZED;
   }
 
   /**
@@ -6042,22 +5996,6 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
     outOrigVals[outOffset + 1] = origT + center;
   }
 
-  /**
-   * @private
-   * @param {number} maxQuantizedValue
-   * @returns {boolean}
-   */
-  _setMaxQuantizedValue(maxQuantizedValue) {
-    if (maxQuantizedValue % 2 === 0) return false;
-    let q = 0;
-    let v = maxQuantizedValue;
-    while (v > 0) {
-      v >>>= 1;
-      q++;
-    }
-    return this._octahedronToolBox.setQuantizationBits(q);
-  }
-
 }
 
 // src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronDecodingTransform.js
@@ -6068,37 +6006,13 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
  * Decodes correction values that were transformed using the octahedral normal
  * transform back to original values. Used for backwards compatibility.
  */
-class PredictionSchemeNormalOctahedronDecodingTransform {
-
-  constructor() {
-    this._octahedronToolBox = new OctahedronToolBox$1();
-  }
+class PredictionSchemeNormalOctahedronDecodingTransform extends PredictionSchemeNormalOctahedronTransformBase {
 
   /**
    * @returns {number}
    */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON;
-  }
-
-  /**
-   * @returns {boolean}
-   */
-  areCorrectionsPositive() {
-    return true;
-  }
-
-  /**
-   * Dummy init to fulfill interface.
-   * @param {number} numComponents
-   */
-  init(numComponents) {}
-
-  /**
-   * @returns {number}
-   */
-  quantizationBits() {
-    return this._octahedronToolBox.quantizationBits();
   }
 
   /**
@@ -6210,22 +6124,6 @@ class PredictionSchemeNormalOctahedronDecodingTransform {
 
     outOrigVals[outOffset] = (origS + center) | 0;
     outOrigVals[outOffset + 1] = (origT + center) | 0;
-  }
-
-  /**
-   * @private
-   * @param {number} maxQuantizedValue
-   * @returns {boolean}
-   */
-  _setMaxQuantizedValue(maxQuantizedValue) {
-    if (maxQuantizedValue % 2 === 0) return false;
-    let q = 0;
-    let v = maxQuantizedValue;
-    while (v > 0) {
-      v >>>= 1;
-      q++;
-    }
-    return this._octahedronToolBox.setQuantizationBits(q);
   }
 
 }
@@ -7551,6 +7449,15 @@ class MeshAttributeCornerTable {
 // Invalid index constant (used for corners and vertices).
 const kInvalidCornerIndex = -1;
 
+// Reads a count that is encoded as a varint in bitstream >= 2.0 and as a raw
+// little-endian uint32 below it. Returns the value, or undefined on a short
+// read. Used by the many version-gated header reads below.
+function decodeVarintOrUint32(buffer, bitstreamVersion) {
+  return bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)
+    ? buffer.decodeUint32()
+    : decodeVarint(buffer);
+}
+
 // Implementation of the edgebreaker decoder that decodes data encoded with the
 // MeshEdgebreakerEncoderImpl class. The implementation is based on the
 // algorithm presented in Isenburg et al'02 "Spirale Reversi: Reverse
@@ -7717,34 +7624,19 @@ class MeshEdgebreakerDecoderImpl {
     // Bitstreams < 2.2 prefix a new-vertex count here; it is read only to
     // advance the cursor (the value is unused by this decoder).
     if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      let numNewVerts;
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        numNewVerts = this._decoder.buffer().decodeUint32();
-        if (numNewVerts === undefined) return false;
-      } else {
-        numNewVerts = decodeVarint(this._decoder.buffer());
-        if (numNewVerts === undefined) return false;
-      }
+      const numNewVerts = decodeVarintOrUint32(
+        this._decoder.buffer(), this._decoder.bitstreamVersion());
+      if (numNewVerts === undefined) return false;
     }
 
-    let numEncodedVertices;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numEncodedVertices = this._decoder.buffer().decodeUint32();
-      if (numEncodedVertices === undefined) return false;
-    } else {
-      numEncodedVertices = decodeVarint(this._decoder.buffer());
-      if (numEncodedVertices === undefined) return false;
-    }
+    const numEncodedVertices = decodeVarintOrUint32(
+      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    if (numEncodedVertices === undefined) return false;
     this._numEncodedVertices = numEncodedVertices;
 
-    let numFaces;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numFaces = this._decoder.buffer().decodeUint32();
-      if (numFaces === undefined) return false;
-    } else {
-      numFaces = decodeVarint(this._decoder.buffer());
-      if (numFaces === undefined) return false;
-    }
+    const numFaces = decodeVarintOrUint32(
+      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    if (numFaces === undefined) return false;
 
     if (numFaces > 0x7FFFFFFF / 3) {
       return false; // Draco cannot handle this many faces.
@@ -7766,14 +7658,9 @@ class MeshEdgebreakerDecoderImpl {
     const numAttributeData = this._decoder.buffer().decodeUint8();
     if (numAttributeData === undefined) return false;
 
-    let numEncodedSymbols;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numEncodedSymbols = this._decoder.buffer().decodeUint32();
-      if (numEncodedSymbols === undefined) return false;
-    } else {
-      numEncodedSymbols = decodeVarint(this._decoder.buffer());
-      if (numEncodedSymbols === undefined) return false;
-    }
+    const numEncodedSymbols = decodeVarintOrUint32(
+      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    if (numEncodedSymbols === undefined) return false;
 
     if (numFaces < numEncodedSymbols) {
       return false;
@@ -7783,14 +7670,9 @@ class MeshEdgebreakerDecoderImpl {
       return false;
     }
 
-    let numEncodedSplitSymbols;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numEncodedSplitSymbols = this._decoder.buffer().decodeUint32();
-      if (numEncodedSplitSymbols === undefined) return false;
-    } else {
-      numEncodedSplitSymbols = decodeVarint(this._decoder.buffer());
-      if (numEncodedSplitSymbols === undefined) return false;
-    }
+    const numEncodedSplitSymbols = decodeVarintOrUint32(
+      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    if (numEncodedSplitSymbols === undefined) return false;
 
     if (numEncodedSplitSymbols > numEncodedSymbols) {
       return false; // Split symbols are a sub-set of all symbols.
@@ -7825,14 +7707,9 @@ class MeshEdgebreakerDecoderImpl {
 
     let topologySplitDecodedBytes = -1;
     if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      let encodedConnectivitySize;
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        encodedConnectivitySize = this._decoder.buffer().decodeUint32();
-        if (encodedConnectivitySize === undefined) return false;
-      } else {
-        encodedConnectivitySize = decodeVarint(this._decoder.buffer());
-        if (encodedConnectivitySize === undefined) return false;
-      }
+      const encodedConnectivitySize = decodeVarintOrUint32(
+        this._decoder.buffer(), this._decoder.bitstreamVersion());
+      if (encodedConnectivitySize === undefined) return false;
       if (encodedConnectivitySize === 0 ||
           encodedConnectivitySize > this._decoder.buffer().remainingSize) {
         return false;
@@ -8335,14 +8212,9 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   _decodeHoleAndTopologySplitEvents(decoderBuffer) {
-    let numTopologySplits;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numTopologySplits = decoderBuffer.decodeUint32();
-      if (numTopologySplits === undefined) return -1;
-    } else {
-      numTopologySplits = decodeVarint(decoderBuffer);
-      if (numTopologySplits === undefined) return -1;
-    }
+    const numTopologySplits = decodeVarintOrUint32(
+      decoderBuffer, this._decoder.bitstreamVersion());
+    if (numTopologySplits === undefined) return -1;
 
     if (numTopologySplits > 0) {
       if (numTopologySplits > this._cornerTable.numFaces()) {
@@ -9482,66 +9354,21 @@ class MeshEdgebreakerDecoder extends MeshDecoder {
 // compression/Decode.js - ported from compression/decode.h/cc
 
 
-// Decodes the Draco header from the buffer. Returns { header, ok, message }.
-function decodeHeader(buffer) {
+// Reads the Draco header from a read-only copy of inBuffer (without advancing
+// the original), so the geometry type can be checked before picking a decoder.
+// Reuses PointCloudDecoder.decodeHeader and adapts its Status to a plain object.
+// Returns { ok, header, message }.
+function peekHeader(inBuffer) {
+
+  const tempBuffer = new DecoderBuffer();
+  tempBuffer.init(inBuffer.data, inBuffer.data.length);
+  tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
+  // Restore position to match the original buffer's current position.
+  tempBuffer.advance(inBuffer.decodedSize);
 
   const header = new DracoHeader();
-
-  // Read 5-byte magic string "DRACO"
-  for (let i = 0; i < 5; ++i) {
-
-    const byte = buffer.decodeInt8();
-    if (byte === undefined) {
-      return { header: null, ok: false, message: 'Failed to read header magic bytes.' };
-    }
-
-    header.dracoString[i] = byte;
-
-  }
-
-  // Verify magic string
-  const magic = String.fromCharCode(
-    header.dracoString[0] & 0xFF,
-    header.dracoString[1] & 0xFF,
-    header.dracoString[2] & 0xFF,
-    header.dracoString[3] & 0xFF,
-    header.dracoString[4] & 0xFF
-  );
-
-  if (magic !== 'DRACO') {
-    return { header: null, ok: false, message: 'Not a Draco encoded file.' };
-  }
-
-  // Read version
-  header.versionMajor = buffer.decodeUint8();
-  if (header.versionMajor === undefined) {
-    return { header: null, ok: false, message: 'Failed to read version major.' };
-  }
-
-  header.versionMinor = buffer.decodeUint8();
-  if (header.versionMinor === undefined) {
-    return { header: null, ok: false, message: 'Failed to read version minor.' };
-  }
-
-  // Read encoder type
-  header.encoderType = buffer.decodeUint8();
-  if (header.encoderType === undefined) {
-    return { header: null, ok: false, message: 'Failed to read encoder type.' };
-  }
-
-  // Read encoder method
-  header.encoderMethod = buffer.decodeUint8();
-  if (header.encoderMethod === undefined) {
-    return { header: null, ok: false, message: 'Failed to read encoder method.' };
-  }
-
-  // Read flags
-  header.flags = buffer.decodeUint16();
-  if (header.flags === undefined) {
-    return { header: null, ok: false, message: 'Failed to read flags.' };
-  }
-
-  return { header, ok: true, message: '' };
+  const status = PointCloudDecoder.decodeHeader(tempBuffer, header);
+  return { ok: status.ok(), header, message: status.errorMsg };
 
 }
 
@@ -9594,14 +9421,7 @@ class Decoder {
   // POINT_CLOUD, TRIANGULAR_MESH, or INVALID_GEOMETRY_TYPE on error.
   static getEncodedGeometryType(inBuffer) {
 
-    // Use a copy of the buffer so we don't advance the original position.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    // Restore position to match the original buffer's current position.
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
+    const result = peekHeader(inBuffer);
     if (!result.ok) {
       return EncodedGeometryType.INVALID_GEOMETRY_TYPE;
     }
@@ -9665,13 +9485,7 @@ class Decoder {
   // Returns { ok, message }.
   decodeBufferToPointCloud(inBuffer, outGeometry) {
 
-    // Read header from a temporary copy to check type without advancing inBuffer.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
+    const result = peekHeader(inBuffer);
     if (!result.ok) {
       return { ok: false, message: result.message };
     }
@@ -9689,13 +9503,7 @@ class Decoder {
   // Returns { ok, message }.
   decodeBufferToMesh(inBuffer, outGeometry) {
 
-    // Read header from a temporary copy to check type without advancing inBuffer.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
+    const result = peekHeader(inBuffer);
     if (!result.ok) {
       return { ok: false, message: result.message };
     }
