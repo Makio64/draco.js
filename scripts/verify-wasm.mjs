@@ -111,6 +111,11 @@ function compare(module, decoder, js, wasm) {
   const issues = [];
   let maxFloatDiff = 0;
 
+  // A failed decode must never count as a pass: without this, a JS/WASM error
+  // that yields zero points slips through (nothing left to compare).
+  if (!js.ok) issues.push(`JS decode failed: ${js.msg}`);
+  if (!wasm.ok) issues.push('WASM decode failed');
+
   const jsPts = js.geom ? js.geom.numPoints() : 0;
   const wPts = wasm.geom.num_points();
   const jsFaces = js.isMesh && js.geom ? js.geom.numFaces() : 0;
@@ -173,7 +178,9 @@ function compare(module, decoder, js, wasm) {
           const d = Math.abs(jv - wv);
           if (d > attrMaxDiff) attrMaxDiff = d;
           if (d !== 0) exact++;
-          if (d > FLOAT_EPS) {
+          // Use !(d <= eps) rather than d > eps so a NaN diff (e.g. NaN in the
+          // JS output) is caught instead of silently passing the eps-0 check.
+          if (!(d <= FLOAT_EPS)) {
             if (!firstMism) firstMism = `attr#${a} type=${wtype} pt${i}.${c} JS=${jv} WASM=${wv}`;
             mism++;
           }
