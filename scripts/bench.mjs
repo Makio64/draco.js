@@ -6,6 +6,7 @@
 //
 //   node scripts/bench.mjs           # time decode + check output vs baseline
 //   node scripts/bench.mjs --save    # (re)write the correctness baseline
+//   node scripts/bench.mjs --wasm    # also time the draco3d WASM decoder (adds a JS× speedup column)
 //
 // For each sample it prints ms/decode, faces/points and MB/s, plus a sha256 of
 // the fully decoded geometry (face indices + every attribute's per-point values,
@@ -108,6 +109,24 @@ function decode(u8) {
   return { geom: r.pointCloud, isMesh: false };
 }
 
+// Decode one buffer with the draco3d WASM reference, then free the WASM-side
+// objects. Used only by --wasm to time WASM decode under the same loop as JS.
+function decodeWASM(module, decoder, u8) {
+  const buffer = new module.DecoderBuffer();
+  buffer.Init(new Int8Array(u8.buffer, u8.byteOffset, u8.byteLength), u8.byteLength);
+  const type = decoder.GetEncodedGeometryType(buffer);
+  let geom;
+  if (type === module.TRIANGULAR_MESH) {
+    geom = new module.Mesh();
+    decoder.DecodeBufferToMesh(buffer, geom);
+  } else {
+    geom = new module.PointCloud();
+    decoder.DecodeBufferToPointCloud(buffer, geom);
+  }
+  module.destroy(buffer);
+  module.destroy(geom);
+}
+
 // Hash the complete decoded result. Values go through a Float64Array, which
 // exactly represents the FLOAT32 / INT32 attribute values, so an identical
 // decode always yields an identical digest.
@@ -152,16 +171,25 @@ function hashGeometry(geom, isMesh) {
   return h.digest('hex');
 }
 
-function main() {
+async function main() {
   const save = process.argv.includes('--save');
+  const withWasm = process.argv.includes('--wasm');
   const baseline = fs.existsSync(BASELINE_FILE)
     ? JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'))
     : null;
   const results = {};
   let anyFail = false;
 
+  let wasmMod = null;
+  let wasmDecoder = null;
+  if (withWasm) {
+    const draco3d = (await import('draco3d')).default;
+    wasmMod = await draco3d.createDecoderModule({});
+    wasmDecoder = new wasmMod.Decoder();
+  }
+
   console.log('sample'.padEnd(26) + 'ms/decode'.padStart(11) + 'MB/s'.padStart(9) +
-    '   faces/points            check');
+    (withWasm ? 'JS×'.padStart(8) : '') + '   faces/points            check');
   console.log('-'.repeat(80));
 
   for (const [name, iters] of SAMPLES) {
@@ -192,6 +220,20 @@ function main() {
     }
     const ms = (performance.now() - t0) / iters;
 
+    // Optional: time the WASM decoder over the same buffers/iterations so the
+    // JS× speedup ratio is reproducible (JS× = WASM ms / JS ms; >1 means JS is
+    // faster). Warm up first, mirroring the JS warmup above.
+    let speedupTag = '';
+    if (withWasm) {
+      for (let i = 0; i < 25; i++) for (const u8 of buffers) decodeWASM(wasmMod, wasmDecoder, u8);
+      const w0 = performance.now();
+      for (let i = 0; i < iters; i++) {
+        for (const u8 of buffers) decodeWASM(wasmMod, wasmDecoder, u8);
+      }
+      const wms = (performance.now() - w0) / iters;
+      speedupTag = (wms / ms).toFixed(2).padStart(7) + '×';
+    }
+
     const mbps = (bytes / 1024 / 1024) / (ms / 1000);
     results[name] = hash;
 
@@ -206,10 +248,13 @@ function main() {
       name.padEnd(26) +
       ms.toFixed(3).padStart(11) +
       mbps.toFixed(1).padStart(9) +
+      speedupTag +
       `   ${nf}/${np}${emptyTag}`.padEnd(26) +
       `  ${status} ${hash.slice(0, 12)}`
     );
   }
+
+  if (withWasm) wasmMod.destroy(wasmDecoder);
 
   if (save || !baseline) {
     fs.writeFileSync(BASELINE_FILE, JSON.stringify(results, null, 2) + '\n');
@@ -222,4 +267,7 @@ function main() {
   }
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
