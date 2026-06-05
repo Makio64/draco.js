@@ -44,12 +44,6 @@ const SAMPLES = [
   ['ferrari.glb', 30], // 51 primitives, ~358k faces — large clean stress test
 ];
 
-// NOTE: some .glb primitives decode with ok=true but yield 0 faces/0 points
-// (e.g. nemetona is entirely empty; venice_mask/LittlestTokyo/pool partially).
-// The "empty" column below counts them — a known decoder limitation, not a
-// regression introduced here. Such primitives only contribute structural
-// metadata to the correctness hash.
-
 const GLB_MAGIC = 0x46546c67;
 const GLB_CHUNK_JSON = 0x4e4f534a;
 const GLB_CHUNK_BIN = 0x004e4942;
