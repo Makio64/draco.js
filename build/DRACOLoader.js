@@ -14,7 +14,7 @@ import { Loader, FileLoader, SRGBColorSpace, LinearSRGBColorSpace, BufferGeometr
 
 // compression/config/CompressionShared.js - ported from compression/config/compression_shared.h
 
-// Latest Draco bit-stream version.
+// Latest Draco bit-stream versions.
 const kDracoPointCloudBitstreamVersionMajor = 2;
 const kDracoPointCloudBitstreamVersionMinor = 3;
 const kDracoMeshBitstreamVersionMajor = 2;
@@ -24,7 +24,6 @@ function DRACO_BITSTREAM_VERSION(major, minor) {
   return (major << 8) | minor;
 }
 
-// Currently, we support point cloud and triangular mesh encoding.
 const EncodedGeometryType = {
   INVALID_GEOMETRY_TYPE: -1,
   POINT_CLOUD: 0,
@@ -32,13 +31,11 @@ const EncodedGeometryType = {
   NUM_ENCODED_GEOMETRY_TYPES: 2
 };
 
-// List of encoding methods for meshes.
 const MeshEncoderMethod = {
   MESH_SEQUENTIAL_ENCODING: 0,
   MESH_EDGEBREAKER_ENCODING: 1
 };
 
-// List of various sequential attribute encoder/decoders.
 const SequentialAttributeEncoderType = {
   SEQUENTIAL_ATTRIBUTE_ENCODER_GENERIC: 0,
   SEQUENTIAL_ATTRIBUTE_ENCODER_INTEGER: 1,
@@ -46,7 +43,6 @@ const SequentialAttributeEncoderType = {
   SEQUENTIAL_ATTRIBUTE_ENCODER_NORMALS: 3
 };
 
-// List of all prediction methods currently supported by our framework.
 const PredictionSchemeMethod = {
   PREDICTION_NONE: -2,
   PREDICTION_DIFFERENCE: 0,
@@ -59,7 +55,6 @@ const PredictionSchemeMethod = {
   NUM_PREDICTION_SCHEMES: 7
 };
 
-// List of all prediction scheme transforms used by our framework.
 const PredictionSchemeTransformType = {
   PREDICTION_TRANSFORM_NONE: -1,
   PREDICTION_TRANSFORM_WRAP: 1,
@@ -68,14 +63,12 @@ const PredictionSchemeTransformType = {
   NUM_PREDICTION_SCHEME_TRANSFORM_TYPES: 4
 };
 
-// List of all mesh traversal methods supported by Draco framework.
 const MeshTraversalMethod = {
   MESH_TRAVERSAL_DEPTH_FIRST: 0,
   MESH_TRAVERSAL_PREDICTION_DEGREE: 1,
   NUM_TRAVERSAL_METHODS: 2
 };
 
-// List of all variants of the edgebreaker method.
 const MeshEdgebreakerConnectivityEncodingMethod = {
   MESH_EDGEBREAKER_STANDARD_ENCODING: 0,
   MESH_EDGEBREAKER_PREDICTIVE_ENCODING: 1, // Deprecated.
@@ -101,7 +94,6 @@ const NormalPredictionMode = {
   TRIANGLE_AREA: 1
 };
 
-// Different methods used for symbol entropy encoding.
 const SymbolCodingMethod = {
   SYMBOL_CODING_TAGGED: 0,
   SYMBOL_CODING_RAW: 1};
@@ -111,23 +103,14 @@ const METADATA_FLAG_MASK = 0x8000;
 
 // compression/config/DracoOptions.js - ported from compression/config/draco_options.h
 
-// Base option class used to control encoding and decoding. The geometry coding
-// can be controlled through the following options:
-//   1. Global options - Options specific to overall geometry or options common
-//                       for all attributes
-//   2. Per attribute options - Options specific to a given attribute.
-//                              Each attribute is identified by a key (e.g.
-//                              attribute type or attribute id).
+// Base option class with global options and per-attribute options keyed by
+// attribute key (e.g. attribute type or id).
 class DracoOptions {
 
   constructor() {
-    // Global options stored as a Map of string -> value
-    this._globalOptions = new Map();
-    // Per-attribute options stored as a Map of attributeKey -> Map(string -> value)
-    this._attributeOptions = new Map();
+    this._globalOptions = new Map(); // name -> value
+    this._attributeOptions = new Map(); // attributeKey -> Map(name -> value)
   }
-
-  // --- Global option accessors ---
 
   getGlobalBool(name, defaultVal) {
     if (this._globalOptions.has(name)) {
@@ -135,8 +118,6 @@ class DracoOptions {
     }
     return defaultVal;
   }
-
-  // --- Attribute-specific option accessors ---
 
   findAttributeOptions(attKey) {
     if (this._attributeOptions.has(attKey)) {
@@ -168,10 +149,7 @@ class DecoderOptions extends DracoOptions {
 
 // core/BitUtils.js - ported from bit_utils.h/cc
 
-// Converts an array of unsigned symbols back to signed int32 values.
-// Branchless zigzag decode, inlined: for even val -> val>>>1, for odd val ->
-// -(val>>>1)-1. (val >>> 1) ^ -(val & 1) yields exactly that without a per-value
-// call or branch.
+// Branchless inlined zigzag decode: (val>>>1) ^ -(val&1) avoids a per-value call/branch.
 function convertSymbolsToSignedInts(input, count, output) {
   for (let i = 0; i < count; i++) {
     const val = input[i];
@@ -179,7 +157,6 @@ function convertSymbolsToSignedInts(input, count, output) {
   }
 }
 
-// Converts a single unsigned symbol back to a signed integer (zigzag decoding).
 function convertSymbolToSignedInt(val) {
   const isPositive = (val & 1) === 0;
   val >>>= 1;
@@ -192,17 +169,14 @@ function convertSymbolToSignedInt(val) {
 // core/VarintDecoding.js - ported from varint_decoding.h
 
 
-// Decodes an unsigned varint, MSB continuation coding.
-// Returns the decoded value, or undefined on error.
+// Unsigned varint, MSB continuation coding. Returns undefined on error.
 function decodeVarintUnsigned(buffer, maxBytes) {
   let result = 0;
   for (let i = 0; i < maxBytes; i++) {
     const byte = buffer.decodeUint8();
     if (byte === undefined) return undefined;
     if (byte & 0x80) {
-      // More bytes follow — recurse in original, here we iterate.
-      // The original C++ builds the value MSB-first via recursion:
-      //   recurse first, then shift and OR.
+      // C++ builds the value MSB-first via recursion (recurse, then shift and OR).
       // We replicate that by collecting bytes and building MSB-first.
       const bytes = [byte & 0x7F];
       let done = false;
@@ -218,25 +192,21 @@ function decodeVarintUnsigned(buffer, maxBytes) {
         }
       }
       if (!done) return undefined;
-      // Build MSB-first: last byte read is the most significant.
+      // Last byte read is the most significant.
       result = bytes[bytes.length - 1];
       for (let k = bytes.length - 2; k >= 0; k--) {
         result = (result * 128) + bytes[k];
       }
       return result;
     } else {
-      // Last byte
       return byte;
     }
   }
   return undefined;
 }
 
-// Decodes a varint from the decoder buffer.
-// If signed is true, applies zigzag decoding.
-// Returns the decoded value, or undefined on error.
+// signed applies zigzag decoding. Returns undefined on error.
 function decodeVarint(buffer, signed = false) {
-  // Max bytes: for uint64 it's 10, for uint32 it's 5
   const maxBytes = 10;
   const value = decodeVarintUnsigned(buffer, maxBytes);
   if (value === undefined) return undefined;
@@ -248,7 +218,7 @@ function decodeVarint(buffer, signed = false) {
 
 // core/Macros.js - ported from macros.h
 
-// Converts major/minor version into a single uint16 number.
+// Packs major/minor into a single uint16.
 function bitstreamVersion(major, minor) {
   return ((major & 0xFF) << 8) | (minor & 0xFF);
 }
@@ -281,7 +251,7 @@ class BitDecoder {
     const byteOffset = off >> 3;
     const bitShift = off & 7;
 
-    // Fast path: if we have enough bytes left in the buffer to read 32 bits safely.
+    // Fast path: enough bytes remain to read 32 bits safely.
     if (byteOffset + 4 < this._byteLength) {
       const val = (buf[byteOffset] | (buf[byteOffset + 1] << 8) | (buf[byteOffset + 2] << 16) | (buf[byteOffset + 3] << 24)) >>> 0;
       let result;
@@ -298,7 +268,7 @@ class BitDecoder {
       return nbits === 32 ? result : (result & ((1 << nbits) - 1));
     }
 
-    // Safe/fallback path for the end of the buffer
+    // Safe fallback path near the end of the buffer.
     let value = 0;
     let bitsRead = 0;
     let currOff = off;
@@ -348,7 +318,7 @@ class DecoderBuffer {
     }
   }
 
-  // Decode typed values (little-endian)
+  // Typed little-endian reads.
   decodeUint8() {
     if (this._pos + 1 > this._dataSize) return undefined;
     const val = this._data[this._pos];
@@ -396,11 +366,10 @@ class DecoderBuffer {
     const lo = this._dataView.getUint32(this._pos, true);
     const hi = this._dataView.getUint32(this._pos + 4, true);
     this._pos += 8;
-    // Return as BigInt-free number (safe up to 2^53)
+    // BigInt-free number, safe up to 2^53.
     return hi * 0x100000000 + lo;
   }
 
-  // Decode raw bytes into a Uint8Array
   decodeBytes(size) {
     if (this._pos + size > this._dataSize) return undefined;
     const result = this._data.slice(this._pos, this._pos + size);
@@ -408,7 +377,6 @@ class DecoderBuffer {
     return result;
   }
 
-  // Bit decoding
   startBitDecoding(decodeSize) {
     let outSize = 0;
     if (decodeSize) {
@@ -440,12 +408,10 @@ class DecoderBuffer {
     return this._bitDecoder.getBits(nbits);
   }
 
-  // Decode a varint-encoded uint32 value.
   decodeVarintUint32() {
     return decodeVarint(this, false);
   }
 
-  // Decode a varint-encoded uint64 value.
   decodeVarintUint64() {
     return decodeVarint(this, false);
   }
@@ -467,8 +433,7 @@ class DecoderBuffer {
 
 // point_cloud/PointCloud.js - ported from point_cloud/point_cloud.h/cc
 
-// Mirrors GeometryAttribute::Type enum values used for named attribute indexing.
-// These must match the C++ GeometryAttribute::Type enum.
+// Must match the C++ GeometryAttribute::Type enum count.
 const NAMED_ATTRIBUTES_COUNT = 8;
 
 class PointCloud {
@@ -478,7 +443,7 @@ class PointCloud {
     this.num_points_ = 0;
     this.attributes_ = [];
 
-    // Array of arrays: named_attribute_index_[type] = [att_id, ...]
+    // named_attribute_index_[type] = [att_id, ...]
     this.named_attribute_index_ = [];
     for (let i = 0; i < NAMED_ATTRIBUTES_COUNT; ++i) {
 
@@ -488,7 +453,6 @@ class PointCloud {
 
   }
 
-  // Returns the number of named attributes of a given type.
   numNamedAttributes(type) {
 
     if (type < 0 || type >= NAMED_ATTRIBUTES_COUNT) {
@@ -499,7 +463,6 @@ class PointCloud {
 
   }
 
-  // Returns attribute id of the i-th named attribute with a given type or -1.
   getNamedAttributeId(type, i) {
 
     if (i === undefined) i = 0;
@@ -511,7 +474,6 @@ class PointCloud {
 
   }
 
-  // Returns the first or i-th named attribute of a given type or null.
   getNamedAttribute(type, i) {
 
     if (i === undefined) i = 0;
@@ -524,7 +486,6 @@ class PointCloud {
 
   }
 
-  // Returns the attribute with a given unique id.
   getAttributeByUniqueId(uniqueId) {
 
     const attId = this.getAttributeIdByUniqueId(uniqueId);
@@ -562,7 +523,6 @@ class PointCloud {
 
   }
 
-  // Adds a new attribute to the point cloud. Returns the attribute id.
   addAttribute(pa) {
 
     this.setAttribute(this.attributes_.length, pa);
@@ -570,12 +530,10 @@ class PointCloud {
 
   }
 
-  // Assigns an attribute to a given attribute id.
   setAttribute(attId, pa) {
 
     if (this.attributes_.length <= attId) {
 
-      // Resize the array to accommodate the new attribute id.
       while (this.attributes_.length <= attId) {
         this.attributes_.push(null);
       }
@@ -610,7 +568,6 @@ class PointCloud {
 // mesh/Mesh.js - ported from mesh/mesh.h/cc
 
 
-// Mesh attribute element types.
 const MeshAttributeElementType = {
   MESH_VERTEX_ATTRIBUTE: 0,
   MESH_CORNER_ATTRIBUTE: 1};
@@ -620,12 +577,11 @@ class Mesh extends PointCloud {
   constructor() {
 
     super();
-    // Faces stored as a flat Int32Array of point indices (3 per face) for cache
-    // locality and to avoid an allocation per face. faces_[3*f + c] is the c-th
-    // corner's point index of face f; corner index ci maps directly to faces_[ci].
+    // Flat Int32Array, 3 point indices per face, for cache locality and to avoid
+    // a per-face allocation. faces_[3*f + c] is corner c of face f; corner index
+    // ci maps directly to faces_[ci].
     this.faces_ = new Int32Array(0);
     this.numFaces_ = 0;
-    // Per-attribute data tracking element type.
     this.attribute_data_ = [];
 
   }
@@ -666,8 +622,7 @@ class Mesh extends PointCloud {
 
   }
 
-  // Returns a fresh [v0, v1, v2] array (public API). Hot internal loops read
-  // faces_ directly to avoid the allocation.
+  // Allocates a fresh [v0, v1, v2]; hot internal loops read faces_ directly.
   face(faceId) {
 
     const o = faceId * 3;
@@ -712,14 +667,11 @@ function okStatus() {
 }
 
 // metadata/MetadataDecoder.js - ported from metadata/metadata_decoder.h/cc
-//
-// The decoder does not surface metadata on the output geometry, so this only
-// parses the metadata structure far enough to consume the exact bytes it
-// occupies, keeping the rest of the bitstream aligned. (A full port that builds
-// Metadata objects lives in the git history if the content is ever needed.)
+// Metadata is never surfaced, so this only parses far enough to consume the exact
+// bytes it occupies, keeping the bitstream aligned. (Full port lives in git history.)
 
 
-// Limit metadata nesting depth to avoid stack overflow.
+// Nesting-depth cap to avoid stack overflow.
 const kMaxSubmetadataLevel = 1000;
 
 class MetadataDecoder {
@@ -728,8 +680,7 @@ class MetadataDecoder {
     this.buffer_ = null;
   }
 
-  // Skips the geometry metadata (per-attribute metadata followed by the
-  // geometry-level metadata) in the buffer. Returns true on success.
+  // Skips per-attribute metadata followed by the geometry-level metadata.
   skipGeometryMetadata(inBuffer) {
     this.buffer_ = inBuffer;
 
@@ -739,7 +690,7 @@ class MetadataDecoder {
     }
 
     for (let i = 0; i < numAttMetadata; ++i) {
-      // Attribute unique id, then the attribute's metadata block.
+      // Attribute unique id, then its metadata block.
       if (decodeVarint(this.buffer_) === undefined) {
         return false;
       }
@@ -751,10 +702,8 @@ class MetadataDecoder {
     return this._skipMetadata(0);
   }
 
-  // Reads (and discards) one metadata block: its key-value entries and any
-  // nested sub-metadata. Mirrors the byte layout decoded by the C++
-  // MetadataDecoder. Sub-blocks are read depth-first in stream order, matching
-  // the reference's stack-based traversal.
+  // Discards one metadata block (key-value entries plus nested sub-metadata).
+  // Sub-blocks read depth-first in stream order, matching the C++ stack traversal.
   _skipMetadata(level) {
     if (level > kMaxSubmetadataLevel) {
       return false;
@@ -775,11 +724,10 @@ class MetadataDecoder {
       return false;
     }
     if (numSubMetadata > this.buffer_.remainingSize) {
-      // The decoded number of metadata items is unreasonably high.
       return false;
     }
     for (let i = 0; i < numSubMetadata; ++i) {
-      // Sub-metadata name, then the sub-metadata block.
+      // Sub-metadata name, then its block.
       if (!this._skipName()) {
         return false;
       }
@@ -791,7 +739,7 @@ class MetadataDecoder {
     return true;
   }
 
-  // Skips a single key-value entry: name followed by a length-prefixed value.
+  // Skips a key-value entry: name then a length-prefixed value.
   _skipEntry() {
     if (!this._skipName()) {
       return false;
@@ -823,8 +771,7 @@ class MetadataDecoder {
 // compression/point_cloud/PointCloudDecoder.js - ported from point_cloud/point_cloud_decoder.h/cc
 
 
-// Abstract base class for all point cloud and mesh decoders. It provides a
-// basic functionality that is shared between different decoders.
+// Abstract base for all point cloud and mesh decoders; holds shared logic.
 class PointCloudDecoder {
 
   constructor() {
@@ -841,8 +788,7 @@ class PointCloudDecoder {
     return EncodedGeometryType.POINT_CLOUD;
   }
 
-  // Decodes a Draco header from the provided buffer.
-  // Returns a Status. On success, out_header is populated.
+  // Returns a Status; on success outHeader is populated.
   static decodeHeader(buffer, outHeader) {
     const kIoErrorMsg = 'Failed to parse Draco header.';
     const bytes = buffer.decodeBytes(5);
@@ -852,7 +798,6 @@ class PointCloudDecoder {
     for (let i = 0; i < 5; i++) {
       outHeader.dracoString[i] = bytes[i];
     }
-    // Check for "DRACO" magic string
     const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]);
     if (magic !== 'DRACO') {
       return new Status(StatusCode.DRACO_ERROR, 'Not a Draco file.');
@@ -880,7 +825,7 @@ class PointCloudDecoder {
     return okStatus();
   }
 
-  // The main entry point for point cloud decoding.
+  // Main entry point for point cloud decoding.
   decode(options, inBuffer, outPointCloud) {
     this._options = options;
     this._buffer = inBuffer;
@@ -892,7 +837,6 @@ class PointCloudDecoder {
       return headerStatus;
     }
 
-    // Sanity check that we are using the right decoder.
     if (header.encoderType !== this.getGeometryType()) {
       return new Status(StatusCode.DRACO_ERROR,
         'Using incompatible decoder for the input geometry.');
@@ -910,7 +854,7 @@ class PointCloudDecoder {
         ? kDracoPointCloudBitstreamVersionMinor
         : kDracoMeshBitstreamVersionMinor;
 
-    // Check for version compatibility (backwards compatibility supported).
+    // Version compatibility check (older bitstreams are still supported).
     if (this._versionMajor < 1 || this._versionMajor > maxSupportedMajorVersion) {
       return new Status(StatusCode.UNKNOWN_VERSION, 'Unknown major version.');
     }
@@ -1005,25 +949,22 @@ class PointCloudDecoder {
     if (numAttributesDecoders === undefined) {
       return false;
     }
-    // Create all attribute decoders.
     for (let i = 0; i < numAttributesDecoders; ++i) {
       if (!this.createAttributesDecoder(i)) {
         return false;
       }
     }
-    // Initialize all attributes decoders.
     for (let i = 0; i < this._attributesDecoders.length; ++i) {
       if (!this._attributesDecoders[i].init(this, this._pointCloud)) {
         return false;
       }
     }
-    // Decode data needed by the attribute decoders.
     for (let i = 0; i < numAttributesDecoders; ++i) {
       if (!this._attributesDecoders[i].decodeAttributesDecoderData(this._buffer)) {
         return false;
       }
     }
-    // Create map between attribute and decoder ids.
+    // Map each attribute id to its decoder id.
     for (let i = 0; i < numAttributesDecoders; ++i) {
       const numAttributes = this._attributesDecoders[i].getNumAttributes();
       for (let j = 0; j < numAttributes; ++j) {
@@ -1034,7 +975,6 @@ class PointCloudDecoder {
         this._attributeToDecoderMap[attId] = i;
       }
     }
-    // Decode the actual attributes.
     if (!this.decodeAllAttributes()) {
       return false;
     }
@@ -1058,9 +998,8 @@ class PointCloudDecoder {
   }
 
   _decodeMetadata() {
-    // Skip over the geometry metadata so the bytes are consumed and the rest of
-    // the bitstream stays aligned (the content is not surfaced on the output
-    // geometry; otherwise a metadata-bearing file decodes to empty geometry).
+    // Skip (not surface) the geometry metadata so its bytes are consumed and the
+    // bitstream stays aligned; otherwise a metadata-bearing file decodes to empty.
     const metadataDecoder = new MetadataDecoder();
     if (!metadataDecoder.skipGeometryMetadata(this._buffer)) {
       return new Status(StatusCode.DRACO_ERROR, 'Failed to decode metadata.');
@@ -1073,8 +1012,6 @@ class PointCloudDecoder {
 // compression/mesh/MeshDecoder.js - ported from mesh/mesh_decoder.h/cc
 
 
-// Class that reconstructs a 3D mesh from input data that was encoded by
-// MeshEncoder.
 class MeshDecoder extends PointCloudDecoder {
 
   constructor() {
@@ -1086,24 +1023,19 @@ class MeshDecoder extends PointCloudDecoder {
     return EncodedGeometryType.TRIANGULAR_MESH;
   }
 
-  // The main entry point for mesh decoding.
   decodeMesh(options, inBuffer, outMesh) {
     this._mesh = outMesh;
     return this.decode(options, inBuffer, outMesh);
   }
 
-  // Returns the base connectivity of the decoded mesh (or null if not initialized).
   getCornerTable() {
     return null;
   }
 
-  // Returns the attribute connectivity data or null if it does not exist.
   getAttributeCornerTable(/* attId */) {
     return null;
   }
 
-  // Returns the decoding data for a given attribute or null when the data
-  // does not exist.
   getAttributeEncodingData(/* attId */) {
     return null;
   }
@@ -1122,7 +1054,7 @@ class MeshDecoder extends PointCloudDecoder {
     return super.decodeGeometryData();
   }
 
-  // Must be implemented by derived classes.
+  // Overridden by derived classes.
   decodeConnectivity() {
     return false;
   }
@@ -1130,17 +1062,11 @@ class MeshDecoder extends PointCloudDecoder {
 }
 
 // compression/entropy/ANSCoding.js - ported from compression/entropy/ans.h
-//
-// An implementation of Asymmetric Numeral Systems (rANS).
-// See http://arxiv.org/abs/1311.2540v2 for more information on rANS.
-// Decode-only port.
+// Asymmetric Numeral Systems (rANS), decode-only. http://arxiv.org/abs/1311.2540v2
 
-// Constants
 const ANS_P8_PRECISION = 256;
 const ANS_L_BASE = 4096;
 const ANS_IO_BASE = 256;
-
-// --- Little-endian memory read helpers ---
 
 function memGetLe16(buf, offset) {
   return buf[offset] | (buf[offset + 1] << 8);
@@ -1159,8 +1085,6 @@ function memGetLe32(buf, offset) {
   );
 }
 
-// --- AnsDecoder state object ---
-
 class AnsDecoder {
 
   constructor() {
@@ -1171,10 +1095,7 @@ class AnsDecoder {
 
 }
 
-// --- Core ANS read init / end ---
-
-// Initializes the AnsDecoder from a buffer and an offset (number of encoded bytes).
-// Returns 0 on success, 1 on error.
+// offset is the number of encoded bytes. Returns 0 on success, 1 on error.
 function ansReadInit(ans, buf, offset) {
   if (offset < 1) {
     return 1;
@@ -1210,8 +1131,6 @@ function ansReadEnd(ans) {
   return ans.state === ANS_L_BASE;
 }
 
-// --- rANS decoder class (template parameter = precision bits) ---
-
 class RAnsDecoder {
 
   constructor(ransPrecisionBits) {
@@ -1220,18 +1139,15 @@ class RAnsDecoder {
     this.ransPrecisionMask = this.ransPrecision - 1;
     this.lRansBase = this.ransPrecision * 4;
     this.lutTable = null; // Uint32Array
-    this.probTable = null; // Uint32Array — flat array of prob values
-    this.cumProbTable = null; // Uint32Array — flat array of cumProb values
-    // rANS decoder state, inlined here (rather than a nested AnsDecoder object)
-    // so the per-symbol ransRead() hot loop touches own properties / locals.
+    this.probTable = null; // Uint32Array, flat
+    this.cumProbTable = null; // Uint32Array, flat
+    // State inlined (not a nested AnsDecoder) so the ransRead() hot loop touches own props.
     this.buf = null;
     this.bufOffset = 0;
     this.state = 0;
   }
 
-  // Initializes the decoder from the input buffer.
-  // |offset| is the number of bytes encoded by the encoder.
-  // Returns 0 on success, non-zero on error.
+  // offset is the number of bytes encoded. Returns 0 on success, non-zero on error.
   readInit(buf, offset) {
     if (offset < 1) {
       return 1;
@@ -1271,8 +1187,7 @@ class RAnsDecoder {
   }
 
   ransRead() {
-    // Cache state in locals for the renormalization loop; properties are read
-    // once and written back once. ransRead runs once per decoded symbol.
+    // Cache state in locals for the renormalization loop: read once, write back once.
     const buf = this.buf;
     const lRansBase = this.lRansBase;
     let state = this.state;
@@ -1288,11 +1203,8 @@ class RAnsDecoder {
     return symbol;
   }
 
-  // Decodes |count| symbols into out[0..count). Identical per-symbol arithmetic
-  // to ransRead(), but every decoder field is hoisted into a local for the
-  // whole batch and the state/offset are written back once — removing the
-  // per-symbol property reads and the decodeSymbol()->ransRead() call
-  // indirection that dominated raw symbol decoding.
+  // Batch ransRead() into out[0..count): all fields hoisted to locals, state
+  // written back once. Removes per-symbol property reads and call indirection.
   decodeSymbols(out, count) {
     const buf = this.buf;
     const lRansBase = this.lRansBase;
@@ -1316,8 +1228,7 @@ class RAnsDecoder {
     this.bufOffset = bufOffset;
   }
 
-  // Construct a lookup table with |ransPrecision| number of entries.
-  // Returns false if the table couldn't be built (because of wrong input data).
+  // Builds the ransPrecision-entry lookup table. Returns false on bad input data.
   ransBuildLookUpTable(tokenProbs, numSymbols) {
     this.lutTable = new Uint32Array(this.ransPrecision);
     this.probTable = new Uint32Array(numSymbols);
@@ -1345,8 +1256,7 @@ class RAnsDecoder {
 // compression/entropy/RAnsSymbolDecoder.js - ported from compression/entropy/rans_symbol_decoder.h
 
 
-// Computes the desired precision of the rANS method for the specified number of
-// unique symbols (defined by their bit_length). Clamped to [12, 20].
+// rANS precision for the given unique-symbols bit length, clamped to [12, 20].
 function computeRAnsPrecisionFromUniqueSymbolsBitLength(symbolsBitLength) {
   const unclamped = Math.trunc((3 * symbolsBitLength) / 2);
   if (unclamped < 12) return 12;
@@ -1354,9 +1264,7 @@ function computeRAnsPrecisionFromUniqueSymbolsBitLength(symbolsBitLength) {
   return unclamped;
 }
 
-// A helper class for decoding symbols using the rANS algorithm.
-// |uniqueSymbolsBitLength| must be the same as the one used for the
-// corresponding RAnsSymbolEncoder.
+// Decodes symbols using rANS. uniqueSymbolsBitLength must match the encoder's.
 class RAnsSymbolDecoder {
 
   constructor(uniqueSymbolsBitLength) {
@@ -1374,12 +1282,10 @@ class RAnsSymbolDecoder {
 
   // Initialize the decoder and decode the probability table.
   create(buffer) {
-    // Check that the DecoderBuffer version is set.
     if (buffer.bitstreamVersion === 0) {
       return false;
     }
 
-    // Decode the number of alphabet symbols.
     if (buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)) {
       this.numSymbols_ = buffer.decodeUint32();
       if (this.numSymbols_ === undefined) return false;
@@ -1389,7 +1295,7 @@ class RAnsSymbolDecoder {
       this.numSymbols_ = val;
     }
 
-    // Check that decoded number of symbols is not unreasonably high.
+    // Reject an unreasonably high symbol count.
     if (Math.trunc(this.numSymbols_ / 64) > buffer.remainingSize) {
       return false;
     }
@@ -1399,21 +1305,17 @@ class RAnsSymbolDecoder {
       return true;
     }
 
-    // Decode the probability table.
     for (let i = 0; i < this.numSymbols_; ++i) {
       const probData = buffer.decodeUint8();
       if (probData === undefined) return false;
 
-      // Token is stored in the first two bits of the first byte.
-      // Values 0-2 indicate the number of extra bytes.
-      // Value 3 is a special symbol for run-length coding of zero probability entries.
+      // Low 2 bits = token: 0-2 is the extra-byte count, 3 is run-length of zero-prob entries.
       const token = probData & 3;
       if (token === 3) {
         const offset = probData >> 2;
         if (i + offset >= this.numSymbols_) {
           return false;
         }
-        // Set zero probability for all symbols in the specified range.
         for (let j = 0; j < offset + 1; ++j) {
           this.probabilityTable_[i + j] = 0;
         }
@@ -1424,7 +1326,7 @@ class RAnsSymbolDecoder {
         for (let b = 0; b < extraBytes; ++b) {
           const eb = buffer.decodeUint8();
           if (eb === undefined) return false;
-          // Shift 8 bits for each extra byte and subtract 2 for the two first bits.
+          // Shift 8 bits per extra byte, minus 2 for the two token bits.
           prob |= eb << (8 * (b + 1) - 2);
         }
         this.probabilityTable_[i] = prob;
@@ -1437,8 +1339,7 @@ class RAnsSymbolDecoder {
     return true;
   }
 
-  // Starts decoding from the buffer. The buffer will be advanced past the
-  // encoded data after this call.
+  // Starts decoding, advancing buffer past the encoded data.
   startDecoding(buffer) {
     let bytesEncoded;
 
@@ -1455,7 +1356,6 @@ class RAnsSymbolDecoder {
     }
 
     const dataHead = buffer.dataHead;
-    // Advance the buffer past the rANS data.
     buffer.advance(Number(bytesEncoded));
     if (this.ans_.readInit(dataHead, Number(bytesEncoded)) !== 0) {
       return false;
@@ -1472,17 +1372,12 @@ class RAnsSymbolDecoder {
 // compression/entropy/SymbolDecoding.js - ported from compression/entropy/symbol_decoding.h/cc
 
 
-// Decodes an array of symbols that was previously encoded with an entropy code.
-// Returns false on error.
-// |numValues| - number of values to decode
-// |numComponents| - number of components (used for tagged coding)
-// |srcBuffer| - DecoderBuffer to read from
-// |outValues| - Uint32Array to write decoded symbols into
+// Decodes numValues entropy-coded symbols into outValues (Uint32Array).
+// numComponents is used for tagged coding. Returns false on error.
 function decodeSymbols(numValues, numComponents, srcBuffer, outValues) {
   if (numValues === 0) {
     return true;
   }
-  // Decode which scheme to use.
   const scheme = srcBuffer.decodeUint8();
   if (scheme === undefined) {
     return false;
@@ -1496,7 +1391,6 @@ function decodeSymbols(numValues, numComponents, srcBuffer, outValues) {
 }
 
 function decodeTaggedSymbols(numValues, numComponents, srcBuffer, outValues) {
-  // Decode the encoded data using a tag decoder with 5 precision bits.
   const tagDecoder = new RAnsSymbolDecoder(5);
   if (!tagDecoder.create(srcBuffer)) {
     return false;
@@ -1507,25 +1401,18 @@ function decodeTaggedSymbols(numValues, numComponents, srcBuffer, outValues) {
   }
 
   if (numValues > 0 && tagDecoder.numSymbols === 0) {
-    return false; // Wrong number of symbols.
+    return false;
   }
 
-  // srcBuffer now points behind the encoded tag data (to the place where the
-  // values are encoded).
   srcBuffer.startBitDecoding(false);
-  // Hoist the bit decoder out of the hot loop. After startBitDecoding(false)
-  // the buffer is guaranteed to be in bit mode, so decodeLeastSignificantBits32
-  // would always delegate straight to this._bitDecoder.getBits — call getBits
-  // directly to remove a layer of method dispatch per component.
+  // After startBitDecoding(false) the buffer is in bit mode, so getBits can be
+  // called directly, skipping decodeLeastSignificantBits32's per-component dispatch.
   const bd = srcBuffer._bitDecoder;
-  // Hoist the rANS decoder for the tag; tagDecoder.decodeSymbol() is exactly
-  // a delegation to this.ans_.ransRead().
+  // tagDecoder.decodeSymbol() is just a delegation to ans_.ransRead(); hoist it.
   const tagAns = tagDecoder.ans_;
   let valueId = 0;
   for (let i = 0; i < numValues; i += numComponents) {
-    // Decode the tag.
     const bitLength = tagAns.ransRead();
-    // Decode the actual value.
     for (let j = 0; j < numComponents; ++j) {
       const val = bd.getBits(bitLength);
       if (val === undefined) {
@@ -1546,7 +1433,7 @@ function decodeRawSymbolsInternal(uniqueSymbolsBitLength, numValues, srcBuffer, 
   }
 
   if (numValues > 0 && decoder.numSymbols === 0) {
-    return false; // Wrong number of symbols.
+    return false;
   }
 
   if (!decoder.startDecoding(srcBuffer)) {
@@ -1570,48 +1457,38 @@ function decodeRawSymbols(numValues, srcBuffer, outValues) {
 
 // compression/attributes/AttributesDecoderInterface.js - ported from compression/attributes/attributes_decoder_interface.h
 
-// Interface class for decoding one or more attributes that were encoded with a
-// matching AttributesEncoder. It provides only the basic interface
-// that is used by the PointCloudDecoder. The actual decoding must be
-// implemented in derived classes using the decodeAttributes() method.
+// Abstract interface used by PointCloudDecoder; methods must be overridden.
 class AttributesDecoderInterface {
 
   constructor() {
-    // Abstract interface - no state.
   }
 
-  // Called after all attribute decoders are created. It can be used to perform
-  // any custom initialization.
   init(decoder, pointCloud) {
-    return false; // Must be overridden.
+    return false;
   }
 
-  // Decodes any attribute decoder specific data from the buffer.
   decodeAttributesDecoderData(buffer) {
-    return false; // Must be overridden.
+    return false;
   }
 
-  // Decode attribute data from the source buffer. Needs to be implemented by
-  // the derived classes.
   decodeAttributes(buffer) {
-    return false; // Must be overridden.
+    return false;
   }
 
   getAttributeId(i) {
-    return -1; // Must be overridden.
+    return -1;
   }
 
   getNumAttributes() {
-    return 0; // Must be overridden.
+    return 0;
   }
 
   getDecoder() {
-    return null; // Must be overridden.
+    return null;
   }
 
-  // Returns an attribute containing data processed by the attribute transform.
-  // (see transformToPortableFormat() method). This data is guaranteed to be
-  // same for encoder and decoder and it can be used by predictors.
+  // Attribute data in portable (post-transform) format; identical on encoder
+  // and decoder, so usable by predictors.
   getPortableAttribute(pointAttributeId) {
     return null;
   }
@@ -1689,10 +1566,8 @@ class DataBuffer {
   }
 
   write(bytePos, inArray, dataSize) {
-    // Fast path: the overwhelmingly common caller passes a Uint8Array view of
-    // exactly dataSize bytes (one attribute entry). Avoid allocating a wrapper
-    // view on every value, which otherwise dominates attribute storage time and
-    // GC pressure.
+    // Fast path: the common caller passes a Uint8Array of exactly dataSize bytes.
+    // Avoid allocating a wrapper view per value (dominates storage time / GC pressure).
     if (inArray instanceof Uint8Array) {
       this._data.set(inArray.length === dataSize ? inArray : inArray.subarray(0, dataSize), bytePos);
       return;
@@ -1744,19 +1619,17 @@ class GeometryAttribute {
     this._attributeType = attributeType;
   }
 
-  // Returns a Uint8Array subarray pointing to the attribute entry in the buffer.
+  // Returns a Uint8Array view of the buffer starting at the attribute entry.
   getAddress(attIndex) {
     const bytePos = this._byteOffset + this._byteStride * attIndex;
     return this._buffer.data.subarray(bytePos);
   }
 
-  // Sets a value of an attribute entry. value should be a Uint8Array or typed array.
   setAttributeValue(entryIndex, value) {
     const bytePos = entryIndex * this._byteStride;
     this._buffer.write(bytePos, value, this._byteStride);
   }
 
-  // Copies data from the source attribute to this attribute.
   copyFrom(srcAtt) {
     this._numComponents = srcAtt._numComponents;
     this._dataType = srcAtt._dataType;
@@ -1777,7 +1650,6 @@ class GeometryAttribute {
     return true;
   }
 
-  // Sets a new internal storage for the attribute.
   resetBuffer(buffer, byteStride, byteOffset) {
     this._buffer = buffer;
     this._byteStride = byteStride;
@@ -1803,8 +1675,7 @@ class GeometryAttribute {
 
 // attributes/GeometryIndices.js - ported from attributes/geometry_indices.h
 
-// Sentinel for an invalid attribute value index.
-// In C++ this is std::numeric_limits<uint32_t>::max(), i.e. 0xFFFFFFFF.
+// Invalid-index sentinel; matches C++ std::numeric_limits<uint32_t>::max().
 const kInvalidAttributeValueIndex = 0xFFFFFFFF >>> 0;
 
 // attributes/PointAttribute.js - ported from attributes/point_attribute.h/cc
@@ -1820,7 +1691,6 @@ class PointAttribute extends GeometryAttribute {
     this._attributeBuffer = null;
     this._attributeTransformData = null;
 
-    // Copy-construct from a GeometryAttribute if provided.
     if (geometryAttribute instanceof GeometryAttribute) {
       this._buffer = geometryAttribute._buffer;
       this._numComponents = geometryAttribute._numComponents;
@@ -1833,7 +1703,6 @@ class PointAttribute extends GeometryAttribute {
     }
   }
 
-  // Initializes a point attribute with identity mapping.
   init(attributeType, numComponents, dataType, normalized, numAttributeValues) {
     this._attributeBuffer = new DataBuffer();
     const byteStride = dataTypeLength(dataType) * numComponents;
@@ -1842,14 +1711,12 @@ class PointAttribute extends GeometryAttribute {
     this.setIdentityMapping();
   }
 
-  // Prepares the attribute storage for the specified number of entries.
   reset(numAttributeValues) {
     if (this._attributeBuffer === null) {
       this._attributeBuffer = new DataBuffer();
     }
     const entrySize = dataTypeLength(this.dataType) * this.numComponents;
     this._attributeBuffer.update(null, numAttributeValues * entrySize);
-    // Assign the new buffer to the parent attribute.
     this.resetBuffer(this._attributeBuffer, entrySize, 0);
     this._numUniqueEntries = numAttributeValues;
     return true;
@@ -1859,7 +1726,6 @@ class PointAttribute extends GeometryAttribute {
     return this._numUniqueEntries;
   }
 
-  // Returns the mapped attribute value index for a given point index.
   mappedIndex(pointIndex) {
     if (this._identityMapping) {
       return pointIndex;
@@ -1885,13 +1751,12 @@ class PointAttribute extends GeometryAttribute {
     return this._indicesMap;
   }
 
-  // Sets the mapping to implicit (point indices equal attribute entry indices).
+  // Implicit mapping: point index equals attribute entry index.
   setIdentityMapping() {
     this._identityMapping = true;
     this._indicesMap = [];
   }
 
-  // Sets the mapping to be explicit using the indicesMap array.
   setExplicitMapping(numPoints) {
     this._identityMapping = false;
     // Uint32Array (rather than a plain Array) keeps mappedIndex() monomorphic
@@ -1901,12 +1766,10 @@ class PointAttribute extends GeometryAttribute {
     this._indicesMap.fill(kInvalidAttributeValueIndex);
   }
 
-  // Set attribute transform data for the attribute.
   setAttributeTransformData(transformData) {
     this._attributeTransformData = transformData;
   }
 
-  // Converts the attribute value at the given index into the output array.
   // Mirrors C++ PointAttribute::ConvertValue<T>().
   convertValue(attIndex, outVal) {
     const bytePos = this._byteOffset + this._byteStride * attIndex;
@@ -1914,7 +1777,6 @@ class PointAttribute extends GeometryAttribute {
     const dt = this._dataType;
     const nc = this._numComponents;
 
-    // Fast path for FLOAT32 (most common case).
     if (dt === DataType.FLOAT32) {
       if (this._cachedFloat32View === undefined || this._cachedFloat32Buffer !== bufData.buffer) {
         this._cachedFloat32Buffer = bufData.buffer;
@@ -1927,11 +1789,9 @@ class PointAttribute extends GeometryAttribute {
       return;
     }
 
-    // Fast path for INT32 — the type of every portable (decoded-integer)
-    // attribute, read per-corner by the geometric-normal / texcoords
-    // predictors. A cached Int32Array view indexed by element avoids the
-    // per-component DataView.getInt32 dispatch. Base byte position is always
-    // 4-aligned for these attributes (byteStride is a multiple of 4).
+    // INT32 fast path: every portable attribute is INT32, read per-corner by the
+    // geometric-normal / texcoords predictors. Cached Int32Array view avoids the
+    // per-component DataView dispatch; base is always 4-aligned (byteStride % 4 == 0).
     if (dt === DataType.INT32) {
       if (this._cachedInt32View === undefined || this._cachedInt32Buffer !== bufData.buffer) {
         this._cachedInt32Buffer = bufData.buffer;
@@ -1956,7 +1816,7 @@ class PointAttribute extends GeometryAttribute {
       return;
     }
 
-    // General path using cached DataView.
+    // General path: cached DataView for non-32-bit-aligned types.
     if (this._cachedDataView === undefined || this._cachedDVBuffer !== bufData.buffer) {
       this._cachedDVBuffer = bufData.buffer;
       this._cachedDataView = new DataView(bufData.buffer, bufData.byteOffset, bufData.byteLength);
@@ -1984,8 +1844,8 @@ class PointAttribute extends GeometryAttribute {
     }
   }
 
-  // High-performance direct extraction of all values to the output typed array.
-  // Replaces the slow point-by-point copy loop that used temporary arrays.
+  // Flat-array extraction of all values into one output typed array (avoids the
+  // per-point temp-array copy via cached typed-array views over the buffer).
   extractTo(OutputTypedArray, numPoints) {
     const numComponents = this._numComponents;
     const array = new OutputTypedArray(numPoints * numComponents);
@@ -2064,7 +1924,7 @@ class PointAttribute extends GeometryAttribute {
       const srcStart = (bufData.byteOffset + byteOffset) >> shift;
       const strideElements = byteStride >> shift;
 
-      // Contiguous fast block copy path.
+      // Contiguous: single block copy when source and output types match.
       if (isIdentity && strideElements === numComponents) {
         const srcEnd = srcStart + numPoints * numComponents;
         if (srcView.constructor === OutputTypedArray) {
@@ -2073,7 +1933,6 @@ class PointAttribute extends GeometryAttribute {
         }
       }
 
-      // Fast assignment loop.
       for (let i = 0; i < numPoints; i++) {
         const attIndex = isIdentity ? i : indicesMap[i];
         const srcOffset = srcStart + attIndex * strideElements;
@@ -2085,7 +1944,7 @@ class PointAttribute extends GeometryAttribute {
       return array;
     }
 
-    // Slow/fallback path.
+    // Fallback for any other dtype via convertValue.
     const temp = new Array(numComponents);
     for (let i = 0; i < numPoints; i++) {
       const attIndex = isIdentity ? i : indicesMap[i];
@@ -2098,7 +1957,6 @@ class PointAttribute extends GeometryAttribute {
     return array;
   }
 
-  // Copies attribute data from the provided source attribute.
   copyFrom(srcAtt) {
     if (this.buffer === null) {
       this._attributeBuffer = new DataBuffer();
@@ -2111,7 +1969,7 @@ class PointAttribute extends GeometryAttribute {
     this._numUniqueEntries = srcAtt._numUniqueEntries;
     this._indicesMap = srcAtt._indicesMap.slice();
     if (srcAtt._attributeTransformData) {
-      // Shallow copy of transform data -- typically set fresh during decode.
+      // Shallow copy; transform data is normally set fresh during decode.
       this._attributeTransformData = srcAtt._attributeTransformData;
     } else {
       this._attributeTransformData = null;
@@ -2123,32 +1981,25 @@ class PointAttribute extends GeometryAttribute {
 // compression/attributes/AttributesDecoder.js - ported from compression/attributes/attributes_decoder.h/cc
 
 
-// Base class for decoding one or more attributes that were encoded with a
-// matching AttributesEncoder. It is a basic implementation of
-// AttributesDecoderInterface that provides functionality that is shared between
-// all AttributesDecoders.
+// Base class for AttributesDecoders; shared functionality for all of them.
 class AttributesDecoder extends AttributesDecoderInterface {
 
   constructor() {
     super();
-    // List of attribute ids that need to be decoded with this decoder.
     this._pointAttributeIds = [];
-    // Map between point attribute id and the local id (inverse of _pointAttributeIds).
+    // Inverse of _pointAttributeIds: point attribute id -> local id.
     this._pointAttributeToLocalIdMap = [];
     this._pointCloudDecoder = null;
     this._pointCloud = null;
   }
 
-  // Called after all attribute decoders are created.
   init(decoder, pointCloud) {
     this._pointCloudDecoder = decoder;
     this._pointCloud = pointCloud;
     return true;
   }
 
-  // Decodes any attribute decoder specific data from the buffer.
   decodeAttributesDecoderData(buffer) {
-    // Decode and create attributes.
     let numAttributes;
 
     if (this._pointCloudDecoder.bitstreamVersion() <
@@ -2160,21 +2011,18 @@ class AttributesDecoder extends AttributesDecoderInterface {
       if (numAttributes === undefined) return false;
     }
 
-    // Check that decoded number of attributes is valid.
     if (numAttributes === 0) {
       return false;
     }
     if (numAttributes > 5 * buffer.remainingSize) {
-      // The decoded number of attributes is unreasonably high.
+      // Unreasonably high; reject.
       return false;
     }
 
-    // Decode attribute descriptor data.
     this._pointAttributeIds.length = numAttributes;
     const pc = this._pointCloud;
 
     for (let i = 0; i < numAttributes; i++) {
-      // Decode attribute descriptor data.
       const attType = buffer.decodeUint8();
       if (attType === undefined) return false;
 
@@ -2194,12 +2042,10 @@ class AttributesDecoder extends AttributesDecoderInterface {
         return false;
       }
 
-      // Check decoded attribute descriptor data.
       if (numComponents === 0) {
         return false;
       }
 
-      // Create a GeometryAttribute and init it.
       const ga = new GeometryAttribute();
       ga.init(
         attType, null, numComponents, dataType,
@@ -2219,13 +2065,11 @@ class AttributesDecoder extends AttributesDecoderInterface {
         ga.uniqueId = uniqueId;
       }
 
-      // Add the attribute to the point cloud.
       const pa = new PointAttribute(ga);
       const attId = pc.addAttribute(pa);
       pc.attribute(attId).uniqueId = uniqueId;
       this._pointAttributeIds[i] = attId;
 
-      // Update the inverse map.
       if (attId >= this._pointAttributeToLocalIdMap.length) {
         const oldLen = this._pointAttributeToLocalIdMap.length;
         this._pointAttributeToLocalIdMap.length = attId + 1;
@@ -2250,7 +2094,6 @@ class AttributesDecoder extends AttributesDecoderInterface {
     return this._pointCloudDecoder;
   }
 
-  // Decodes attribute data from the source buffer.
   decodeAttributes(buffer) {
     if (!this.decodePortableAttributes(buffer)) {
       return false;
@@ -2271,7 +2114,7 @@ class AttributesDecoder extends AttributesDecoderInterface {
     return this._pointAttributeToLocalIdMap[pointAttributeId];
   }
 
-  // Must be overridden.
+  // Must be overridden by derived classes.
   decodePortableAttributes(buffer) {
     return false;
   }
@@ -2297,7 +2140,7 @@ class SequentialAttributeDecoder {
     this._decoder = null;
     this._attribute = null;
     this._attributeId = -1;
-    // Storage for decoded portable attribute (after lossless decoding).
+    // Decoded portable attribute (after lossless decoding).
     this._portableAttribute = null;
   }
 
@@ -2308,7 +2151,6 @@ class SequentialAttributeDecoder {
     return true;
   }
 
-  // Performs lossless decoding of the portable attribute data.
   decodePortableAttribute(pointIds, buffer) {
     if (this._attribute.numComponents <= 0) {
       return false;
@@ -2319,22 +2161,19 @@ class SequentialAttributeDecoder {
     return this.decodeValues(pointIds, buffer);
   }
 
-  // Decodes any data needed to revert portable transform of the decoded attribute.
+  // No-op by default; subclasses with a transform override this.
   decodeDataNeededByPortableTransform(pointIds, buffer) {
-    // Default implementation does not apply any transform.
     return true;
   }
 
-  // Reverts transformation performed by encoder.
+  // No-op by default; subclasses with a transform override this.
   transformAttributeToOriginalFormat(pointIds) {
-    // Default implementation does not apply any transform.
     return true;
   }
 
   getPortableAttribute() {
-    // If needed, copy point to attribute value index mapping from the final
-    // attribute to the portable attribute. Both maps are Uint32Array (the
-    // source is explicit here), so copy in one shot instead of per-entry
+    // Copy point->value index mapping from the final attribute to the portable
+    // one. Both maps are Uint32Array, so copy in one shot instead of per-entry
     // mappedIndex()/setPointMapEntry() calls.
     if (!this._attribute.isMappingIdentity && this._portableAttribute &&
         this._portableAttribute.isMappingIdentity) {
@@ -2363,7 +2202,6 @@ class SequentialAttributeDecoder {
     return this._decoder;
   }
 
-  // Should be used to initialize newly created prediction scheme.
   initPredictionScheme(ps) {
     for (let i = 0; i < ps.getNumParentAttributes(); i++) {
       const attId = this._decoder.pointCloud().getNamedAttributeId(
@@ -2386,12 +2224,11 @@ class SequentialAttributeDecoder {
     return true;
   }
 
-  // The actual implementation of the attribute decoding.
+  // Decodes raw attribute values in their original format.
   decodeValues(pointIds, buffer) {
     const numValues = pointIds.length;
     const entrySize = this._attribute.byteStride;
     let outBytePos = 0;
-    // Decode raw attribute values in their original format.
     for (let i = 0; i < numValues; i++) {
       const valueData = buffer.decodeBytes(entrySize);
       if (valueData === undefined) {
@@ -2418,79 +2255,40 @@ class SequentialAttributeDecoder {
 
 
 /**
- * Abstract interface for all prediction schemes used during attribute decoding.
- * Subclasses should implement all methods.
+ * Abstract interface for prediction schemes used during attribute decoding.
  */
 class PredictionSchemeDecoderInterface {
 
-  /**
-   * Returns the prediction method used by this scheme.
-   * @returns {number} One of PredictionSchemeMethod values.
-   */
   getPredictionMethod() {
     return PredictionSchemeMethod.PREDICTION_NONE;
   }
 
-  /**
-   * Returns true when the prediction scheme is fully initialized.
-   * @returns {boolean}
-   */
   isInitialized() {
     return false;
   }
 
-  /**
-   * Returns true if all correction values are guaranteed to be positive.
-   * @returns {boolean}
-   */
+  /** True if all correction values are guaranteed to be positive. */
   areCorrectionsPositive() {
     return false;
   }
 
-  /**
-   * Returns the number of parent attributes needed for the prediction.
-   * @returns {number}
-   */
   getNumParentAttributes() {
     return 0;
   }
 
-  /**
-   * Returns the type of the parent attribute at index i.
-   * @param {number} i
-   * @returns {number}
-   */
   getParentAttributeType(i) {
     return -1; // INVALID
   }
 
-  /**
-   * Sets the required parent attribute.
-   * @param {object} att - PointAttribute
-   * @returns {boolean}
-   */
   setParentAttribute(att) {
     return false;
   }
 
-  /**
-   * Decodes prediction scheme-specific data from the input buffer.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodePredictionData(buffer) {
     return true;
   }
 
-  /**
-   * Reverts changes made by the prediction scheme during encoding.
-   * @param {Int32Array|TypedArray} inCorr - correction values
-   * @param {Int32Array|TypedArray} outData - output original values
-   * @param {number} size - total number of values
-   * @param {number} numComponents - components per entry
-   * @param {Array|null} entryToPointIdMap
-   * @returns {boolean}
-   */
+  /** Reverts the prediction applied during encoding, writing original values to outData. */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     return false;
   }
@@ -2502,29 +2300,17 @@ class PredictionSchemeDecoderInterface {
 
 
 /**
- * Base class for typed prediction scheme decoders. Provides basic access
- * to the encoded attribute and the supplied prediction transform.
- *
- * In C++ this is a template: PredictionSchemeDecoder<DataTypeT, TransformT>.
- * In JS, the transform is passed as a constructor parameter.
+ * Base class for typed prediction scheme decoders. C++ templates this on
+ * <DataTypeT, TransformT>; here the transform is a constructor param.
  */
 class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   */
   constructor(attribute, transform) {
     super();
     this._attribute = attribute;
     this._transform = transform;
   }
 
-  /**
-   * Decodes prediction data by delegating to the transform.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodePredictionData(buffer) {
     if (!this._transform.decodeTransformData(buffer)) {
       return false;
@@ -2532,33 +2318,22 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
     return true;
   }
 
-  /** @returns {number} */
   getNumParentAttributes() {
     return 0;
   }
 
-  /**
-   * @param {number} i
-   * @returns {number}
-   */
   getParentAttributeType(i) {
     return -1; // INVALID
   }
 
-  /**
-   * @param {object} att
-   * @returns {boolean}
-   */
   setParentAttribute(att) {
     return false;
   }
 
-  /** @returns {boolean} */
   areCorrectionsPositive() {
     return this._transform.areCorrectionsPositive();
   }
 
-  /** @returns {object} */
   get transform() {
     return this._transform;
   }
@@ -2570,47 +2345,26 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
 
 
 /**
- * Decoder for values encoded with delta coding.
- * Delta prediction: value[i] = value[i-1] + correction[i].
+ * Decoder for delta coding: value[i] = value[i-1] + correction[i].
  */
 class PredictionSchemeDeltaDecoder extends PredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   */
   constructor(attribute, transform) {
     super(attribute, transform);
   }
 
-  /**
-   * @returns {number}
-   */
   getPredictionMethod() {
     return PredictionSchemeMethod.PREDICTION_DIFFERENCE;
   }
 
-  /**
-   * @returns {boolean}
-   */
   isInitialized() {
     return true;
   }
 
-  /**
-   * Computes original values from corrections using delta prediction.
-   * @param {Int32Array|TypedArray} inCorr - correction values
-   * @param {Int32Array|TypedArray} outData - output buffer for original values
-   * @param {number} size - total number of values
-   * @param {number} numComponents - components per entry
-   * @param {Array|null} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     this._transform.init(numComponents);
 
-    // Decode the original value for the first element.
-    // The "predicted" value for the first element is all zeros.
+    // First element has an all-zero "predicted" value.
     const zeroVals = new Int32Array(numComponents);
     this._transform.computeOriginalValue(
       zeroVals, 0,
@@ -2618,7 +2372,7 @@ class PredictionSchemeDeltaDecoder extends PredictionSchemeDecoder {
       outData, 0
     );
 
-    // Decode data from the front: D(i) = D(i-1) + correction(i).
+    // D(i) = D(i-1) + correction(i).
     for (let i = numComponents; i < size; i += numComponents) {
       this._transform.computeOriginalValue(
         outData, i - numComponents,
@@ -2637,18 +2391,11 @@ class PredictionSchemeDeltaDecoder extends PredictionSchemeDecoder {
 
 
 /**
- * Base class for all mesh prediction scheme decoders that use mesh
- * connectivity data. Extends PredictionSchemeDecoder with mesh data access.
- *
- * In C++ this is templated on MeshDataT. In JS, meshData is a constructor param.
+ * Base class for mesh prediction scheme decoders that use mesh connectivity.
+ * C++ templates this on MeshDataT; here meshData is a constructor param.
  */
 class MeshPredictionSchemeDecoder extends PredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform);
     this._meshData = meshData;
@@ -2661,40 +2408,23 @@ class MeshPredictionSchemeDecoder extends PredictionSchemeDecoder {
 
 
 /**
- * Decoder for attribute values encoded with the standard parallelogram
- * prediction. Uses the parallelogram formed by three vertices of a triangle
- * opposite to the current corner to predict the attribute value.
+ * Decoder for the standard parallelogram prediction: the parallelogram formed
+ * by the triangle opposite the current corner predicts the attribute value.
  */
 class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform, meshData);
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_PARALLELOGRAM;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._meshData.isInitialized();
   }
 
-  /**
-   * Computes original values using parallelogram prediction.
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array|null} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     this._transform.init(numComponents);
 
@@ -2710,10 +2440,8 @@ class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecod
     const cornerToVertex = table.cornerToVertexArray();
     const dataToCornerMap = this._meshData.dataToCornerMap;
 
-    // Storage for prediction values (initialized to zero).
     const predVals = new Int32Array(numComponents);
 
-    // Restore the first value.
     this._transform.computeOriginalValue(
       predVals, 0, inCorr, 0, outData, 0
     );
@@ -2746,13 +2474,12 @@ class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecod
       }
 
       if (!hasPrediction) {
-        // Parallelogram could not be computed. Use delta coding (previous value).
+        // No parallelogram: fall back to delta from previous value.
         const srcOffset = (p - 1) * numComponents;
         this._transform.computeOriginalValue(
           outData, srcOffset, inCorr, dstOffset, outData, dstOffset
         );
       } else {
-        // Apply the parallelogram prediction.
         this._transform.computeOriginalValue(
           predVals, 0, inCorr, dstOffset, outData, dstOffset
         );
@@ -3087,25 +2814,15 @@ class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecod
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_shared.h
 
 /**
- * Computes parallelogram prediction for a given corner and data entry id.
- * The prediction is: P = next + prev - opp.
+ * Computes parallelogram prediction P = next + prev - opp for a corner/entry.
  *
- * Operates directly on the corner table's flat Int32Array connectivity
- * (oppositeCornerArray / cornerToVertexArray) rather than calling the table's
- * accessor methods. The table can be either the base CornerTable or a
- * MeshAttributeCornerTable, so method calls here would be polymorphic and not
- * inlined; the flat arrays are always Int32Arrays and keep this hot path
- * monomorphic. next()/previous() are inlined as corner-triple arithmetic.
+ * Operates on the flat Int32Array connectivity (oppositeCornerArray /
+ * cornerToVertexArray) rather than the table accessors: the table may be a
+ * CornerTable or MeshAttributeCornerTable, so method calls would be polymorphic
+ * and not inlined; the flat arrays keep this hot path monomorphic.
+ * next()/previous() are inlined as corner-triple arithmetic.
  *
- * @param {number} dataEntryId - the current entry being decoded
- * @param {number} ci - corner index
- * @param {Int32Array} oppositeCorners - seam-aware opposite corner per corner
- * @param {Int32Array} cornerToVertex - vertex (data) index per corner
- * @param {Int32Array|Array} vertexToDataMap
- * @param {Int32Array|TypedArray} inData - already decoded data
- * @param {number} numComponents - components per entry
- * @param {Int32Array} outPrediction - buffer to store predicted values
- * @returns {boolean} true if prediction was computed, false otherwise
+ * @returns {boolean} true if a prediction was computed
  */
 function computeParallelogramPrediction(dataEntryId, ci, oppositeCorners,
   cornerToVertex, vertexToDataMap, inData, numComponents, outPrediction) {
@@ -3145,39 +2862,23 @@ const kInvalidCornerIndex$4 = -1;
 
 
 /**
- * Decoder for predictions encoded by multi-parallelogram encoding scheme.
- * Multiple parallelogram predictions around a vertex are averaged to
- * produce the final prediction.
+ * Decoder for the multi-parallelogram scheme: parallelogram predictions around
+ * a vertex are averaged to produce the final prediction.
  */
 class MeshPredictionSchemeMultiParallelogramDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform, meshData);
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_MULTI_PARALLELOGRAM;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._meshData.isInitialized();
   }
 
-  /**
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array|null} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     this._transform.init(numComponents);
 
@@ -3245,7 +2946,7 @@ class MeshPredictionSchemeMultiParallelogramDecoder extends MeshPredictionScheme
 // compression/bit_coders/RAnsBitDecoder.js - ported from compression/bit_coders/rans_bit_decoder.h/cc
 
 
-// Class for decoding a sequence of bits that were encoded with RAnsBitEncoder.
+// Decodes bits encoded with RAnsBitEncoder.
 class RAnsBitDecoder {
 
   constructor() {
@@ -3254,7 +2955,6 @@ class RAnsBitDecoder {
     this.p_ = 0; // ANS_P8_PRECISION - probZero, precomputed
   }
 
-  // Sets |sourceBuffer| as the buffer to decode bits from.
   // Returns false when the data is invalid.
   startDecoding(sourceBuffer) {
     this.clear();
@@ -3287,7 +2987,6 @@ class RAnsBitDecoder {
     return true;
   }
 
-  // Decode one bit. Returns true if the bit is a 1, otherwise false.
   decodeNextBit() {
     const ans = this.ansDecoder_;
     const p = this.p_;
@@ -3322,16 +3021,11 @@ const OPTIMAL_MULTI_PARALLELOGRAM = 0;
 const MAX_NUM_PARALLELOGRAMS = 4;
 
 /**
- * Decoder for predictions encoded with the constrained multi-parallelogram
- * encoder. Uses crease edge flags to determine which parallelograms to use.
+ * Decoder for the constrained multi-parallelogram encoder. Crease edge flags
+ * determine which parallelograms to use.
  */
 class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform, meshData);
     this._selectedMode = OPTIMAL_MULTI_PARALLELOGRAM;
@@ -3342,30 +3036,22 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
     }
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_CONSTRAINED_MULTI_PARALLELOGRAM;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._meshData.isInitialized();
   }
 
-  /**
-   * Decodes prediction data including crease edge flags.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodePredictionData(buffer) {
     if (buffer.bitstreamVersion < 0x0202) {
-      // Decode prediction mode.
       const mode = buffer.decodeUint8();
       if (mode === undefined) return false;
       if (mode !== OPTIMAL_MULTI_PARALLELOGRAM) return false;
     }
 
-    // Decode crease edge flags using rANS bit coder for each context.
+    // Decode crease edge flags via rANS bit coder, one context per parallelogram count.
     for (let i = 0; i < MAX_NUM_PARALLELOGRAMS; ++i) {
       const numFlags = buffer.decodeVarintUint32();
       if (numFlags === undefined) return false;
@@ -3380,18 +3066,9 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
         decoder.endDecoding();
       }
     }
-    // Call base class to decode transform data.
     return super.decodePredictionData(buffer);
   }
 
-  /**
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array|null} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     this._transform.init(numComponents);
 
@@ -3401,7 +3078,6 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
       predVals.push(new Int32Array(numComponents));
     }
 
-    // First value.
     this._transform.computeOriginalValue(
       predVals[0], 0, inCorr, 0, outData, 0
     );
@@ -3411,10 +3087,7 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
     const oppositeCorners = table.oppositeCornerArray();
     const cornerToVertex = table.cornerToVertexArray();
 
-    // Position in each isCreaseEdge context.
     const isCreaseEdgePos = new Int32Array(MAX_NUM_PARALLELOGRAMS);
-
-    // Multi-prediction accumulator.
     const multiPredVals = new Int32Array(numComponents);
 
     const cornerMapSize = this._meshData.dataToCornerMap.length;
@@ -3445,7 +3118,7 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
         }
       }
 
-      // Check which parallelograms are used via crease edge flags.
+      // Crease edge flags select which parallelograms contribute.
       let numUsedParallelograms = 0;
       if (numParallelograms > 0) {
         for (let i = 0; i < numComponents; ++i) {
@@ -3492,18 +3165,11 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
 const GEOMETRY_ATTRIBUTE_POSITION$2 = 0;
 
 /**
- * Decoder for predictions of UV coordinates using mesh geometry.
- * This predictor is not portable and is used for backwards compatibility only.
- * See MeshPredictionSchemeTexCoordsPortableDecoder for the portable version.
+ * Decoder for UV coordinate predictions using mesh geometry. Not portable;
+ * kept for backwards compatibility. See MeshPredictionSchemeTexCoordsPortableDecoder.
  */
 class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   * @param {number} version - bitstream version
-   */
   constructor(attribute, transform, meshData, version) {
     super(attribute, transform, meshData);
     this._posAttribute = null;
@@ -3514,35 +3180,24 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     this._version = version;
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_TEX_COORDS_DEPRECATED;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     if (this._posAttribute === null) return false;
     if (!this._meshData.isInitialized()) return false;
     return true;
   }
 
-  /** @returns {number} */
   getNumParentAttributes() {
     return 1;
   }
 
-  /**
-   * @param {number} i
-   * @returns {number}
-   */
   getParentAttributeType(i) {
     return GEOMETRY_ATTRIBUTE_POSITION$2;
   }
 
-  /**
-   * @param {object} att - PointAttribute
-   * @returns {boolean}
-   */
   setParentAttribute(att) {
     if (att === null) return false;
     if (att.attributeType !== GEOMETRY_ATTRIBUTE_POSITION$2) return false;
@@ -3551,11 +3206,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     return true;
   }
 
-  /**
-   * Decodes prediction data including orientation flags.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodePredictionData(buffer) {
     let numOrientations = 0;
     if (buffer.bitstreamVersion < 0x0202) {
@@ -3582,14 +3232,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     return super.decodePredictionData(buffer);
   }
 
-  /**
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     if (numComponents !== 2) return false;
     this._numComponents = numComponents;
@@ -3610,9 +3252,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     return true;
   }
 
-  /**
-   * @private
-   */
   _getPositionForEntryId(entryId) {
     const pointId = this._entryToPointIdMap[entryId];
     const pos = new Float32Array(3);
@@ -3622,17 +3261,11 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     return pos;
   }
 
-  /**
-   * @private
-   */
   _getTexCoordForEntryId(entryId, data) {
     const dataOffset = entryId * this._numComponents;
     return [data[dataOffset], data[dataOffset + 1]];
   }
 
-  /**
-   * @private
-   */
   _computePredictedValue(cornerId, data, dataId) {
     const table = this._meshData.cornerTable;
     const nextCornerId = table.next(cornerId);
@@ -3665,7 +3298,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
       const nextPos = this._getPositionForEntryId(nextDataId);
       const prevPos = this._getPositionForEntryId(prevDataId);
 
-      // Compute vectors pn = prev - next, cn = tip - next.
       const pn = [
         prevPos[0] - nextPos[0],
         prevPos[1] - nextPos[1],
@@ -3711,7 +3343,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
         predictedV = pnvs - pnut;
       }
 
-      // Round the predicted value for integer types.
       const u = Math.floor(predictedU + 0.5);
       if (isNaN(u) || u > 0x7FFFFFFF || u < -2147483648) {
         this._predictedValue[0] = -2147483648;
@@ -3728,7 +3359,7 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
       return true;
     }
 
-    // Fallback: delta coding when both corners are not available.
+    // Fallback to delta coding when a neighbor corner is unavailable.
     let dataOffset = 0;
     if (prevDataId < dataId) {
       dataOffset = prevDataId * this._numComponents;
@@ -3755,15 +3386,13 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
 
 // src/compression/attributes/prediction_schemes/PredictionSchemePositionCache.js
 //
-// Shared helper for the mesh predictors that need integer positions in their
-// hot loop. Precomputes the integer position of every data entry once into a
-// flat Int32Array (3 components per entry), so the per-corner prediction loops
-// can do plain array reads instead of per-fetch attribute dispatch.
+// Precomputes the integer position of every data entry into a flat Int32Array
+// (3 components per entry) so the per-corner prediction loops do plain array
+// reads instead of per-fetch attribute dispatch.
 
 
-// Returns an Int32Array of length numEntries*3. att is the position
-// PointAttribute, map is the entry->point-id map, tempPos is a reusable
-// 3-element scratch buffer for the non-INT32 fallback path.
+// Returns an Int32Array of length numEntries*3. tempPos is a reusable 3-element
+// scratch buffer used only on the non-INT32 fallback path.
 function buildInt32PositionCache(att, map, numEntries, tempPos) {
   const cache = new Int32Array(numEntries * 3);
   const bufData = att.buffer && att.buffer.data;
@@ -3807,16 +3436,14 @@ function buildInt32PositionCache(att, map, numEntries, tempPos) {
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_predictor.h
 
 
-// Any integer product strictly below this is exactly representable as a JS
-// double; at or above it the double path may lose precision and we switch to
-// the BigInt path. (2^53.)
+// 2^53: integer products below this are exact as a JS double; at or above it
+// the double path may lose precision and we switch to the BigInt path.
 const SAFE_PRODUCT = 9007199254740992;
 
 const MASK64 = (1n << 64n) - 1n;
 const INT64_MAX_BIG = (1n << 63n) - 1n;
 
-// Floor of the integer square root of a non-negative BigInt (matches the C++
-// IntSqrt used by the portable UV predictor).
+// Floor of the integer square root of a non-negative BigInt; matches C++ IntSqrt.
 function bigIntSqrt(value) {
   if (value < 2n) return value;
   let x = value;
@@ -3836,9 +3463,6 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
 
   static NUM_COMPONENTS = 2;
 
-  /**
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(meshData) {
     this._posAttribute = null;
     this._entryToPointIdMap = null;
@@ -3847,70 +3471,42 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
     this._numOrientations = 0;
     this._meshData = meshData;
     this._tempPos = new Array(3);
-    // Flat Int32 position cache indexed by data entry id (built once per
-    // decode) so position fetches are array reads, not convertValue calls.
+    // Flat Int32 position cache so fetches are array reads, not convertValue calls.
     this._posCache = null;
     this._cornerToVertex = null;
   }
 
-  /**
-   * @param {object} positionAttribute - PointAttribute for positions
-   */
   setPositionAttribute(positionAttribute) {
     this._posAttribute = positionAttribute;
   }
 
-  /**
-   * @param {Array} map
-   */
   setEntryToPointIdMap(map) {
     this._entryToPointIdMap = map;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._posAttribute !== null;
   }
 
-  /** @returns {Int32Array} */
   get predictedValue() {
     return this._predictedValue;
   }
 
-  /**
-   * @param {number} numOrientations
-   */
   resizeOrientations(numOrientations) {
     this._orientations = new Uint8Array(numOrientations);
     this._numOrientations = numOrientations;
   }
 
-  /**
-   * @param {number} i
-   * @param {boolean} v
-   */
   setOrientation(i, v) {
     this._orientations[i] = v ? 1 : 0;
   }
 
-  /**
-   * Precomputes the integer position of every data entry once so position
-   * fetches in the hot loop are flat-array reads.
-   * @param {number} numEntries
-   */
   buildPositionCache(numEntries) {
     this._posCache = buildInt32PositionCache(
       this._posAttribute, this._entryToPointIdMap, numEntries, this._tempPos);
     this._cornerToVertex = this._meshData.cornerTable.cornerToVertexArray();
   }
 
-  /**
-   * Computes predicted UV coordinates on a given corner (decoder path).
-   * @param {number} cornerId
-   * @param {Int32Array} data
-   * @param {number} dataId
-   * @returns {boolean}
-   */
   computePredictedValue(cornerId, data, dataId) {
     const rem = cornerId - ((cornerId / 3) | 0) * 3;
     const nextCornerId = rem === 2 ? cornerId - 2 : cornerId + 1;
@@ -3950,7 +3546,6 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
       const prev1 = posCache[posOffset + 1];
       const prev2 = posCache[posOffset + 2];
 
-      // pn = prevPos - nextPos
       const pn0 = prev0 - next0;
       const pn1 = prev1 - next1;
       const pn2 = prev2 - next2;
@@ -3976,14 +3571,12 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
           return false;
         }
 
-        // The remaining arithmetic is int64 in the C++ reference. For meshes
-        // with small quantized positions every intermediate stays within JS's
-        // exact-integer range (2^53), so double math is bit-exact; for high
-        // position quantization (e.g. cl10's 20-bit) the products exceed 2^53
-        // and we fall back to a BigInt path mirroring the C++ int64/uint64
-        // semantics. The products that can grow past 2^53 are nUV*pnNorm2,
-        // cnDotPn*pnUV, cnDotPn*pn, and cxNorm2*pnNorm2 — the last bounded by
-        // cnNorm2*pnNorm2 (the perpendicular cx is never longer than cn).
+        // Remaining arithmetic is int64 in C++. With small quantized positions
+        // every intermediate fits 2^53 so double math is bit-exact; high
+        // quantization (e.g. cl10's 20-bit) overflows 2^53 and we drop to the
+        // BigInt path mirroring C++ int64/uint64. Products that can exceed 2^53:
+        // nUV*pnNorm2, cnDotPn*pnUV, cnDotPn*pn, and cxNorm2*pnNorm2 (the last
+        // bounded by cnNorm2*pnNorm2, since cx is never longer than cn).
         const cnNorm2 = cn0 * cn0 + cn1 * cn1 + cn2 * cn2;
         const pnAbsMaxG = Math.max(Math.abs(pn0), Math.abs(pn1), Math.abs(pn2));
         const cnDotPnAbs = Math.abs(cnDotPn);
@@ -4056,12 +3649,11 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
     return true;
   }
 
-  // 64-bit-exact version of the projection prediction, used when the double
-  // path would lose precision (high position quantization). Mirrors the C++
-  // VectorD<int64_t>/VectorD<uint64_t> arithmetic, including the uint64
-  // wraparound in the IntSqrt(cxNorm2*pnNorm2) term and the unsigned add/sub
-  // used to form the final UV. Returns false in the same overflow cases as the
-  // double path so the encoder and decoder agree on when to fall back to delta.
+  // 64-bit-exact projection prediction, used when the double path would lose
+  // precision (high position quantization). Mirrors C++ VectorD<int64_t>/
+  // <uint64_t>, including the uint64 wraparound in IntSqrt(cxNorm2*pnNorm2) and
+  // the unsigned add/sub forming the final UV. Returns false in the same
+  // overflow cases as the double path so encoder and decoder agree on fallback.
   _computePredictedValueBig(tip0, tip1, tip2, next0, next1, next2,
     pn0, pn1, pn2, nUV0, nUV1, pUV0, pUV1, pnNorm2SquaredNum) {
     const B = BigInt;
@@ -4136,51 +3728,34 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
 const GEOMETRY_ATTRIBUTE_POSITION$1 = 0;
 
 /**
- * Decoder for predictions of UV coordinates using the portable texture
- * coordinate predictor. This is the preferred version over the deprecated
- * MeshPredictionSchemeTexCoordsDecoder.
+ * Decoder for UV coordinate predictions using the portable predictor; preferred
+ * over the deprecated MeshPredictionSchemeTexCoordsDecoder.
  */
 class MeshPredictionSchemeTexCoordsPortableDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform, meshData);
     this._predictor = new MeshPredictionSchemeTexCoordsPortablePredictor(meshData);
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_TEX_COORDS_PORTABLE;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     if (!this._predictor.isInitialized()) return false;
     if (!this._meshData.isInitialized()) return false;
     return true;
   }
 
-  /** @returns {number} */
   getNumParentAttributes() {
     return 1;
   }
 
-  /**
-   * @param {number} i
-   * @returns {number}
-   */
   getParentAttributeType(i) {
     return GEOMETRY_ATTRIBUTE_POSITION$1;
   }
 
-  /**
-   * @param {object} att - PointAttribute
-   * @returns {boolean}
-   */
   setParentAttribute(att) {
     if (!att || att.attributeType !== GEOMETRY_ATTRIBUTE_POSITION$1) return false;
     if (att.numComponents !== 3) return false;
@@ -4188,11 +3763,6 @@ class MeshPredictionSchemeTexCoordsPortableDecoder extends MeshPredictionSchemeD
     return true;
   }
 
-  /**
-   * Decodes orientation flags.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodePredictionData(buffer) {
     let numOrientations = buffer.decodeInt32();
     if (numOrientations === undefined || numOrientations < 0) return false;
@@ -4211,14 +3781,6 @@ class MeshPredictionSchemeTexCoordsPortableDecoder extends MeshPredictionSchemeD
     return super.decodePredictionData(buffer);
   }
 
-  /**
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     if (numComponents !== MeshPredictionSchemeTexCoordsPortablePredictor.NUM_COMPONENTS) {
       return false;
@@ -4227,8 +3789,7 @@ class MeshPredictionSchemeTexCoordsPortableDecoder extends MeshPredictionSchemeD
     this._transform.init(numComponents);
 
     const cornerMapSize = this._meshData.dataToCornerMap.length;
-    // Cache integer positions once (see predictor) to avoid per-fetch
-    // mappedIndex + convertValue in the prediction loop.
+    // Cache integer positions once to avoid per-fetch mappedIndex + convertValue.
     this._predictor.buildPositionCache(cornerMapSize);
     for (let p = 0; p < cornerMapSize; ++p) {
       const cornerId = this._meshData.dataToCornerMap[p];
@@ -4251,16 +3812,9 @@ class MeshPredictionSchemeTexCoordsPortableDecoder extends MeshPredictionSchemeD
 // src/compression/attributes/NormalCompressionUtils.js
 // Ported from draco/compression/attributes/normal_compression_utils.h
 
-/**
- * OctahedronToolBox provides utilities for converting unit vectors to
- * octahedral coordinates and back, used for normal compression.
- *
- * Key values:
- *   q: number of quantization bits
- *   maxQuantizedValue: max representable value with q bits (odd)
- *   maxValue: maxQuantizedValue - 1 (even)
- *   centerValue: maxValue / 2
- */
+// Converts unit vectors to/from octahedral coordinates for normal compression.
+// Invariants: maxQuantizedValue = 2^q - 1 (odd); maxValue = maxQuantizedValue - 1
+// (even); centerValue = maxValue / 2.
 class OctahedronToolBox {
 
   constructor() {
@@ -4271,10 +3825,7 @@ class OctahedronToolBox {
     this._centerValue = -1;
   }
 
-  /**
-   * @param {number} q - quantization bits (2..30)
-   * @returns {boolean}
-   */
+  // q: quantization bits, valid range 2..30.
   setQuantizationBits(q) {
     if (q < 2 || q > 30) return false;
     this._quantizationBits = q;
@@ -4285,21 +3836,14 @@ class OctahedronToolBox {
     return true;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._quantizationBits !== -1;
   }
 
-  /** @returns {number} */
   quantizationBits() { return this._quantizationBits; }
 
-  /**
-   * Canonicalizes edge points so they are in consistent quadrants. Writes the
-   * result into out[0], out[1] (caller-owned reusable 2-element array).
-   * @param {number} s
-   * @param {number} t
-   * @param {number[]|Int32Array} out
-   */
+  // Canonicalizes edge points into consistent quadrants. Writes result into
+  // out[0], out[1] (caller-owned reusable 2-element array).
   canonicalizeOctahedralCoords(s, t, out) {
     if ((s === 0 && t === 0) || (s === 0 && t === this._maxValue) ||
         (s === this._maxValue && t === 0)) {
@@ -4318,20 +3862,14 @@ class OctahedronToolBox {
     out[1] = t;
   }
 
-  /**
-   * Converts an integer vector to quantized octahedral coordinates.
-   * Precondition: abs sum of intVec must equal centerValue.
-   * @param {Int32Array|Array} intVec - [x, y, z]
-   * @param {Int32Array|Array} out - output [s, t] or writes to out[0], out[1]
-   */
+  // Precondition: abs sum of intVec ([x,y,z]) must equal centerValue.
+  // Writes result to out[0], out[1].
   integerVectorToQuantizedOctahedralCoords(intVec, out) {
     let s, t;
     if (intVec[0] >= 0) {
-      // Right hemisphere.
       s = intVec[1] + this._centerValue;
       t = intVec[2] + this._centerValue;
     } else {
-      // Left hemisphere.
       if (intVec[1] < 0) {
         s = Math.abs(intVec[2]);
       } else {
@@ -4346,10 +3884,7 @@ class OctahedronToolBox {
     this.canonicalizeOctahedralCoords(s, t, out);
   }
 
-  /**
-   * Normalizes intVec so its abs sum equals centerValue.
-   * @param {Int32Array|Array} vec - [x, y, z], modified in place
-   */
+  // Normalizes vec ([x,y,z], modified in place) so its abs sum equals centerValue.
   canonicalizeIntegerVector(vec) {
     const absSum = Math.abs(vec[0]) + Math.abs(vec[1]) + Math.abs(vec[2]);
     if (absSum === 0) {
@@ -4366,12 +3901,6 @@ class OctahedronToolBox {
     }
   }
 
-  /**
-   * Converts quantized octahedral coordinates to a unit vector.
-   * @param {number} inS
-   * @param {number} inT
-   * @param {Float32Array|Array} outVector - [x, y, z]
-   */
   quantizedOctahedralCoordsToUnitVector(inS, inT, outVector) {
     // float32 throughout (Math.fround) to stay bit-identical to the WASM
     // decoder, matching the live copy in AttributeOctahedronTransform.js.
@@ -4383,9 +3912,6 @@ class OctahedronToolBox {
     );
   }
 
-  /**
-   * @private
-   */
   _octahedralCoordsToUnitVector(inSScaled, inTScaled, outVector) {
     // float32 throughout (see quantizedOctahedralCoordsToUnitVector) so normals
     // are bit-identical to WASM.
@@ -4428,47 +3954,32 @@ const UPPER_BOUND = 1 << 29;
  */
 class MeshPredictionSchemeGeometricNormalPredictorArea {
 
-  /**
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(meshData) {
     this._posAttribute = null;
     this._entryToPointIdMap = null;
     this._meshData = meshData;
     this._normalPredictionMode = NormalPredictionMode.TRIANGLE_AREA;
     this._tempPos = new Array(3);
-    // Flat Int32 position cache indexed by data id (built once per decode).
-    // The predictor reads the position of a corner's vertex O(valence) times
-    // per ring; caching turns O(corners*valence) convertValue calls into one
-    // per data entry.
+    // Flat Int32 position cache indexed by data id; turns O(corners*valence)
+    // convertValue calls (the ring is read once per vertex corner) into one per
+    // data entry.
     this._posCache = null;
     this._cornerToVertex = null;
     this._oppositeCorners = null;
   }
 
-  /**
-   * @param {object} positionAttribute - PointAttribute for positions
-   */
   setPositionAttribute(positionAttribute) {
     this._posAttribute = positionAttribute;
   }
 
-  /**
-   * @param {Array} map
-   */
   setEntryToPointIdMap(map) {
     this._entryToPointIdMap = map;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._posAttribute !== null && this._entryToPointIdMap !== null;
   }
 
-  /**
-   * @param {number} mode
-   * @returns {boolean}
-   */
   setNormalPredictionMode(mode) {
     if (mode === NormalPredictionMode.ONE_TRIANGLE ||
         mode === NormalPredictionMode.TRIANGLE_AREA) {
@@ -4478,12 +3989,6 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     return false;
   }
 
-  /**
-   * Precomputes the integer position of every data entry once, so the hot
-   * per-corner ring traversal reads from a flat Int32Array instead of going
-   * through mappedIndex + convertValue on every fetch.
-   * @param {number} numEntries
-   */
   buildPositionCache(numEntries) {
     this._posCache = buildInt32PositionCache(
       this._posAttribute, this._entryToPointIdMap, numEntries, this._tempPos);
@@ -4492,11 +3997,7 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._oppositeCorners = table.oppositeCornerArray();
   }
 
-  /**
-   * Computes predicted normal for a given corner.
-   * @param {number} cornerId
-   * @param {Int32Array} prediction - output [x, y, z]
-   */
+  /** Computes predicted normal for a corner; writes [x, y, z] into prediction. */
   computePredictedValue(cornerId, prediction) {
     const cornerToVertex = this._cornerToVertex;
     const oppositeCorners = this._oppositeCorners;
@@ -4510,9 +4011,7 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
 
     let normalX = 0, normalY = 0, normalZ = 0;
 
-    // Iterate over vertex corners.
     if (this._normalPredictionMode === NormalPredictionMode.ONE_TRIANGLE) {
-      // Only use the single triangle at cornerId.
       const rem = cornerId - ((cornerId / 3) | 0) * 3;
       const cNext = rem === 2 ? cornerId - 2 : cornerId + 1;
       const cPrev = rem === 0 ? cornerId + 2 : cornerId - 1;
@@ -4532,18 +4031,15 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       const dPrevY = prevY - centY;
       const dPrevZ = prevZ - centZ;
 
-      // Cross product.
       normalX = dNextY * dPrevZ - dNextZ * dPrevY;
       normalY = dNextZ * dPrevX - dNextX * dPrevZ;
       normalZ = dNextX * dPrevY - dNextY * dPrevX;
     } else {
-      // TRIANGLE_AREA: iterate over all corners around the vertex exactly like
-      // C++ VertexCornersIterator(corner_table, corner_id): swing LEFT from the
-      // start corner until a boundary or a full loop, then (only if an open
-      // boundary was reached) swing RIGHT from the start corner to cover the
-      // other side. Only swinging right (as before) silently dropped every
-      // triangle to the left of the start corner for boundary vertices, which
-      // corrupted the predicted normal on any mesh with open edges.
+      // TRIANGLE_AREA: iterate every corner around the vertex exactly like C++
+      // VertexCornersIterator: swing LEFT until a boundary or full loop, then
+      // (only if an open boundary was hit) swing RIGHT to cover the other side.
+      // Swinging right only would drop every triangle left of the start corner
+      // for boundary vertices, corrupting the normal on meshes with open edges.
       let currentCorner = cornerId;
       let leftTraversal = true;
 
@@ -4567,7 +4063,6 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
         const dPrevY = prevY - centY;
         const dPrevZ = prevZ - centZ;
 
-        // Cross product.
         normalX += dNextY * dPrevZ - dNextZ * dPrevY;
         normalY += dNextZ * dPrevX - dNextX * dPrevZ;
         normalZ += dNextX * dPrevY - dNextY * dPrevX;
@@ -4609,11 +4104,9 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       }
     }
 
-    // Convert to int32, making sure entries are not too large. This mirrors the
-    // C++ which does the clamp with int64 INTEGER division: the quotient is
-    // floored and each component is divided with truncation toward zero. A naive
-    // float division diverges whenever UPPER_BOUND < absSum < 2 * UPPER_BOUND,
-    // where the C++ quotient is exactly 1 and the normal is left unchanged.
+    // Clamp to int32 with int64 INTEGER division like C++: quotient floored,
+    // each component truncated toward zero. Naive float division diverges for
+    // UPPER_BOUND < absSum < 2*UPPER_BOUND, where C++ quotient is 1 (no change).
     let absSum;
     if (this._normalPredictionMode === NormalPredictionMode.ONE_TRIANGLE) {
       // C++ casts AbsSum() to int32_t before the comparison in this branch.
@@ -4647,11 +4140,6 @@ const GEOMETRY_ATTRIBUTE_POSITION = 0;
  */
 class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform, meshData);
     this._predictor = new MeshPredictionSchemeGeometricNormalPredictorArea(meshData);
@@ -4659,12 +4147,10 @@ class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDec
     this._flipNormalBitDecoder = new RAnsBitDecoder();
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_GEOMETRIC_NORMAL;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     if (!this._predictor.isInitialized()) return false;
     if (!this._meshData.isInitialized()) return false;
@@ -4672,23 +4158,14 @@ class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDec
     return true;
   }
 
-  /** @returns {number} */
   getNumParentAttributes() {
     return 1;
   }
 
-  /**
-   * @param {number} i
-   * @returns {number}
-   */
   getParentAttributeType(i) {
     return GEOMETRY_ATTRIBUTE_POSITION;
   }
 
-  /**
-   * @param {object} att - PointAttribute
-   * @returns {boolean}
-   */
   setParentAttribute(att) {
     if (att.attributeType !== GEOMETRY_ATTRIBUTE_POSITION) return false;
     if (att.numComponents !== 3) return false;
@@ -4696,22 +4173,11 @@ class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDec
     return true;
   }
 
-  /**
-   * Sets quantization bits for the octahedron tool box.
-   * @param {number} q
-   */
   setQuantizationBits(q) {
     this._octahedronToolBox.setQuantizationBits(q);
   }
 
-  /**
-   * Decodes prediction data including transform data, prediction mode, and
-   * normal flip bits.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodePredictionData(buffer) {
-    // Get data needed for transform.
     if (!this._transform.decodeTransformData(buffer)) return false;
 
     if (buffer.bitstreamVersion < 0x0202) {
@@ -4721,29 +4187,19 @@ class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDec
       if (!this._predictor.setNormalPredictionMode(predictionMode)) return false;
     }
 
-    // Init normal flips.
     if (!this._flipNormalBitDecoder.startDecoding(buffer)) return false;
 
     return true;
   }
 
-  /**
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     this.setQuantizationBits(this._transform.quantizationBits());
     this._predictor.setEntryToPointIdMap(entryToPointIdMap);
 
-    // Expecting octahedral coordinates (2 components).
     const cornerMapSize = this._meshData.dataToCornerMap.length;
 
-    // Cache the integer positions once so the per-corner ring traversal reads
-    // from a flat array instead of mappedIndex + convertValue per fetch.
+    // Cache integer positions once so the per-corner ring traversal reads from
+    // a flat array instead of mappedIndex + convertValue per fetch.
     this._predictor.buildPositionCache(cornerMapSize);
 
     const predNormal3D = new Int32Array(3);
@@ -4753,7 +4209,6 @@ class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDec
       const cornerId = this._meshData.dataToCornerMap[dataId];
       this._predictor.computePredictedValue(cornerId, predNormal3D);
 
-      // Compute predicted octahedral coordinates.
       this._octahedronToolBox.canonicalizeIntegerVector(predNormal3D);
 
       if (this._flipNormalBitDecoder.decodeNextBit()) {
@@ -4784,8 +4239,7 @@ class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDec
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_data.h
 
 /**
- * Stores connectivity data about the mesh and information about how it was
- * encoded/decoded.
+ * Stores mesh connectivity data and how it was encoded/decoded.
  */
 class MeshPredictionSchemeData {
 
@@ -4796,13 +4250,6 @@ class MeshPredictionSchemeData {
     this._dataToCornerMap = null;
   }
 
-  /**
-   * Initializes the data with mesh connectivity information.
-   * @param {object} mesh
-   * @param {object} cornerTable
-   * @param {Array|Int32Array} dataToCornerMap
-   * @param {Array|Int32Array} vertexToDataMap
-   */
   set(mesh, cornerTable, dataToCornerMap, vertexToDataMap) {
     this._mesh = mesh;
     this._cornerTable = cornerTable;
@@ -4810,16 +4257,12 @@ class MeshPredictionSchemeData {
     this._vertexToDataMap = vertexToDataMap;
   }
 
-  /** @returns {object} */
   get cornerTable() { return this._cornerTable; }
 
-  /** @returns {Array|Int32Array} */
   get vertexToDataMap() { return this._vertexToDataMap; }
 
-  /** @returns {Array|Int32Array} */
   get dataToCornerMap() { return this._dataToCornerMap; }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._mesh !== null &&
            this._cornerTable !== null &&
@@ -4833,21 +4276,10 @@ class MeshPredictionSchemeData {
 // Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_decoder_factory.h
 
 
-/**
- * Creates a mesh prediction scheme decoder based on the prediction method.
- *
- * @param {number} method - PredictionSchemeMethod enum value
- * @param {object} attribute - PointAttribute
- * @param {object} transform - A decoding transform instance
- * @param {object} meshData - MeshPredictionSchemeData instance
- * @param {number} bitstreamVersion
- * @param {number} transformType - PredictionSchemeTransformType
- * @returns {object|null} Prediction scheme decoder or null
- */
 function createMeshPredictionSchemeDecoder(method, attribute, transform,
   meshData, bitstreamVersion, transformType) {
 
-  // For normal octahedron transforms, only geometric normal is supported.
+  // Normal octahedron transforms only support geometric normal prediction.
   if (transformType === PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON_CANONICALIZED ||
       transformType === PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON) {
     if (method === PredictionSchemeMethod.MESH_PREDICTION_GEOMETRIC_NORMAL) {
@@ -4858,7 +4290,7 @@ function createMeshPredictionSchemeDecoder(method, attribute, transform,
     return null;
   }
 
-  // For wrap and delta transforms, any mesh prediction scheme is valid.
+  // Wrap and delta transforms accept any mesh prediction scheme.
   switch (method) {
     case PredictionSchemeMethod.MESH_PREDICTION_PARALLELOGRAM:
       return new MeshPredictionSchemeParallelogramDecoder(
@@ -4896,16 +4328,9 @@ function createMeshPredictionSchemeDecoder(method, attribute, transform,
 }
 
 /**
- * Creates a prediction scheme for a given decoder and given prediction method.
- * If the method specifies a mesh-based prediction and mesh data is available,
- * the appropriate mesh prediction scheme is created. Otherwise, a delta
- * decoder is returned as fallback.
- *
- * @param {number} method - PredictionSchemeMethod
- * @param {number} attId - attribute id
- * @param {object} decoder - PointCloudDecoder or MeshDecoder
- * @param {object} transform - A decoding transform instance
- * @returns {object|null} Prediction scheme decoder or null
+ * Creates a prediction scheme for a decoder and method. If the method is
+ * mesh-based and mesh data is available, builds the matching mesh scheme;
+ * otherwise falls back to a delta decoder.
  */
 function createPredictionSchemeForDecoder(method, attId, decoder, transform) {
   if (method === PredictionSchemeMethod.PREDICTION_NONE) {
@@ -4948,7 +4373,6 @@ function createPredictionSchemeForDecoder(method, attId, decoder, transform) {
     }
   }
 
-  // Fallback: delta decoder.
   return new PredictionSchemeDeltaDecoder(att, transform);
 }
 
@@ -4977,42 +4401,25 @@ class PredictionSchemeWrapDecodingTransform {
     this._maxDif = 0;
   }
 
-  /**
-   * @returns {number}
-   */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_WRAP;
   }
 
-  /**
-   * @param {number} numComponents
-   */
   init(numComponents) {
     this._numComponents = numComponents;
   }
 
-  /**
-   * @returns {boolean}
-   */
   areCorrectionsPositive() {
     return false;
   }
 
   /**
-   * Computes the original value from predicted and correction values,
-   * unwrapping values that fall outside the [min, max] range.
-   * @param {Int32Array|TypedArray} predictedVals
-   * @param {number} predictedOffset
-   * @param {Int32Array|TypedArray} corrVals
-   * @param {number} corrOffset
-   * @param {Int32Array|TypedArray} outOriginalVals
-   * @param {number} outOffset
+   * Unwraps values that fall outside the [min, max] range.
    */
   computeOriginalValue(predictedVals, predictedOffset, corrVals, corrOffset,
     outOriginalVals, outOffset) {
-    // Clamp and wrap fused into a single pass over the components, reading the
-    // bounds from locals — clamps each predicted value to [min, max] and then
-    // unwraps it, in one loop with no scratch buffer.
+    // Clamp to [min, max] then unwrap, fused into one pass with bounds in
+    // locals and no scratch buffer.
     const nc = this._numComponents;
     const minValue = this._minValue;
     const maxValue = this._maxValue;
@@ -5024,7 +4431,7 @@ class PredictionSchemeWrapDecodingTransform {
       } else if (pred < minValue) {
         pred = minValue;
       }
-      // Perform the wrapping using 32-bit arithmetic to avoid signed overflow.
+      // 32-bit (| 0) arithmetic to avoid signed overflow.
       let orig = (pred + corrVals[corrOffset + i]) | 0;
       if (orig > maxValue) {
         orig -= maxDif;
@@ -5035,11 +4442,7 @@ class PredictionSchemeWrapDecodingTransform {
     }
   }
 
-  /**
-   * Decodes the transform-specific data (min and max values) from the buffer.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
+  /** Decodes the min and max values from the buffer. */
   decodeTransformData(buffer) {
     const minValue = buffer.decodeInt32();
     if (minValue === undefined) return false;
@@ -5052,10 +4455,6 @@ class PredictionSchemeWrapDecodingTransform {
     return this._initCorrectionBounds();
   }
 
-  /**
-   * @private
-   * @returns {boolean}
-   */
   _initCorrectionBounds() {
     const dif = this._maxValue - this._minValue;
     if (dif < 0 || dif >= 0x7FFFFFFF) {
@@ -5087,11 +4486,9 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
   }
 
   decodeValues(pointIds, buffer) {
-    // Decode prediction scheme.
     const predictionSchemeMethod = buffer.decodeInt8();
     if (predictionSchemeMethod === undefined) return false;
 
-    // Check that decoded prediction scheme method type is valid.
     if (predictionSchemeMethod < PredictionSchemeMethod.PREDICTION_NONE ||
         predictionSchemeMethod >= PredictionSchemeMethod.NUM_PREDICTION_SCHEMES) {
       return false;
@@ -5101,7 +4498,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
       const predictionTransformType = buffer.decodeInt8();
       if (predictionTransformType === undefined) return false;
 
-      // Check that decoded prediction scheme transform type is valid.
       if (predictionTransformType < PredictionSchemeTransformType.PREDICTION_TRANSFORM_NONE ||
           predictionTransformType >= PredictionSchemeTransformType.NUM_PREDICTION_SCHEME_TRANSFORM_TYPES) {
         return false;
@@ -5149,20 +4545,17 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     if (compressed === undefined) return false;
 
     if (compressed > 0) {
-      // Decode compressed values using symbol decoding.
-      // DecodeSymbols writes uint32 values into the provided array.
+      // decodeSymbols writes uint32 values into the provided array.
       const outUint32 = new Uint32Array(portableAttributeData.buffer,
         portableAttributeData.byteOffset, numValues);
       if (!decodeSymbols(numValues, numComponents, buffer, outUint32)) {
         return false;
       }
     } else {
-      // Decode the integer data directly.
       const numBytes = buffer.decodeUint8();
       if (numBytes === undefined) return false;
 
       if (numBytes === dataTypeLength(DataType.INT32)) {
-        // 4 bytes per value - decode directly.
         if (portableAttributeData.byteLength < 4 * numValues) {
           return false;
         }
@@ -5179,7 +4572,7 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
         for (let i = 0; i < numValues; i++) {
           const valueBytes = buffer.decodeBytes(numBytes);
           if (valueBytes === undefined) return false;
-          // Read the value from the raw bytes (little-endian), sign-extending.
+          // Little-endian; |= with << sign-extends into a 32-bit int.
           let val = 0;
           for (let b = 0; b < numBytes; b++) {
             val |= valueBytes[b] << (b * 8);
@@ -5191,13 +4584,11 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
 
     if (numValues > 0 && (this._predictionScheme === null ||
                           !this._predictionScheme.areCorrectionsPositive())) {
-      // Convert the values back to the original signed format.
-      // portableAttributeData is Int32Array; we need to interpret as Uint32 for conversion.
+      // Reinterpret the Int32Array as Uint32 for the signed conversion.
       const asUint32 = new Uint32Array(portableAttributeData.buffer, portableAttributeData.byteOffset, numValues);
       convertSymbolsToSignedInts(asUint32, numValues, portableAttributeData);
     }
 
-    // If the data was encoded with a prediction scheme, we must revert it.
     if (this._predictionScheme) {
       if (!this._predictionScheme.decodePredictionData(buffer)) {
         return false;
@@ -5213,8 +4604,7 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     return true;
   }
 
-  // Returns a prediction scheme that should be used for decoding of the
-  // integer values. Override in subclasses for different prediction schemes.
+  // Prediction scheme for decoding integer values; subclasses override for others.
   createIntPredictionScheme(method, transformType) {
     if (transformType !== PredictionSchemeTransformType.PREDICTION_TRANSFORM_WRAP) {
       return null; // For now we support only wrap transform.
@@ -5225,12 +4615,11 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     );
   }
 
-  // Returns the number of integer attribute components.
   getNumValueComponents() {
     return this.attribute.numComponents;
   }
 
-  // Called after all integer values are decoded. Stores values into the attribute.
+  // Stores decoded integer values into the attribute.
   _storeValues(numValues) {
     const dt = this.attribute.dataType;
     switch (dt) {
@@ -5265,10 +4654,9 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
       return;
     }
     const src = this.getPortableAttributeData(); // Int32Array of the decoded values.
-    // Copy straight into a typed view of the destination buffer (byteOffset 0,
-    // so aligned). TypedArray.set performs the target type's coercion per
-    // element -- identical to the old per-entry byte copy, without the
-    // per-value buffer.write() dispatch.
+    // TypedArray.set coerces per element to the target type -- same result as the
+    // per-entry byte copy, without per-value buffer.write() dispatch. dstAddr has
+    // byteOffset 0, so the typed view is aligned.
     const dstAddr = this.attribute.getAddress(0);
     const dst = new TypedArrayClass(dstAddr.buffer, dstAddr.byteOffset, total);
     dst.set(src);
@@ -5291,7 +4679,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     if (this.portableAttribute.size === 0) {
       return null;
     }
-    // Return Int32Array view of the portable attribute data.
     const addr = this.portableAttribute.getAddress(0);
     return new Int32Array(addr.buffer, addr.byteOffset,
       this.portableAttribute.size * this.portableAttribute.numComponents);
@@ -5325,8 +4712,7 @@ class AttributeTransformData {
     this._transformType = type;
   }
 
-  // Reads a parameter value at the given byte offset.
-  // |type| is a string: 'int32', 'uint32', 'float32', 'uint8', etc.
+  // |type| is a string tag: 'int32', 'uint32', 'float32', 'uint8', etc.
   getParameterValue(byteOffset, type) {
     const data = this._buffer.data;
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -5343,8 +4729,6 @@ class AttributeTransformData {
     }
   }
 
-  // Writes a parameter value at the given byte offset.
-  // |type| is a string: 'int32', 'uint32', 'float32', 'uint8', etc.
   setParameterValue(byteOffset, value, type) {
     const sizeNeeded = byteOffset + this._typeSize(type);
     if (sizeNeeded > this._buffer.dataSize) {
@@ -5365,7 +4749,6 @@ class AttributeTransformData {
     }
   }
 
-  // Appends a parameter value at the end of the buffer.
   appendParameterValue(value, type) {
     this.setParameterValue(this._buffer.dataSize, value, type);
   }
@@ -5387,12 +4770,10 @@ class AttributeTransformData {
 
 class AttributeTransform {
 
-  // Virtual: copy parameter values into the provided AttributeTransformData.
+  // Virtual: override in subclass.
   copyToAttributeTransformData(/* outData */) {
-    // Must be overridden.
   }
 
-  // Transfers transform data to the attribute.
   transferToAttribute(attribute) {
     const transformData = new AttributeTransformData();
     this.copyToAttributeTransformData(transformData);
@@ -5400,12 +4781,12 @@ class AttributeTransform {
     return true;
   }
 
-  // Virtual: applies an inverse transform to attribute.
+  // Virtual: override in subclass.
   inverseTransformAttribute(/* attribute, targetAttribute */) {
     return false;
   }
 
-  // Virtual: decodes all data needed to transform attribute back to original format.
+  // Virtual: override in subclass.
   decodeParameters(/* attribute, decoderBuffer */) {
     return false;
   }
@@ -5423,11 +4804,8 @@ class Dequantizer {
 
   initFromRange(range, maxQuantizedValue) {
     if (maxQuantizedValue <= 0) return false;
-    // Match Draco C++ exactly (quantization_utils.cc): delta_ is a float and is
-    // computed as `range / static_cast<float>(max_quantized_value)` in float32.
-    // Doing the division in JS double and storing the result verbatim yields a
-    // value 1-2 ULP away from the WASM decoder for some attributes, so round
-    // every step to float32 with Math.fround.
+    // C++ computes delta_ as `range / static_cast<float>(max_quantized_value)` in float32.
+    // JS double division is 1-2 ULP off the WASM decoder, so fround every step.
     this._delta = Math.fround(range / Math.fround(maxQuantizedValue));
     return true;
   }
@@ -5437,8 +4815,7 @@ class Dequantizer {
     return true;
   }
 
-  // C++ DequantizeFloat(int32 value): `value * delta_` evaluated in float32
-  // (the int is converted to float before the multiply).
+  // C++ DequantizeFloat: `value * delta_` in float32 (int converted to float first).
   dequantizeFloat(val) {
     return Math.fround(Math.fround(val) * this._delta);
   }
@@ -5461,7 +4838,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
     this._range = 0;
   }
 
-  // Copy parameter values into the provided AttributeTransformData instance.
   copyToAttributeTransformData(outData) {
     outData.transformType = AttributeTransformType.QUANTIZATION_TRANSFORM;
     outData.appendParameterValue(this._quantizationBits, 'int32');
@@ -5471,24 +4847,20 @@ class AttributeQuantizationTransform extends AttributeTransform {
     outData.appendParameterValue(this._range, 'float32');
   }
 
-  // Decodes quantization parameters from the decoder buffer.
   decodeParameters(attribute, decoderBuffer) {
     const numComponents = attribute.numComponents;
     this._minValues = new Array(numComponents);
 
-    // Read min values (float32 per component).
     for (let i = 0; i < numComponents; i++) {
       const val = decoderBuffer.decodeFloat32();
       if (val === undefined) return false;
       this._minValues[i] = val;
     }
 
-    // Read range (float32).
     const range = decoderBuffer.decodeFloat32();
     if (range === undefined) return false;
     this._range = range;
 
-    // Read quantization bits (uint8).
     const qBits = decoderBuffer.decodeUint8();
     if (qBits === undefined) return false;
     if (!AttributeQuantizationTransform._isQuantizationValid(qBits)) {
@@ -5498,7 +4870,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
     return true;
   }
 
-  // Inverse transform: dequantizes uint32 values back to float32.
   inverseTransformAttribute(attribute, targetAttribute) {
     if (targetAttribute.dataType !== DataType.FLOAT32) {
       return false;
@@ -5568,7 +4939,7 @@ class SequentialQuantizationAttributeDecoder extends SequentialIntegerAttributeD
       return false;
     }
     const attribute = decoder.pointCloud().attribute(attributeId);
-    // Currently we can quantize only floating point arguments.
+    // Only floating point attributes can be quantized.
     if (attribute.dataType !== DataType.FLOAT32) {
       return false;
     }
@@ -5585,33 +4956,29 @@ class SequentialQuantizationAttributeDecoder extends SequentialIntegerAttributeD
 
   decodeDataNeededByPortableTransform(pointIds, buffer) {
     if (this.decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 0)) {
-      // Decode quantization data here only for files with bitstream version 2.0+
       if (!this._decodeQuantizedDataInfo()) {
         return false;
       }
     }
 
-    // Store the decoded transform data in portable attribute.
     return this._quantizationTransform.transferToAttribute(this.portableAttribute);
   }
 
-  // Override: instead of generic integer store, dequantize the values.
+  // Override: dequantize the values instead of a generic integer store.
   _storeValues(numPoints) {
     return this._dequantizeValues(numPoints);
   }
 
   _decodeQuantizedDataInfo() {
-    // Get attribute used as source for decoding.
     let att = this.getPortableAttribute();
     if (att === null) {
-      // This should happen only in the backward compatibility mode.
+      // Null only in backward-compatibility mode; fall back to the raw attribute.
       att = this.attribute;
     }
     return this._quantizationTransform.decodeParameters(att, this.decoder.buffer());
   }
 
   _dequantizeValues(numValues) {
-    // Convert all quantized values back to floats.
     return this._quantizationTransform.inverseTransformAttribute(
       this.getPortableAttribute(), this.attribute
     );
@@ -5629,13 +4996,11 @@ class AttributeOctahedronTransform extends AttributeTransform {
     this._quantizationBits = -1;
   }
 
-  // Copy parameter values into the provided AttributeTransformData instance.
   copyToAttributeTransformData(outData) {
     outData.transformType = AttributeTransformType.OCTAHEDRON_TRANSFORM;
     outData.appendParameterValue(this._quantizationBits, 'int32');
   }
 
-  // Decodes quantization bits from the decoder buffer.
   decodeParameters(attribute, decoderBuffer) {
     const qBits = decoderBuffer.decodeUint8();
     if (qBits === undefined) return false;
@@ -5643,7 +5008,6 @@ class AttributeOctahedronTransform extends AttributeTransform {
     return true;
   }
 
-  // Inverse transform: converts octahedral coordinates to unit vectors (float32).
   inverseTransformAttribute(attribute, targetAttribute) {
     if (targetAttribute.dataType !== DataType.FLOAT32) {
       return false;
@@ -5699,31 +5063,17 @@ class PredictionSchemeNormalOctahedronTransformBase {
     this._octahedronToolBox = new OctahedronToolBox();
   }
 
-  /**
-   * @returns {boolean}
-   */
   areCorrectionsPositive() {
     return true;
   }
 
-  /**
-   * Dummy init to fulfill the transform interface.
-   * @param {number} numComponents
-   */
+  /** No-op to fulfill the transform interface. */
   init(numComponents) {}
 
-  /**
-   * @returns {number}
-   */
   quantizationBits() {
     return this._octahedronToolBox.quantizationBits();
   }
 
-  /**
-   * @protected
-   * @param {number} maxQuantizedValue
-   * @returns {boolean}
-   */
   _setMaxQuantizedValue(maxQuantizedValue) {
     if (maxQuantizedValue % 2 === 0) return false;
     let q = 0;
@@ -5747,18 +5097,10 @@ class PredictionSchemeNormalOctahedronTransformBase {
  */
 class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends PredictionSchemeNormalOctahedronTransformBase {
 
-  /**
-   * @returns {number}
-   */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON_CANONICALIZED;
   }
 
-  /**
-   * Decodes the transform data from the buffer.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodeTransformData(buffer) {
     const maxQuantizedValue = buffer.decodeInt32();
     if (maxQuantizedValue === undefined) return false;
@@ -5774,15 +5116,6 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends Pre
     return true;
   }
 
-  /**
-   * Computes the original value from predicted and correction values.
-   * @param {Int32Array|TypedArray} predVals
-   * @param {number} predOffset
-   * @param {Int32Array|TypedArray} corrVals
-   * @param {number} corrOffset
-   * @param {Int32Array|TypedArray} outOrigVals
-   * @param {number} outOffset
-   */
   computeOriginalValue(predVals, predOffset, corrVals, corrOffset,
     outOrigVals, outOffset) {
     const toolBox = this._octahedronToolBox;
@@ -5832,7 +5165,7 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends Pre
     } else if (predS > 0) {
       if (predT >= 0) rotationCount = 2;
       else rotationCount = 1;
-    } else { // predS < 0
+    } else {
       if (predT > 0) rotationCount = 3;
     }
 
@@ -5908,18 +5241,10 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends Pre
  */
 class PredictionSchemeNormalOctahedronDecodingTransform extends PredictionSchemeNormalOctahedronTransformBase {
 
-  /**
-   * @returns {number}
-   */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON;
   }
 
-  /**
-   * Decodes the max quantized value from the buffer.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodeTransformData(buffer) {
     const maxQuantizedValue = buffer.decodeInt32();
     if (maxQuantizedValue === undefined) return false;
@@ -5933,15 +5258,6 @@ class PredictionSchemeNormalOctahedronDecodingTransform extends PredictionScheme
     return this._setMaxQuantizedValue(maxQuantizedValue);
   }
 
-  /**
-   * Computes the original value from predicted and correction values.
-   * @param {Int32Array|TypedArray} predVals
-   * @param {number} predOffset
-   * @param {Int32Array|TypedArray} corrVals
-   * @param {number} corrOffset
-   * @param {Int32Array|TypedArray} outOrigVals
-   * @param {number} outOffset
-   */
   computeOriginalValue(predVals, predOffset, corrVals, corrOffset,
     outOrigVals, outOffset) {
     const toolBox = this._octahedronToolBox;
@@ -6043,26 +5359,25 @@ class SequentialNormalAttributeDecoder extends SequentialIntegerAttributeDecoder
     if (!super.init(decoder, attributeId)) {
       return false;
     }
-    // Currently, this decoder works only for 3-component normal vectors.
+    // Only 3-component FLOAT32 normals are supported.
     if (this.attribute.numComponents !== 3) {
       return false;
     }
-    // Also the data type must be DT_FLOAT32.
     if (this.attribute.dataType !== DataType.FLOAT32) {
       return false;
     }
     return true;
   }
 
-  // We quantize everything into two components.
+  // Normals quantize into two octahedral components.
   getNumValueComponents() {
     return 2;
   }
 
   decodeIntegerValues(pointIds, buffer) {
     if (this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      // Note: in older bitstreams, we do not have a portableAttribute decoded
-      // at this stage so we cannot pass it down to the decodeParameters() call.
+      // Older bitstreams have no portableAttribute decoded yet, so we pass the
+      // raw attribute to decodeParameters() instead.
       if (!this._octahedralTransform.decodeParameters(this.attribute, buffer)) {
         return false;
       }
@@ -6072,25 +5387,21 @@ class SequentialNormalAttributeDecoder extends SequentialIntegerAttributeDecoder
 
   decodeDataNeededByPortableTransform(pointIds, buffer) {
     if (this.decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 0)) {
-      // For newer file version, decode attribute transform data here.
       if (!this._octahedralTransform.decodeParameters(
             this.getPortableAttribute(), buffer)) {
         return false;
       }
     }
 
-    // Store the decoded transform data in portable attribute.
     return this._octahedralTransform.transferToAttribute(this.portableAttribute);
   }
 
-  // Override: convert quantized values back to float normals.
   _storeValues(numPoints) {
     return this._octahedralTransform.inverseTransformAttribute(
       this.getPortableAttribute(), this.attribute
     );
   }
 
-  // Override: create prediction scheme for normal octahedral transforms.
   createIntPredictionScheme(method, transformType) {
     switch (transformType) {
       case PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON: {
@@ -6115,10 +5426,8 @@ class SequentialNormalAttributeDecoder extends SequentialIntegerAttributeDecoder
 // compression/attributes/SequentialAttributeDecodersController.js - ported from compression/attributes/sequential_attribute_decoders_controller.h/cc
 
 
-// A basic implementation of an attribute decoder that decodes data encoded by
-// the SequentialAttributeEncodersController class. Creates a single
-// SequentialAttributeDecoder for each of the decoded attributes, where the
-// type of the decoder is determined by the unique identifier encoded by the encoder.
+// Creates one SequentialAttributeDecoder per attribute; the decoder type is
+// chosen from the id encoded by the matching encoder.
 class SequentialAttributeDecodersController extends AttributesDecoder {
 
   constructor(sequencer) {
@@ -6132,14 +5441,12 @@ class SequentialAttributeDecodersController extends AttributesDecoder {
     if (!super.decodeAttributesDecoderData(buffer)) {
       return false;
     }
-    // Decode unique ids of all sequential encoders and create them.
     const numAttributes = this.getNumAttributes();
     this._sequentialDecoders.length = numAttributes;
     for (let i = 0; i < numAttributes; i++) {
       const decoderType = buffer.decodeUint8();
       if (decoderType === undefined) return false;
 
-      // Create the decoder from the id.
       this._sequentialDecoders[i] = this.createSequentialDecoder(decoderType);
       if (!this._sequentialDecoders[i]) {
         return false;
@@ -6203,15 +5510,13 @@ class SequentialAttributeDecodersController extends AttributesDecoder {
   transformAttributesToOriginalFormat() {
     const numAttributes = this.getNumAttributes();
     for (let i = 0; i < numAttributes; i++) {
-      // Check whether the attribute transform should be skipped.
       if (this.getDecoder().options()) {
         const attribute = this._sequentialDecoders[i].attribute;
         const portableAttribute = this._sequentialDecoders[i].getPortableAttribute();
         if (portableAttribute &&
             this.getDecoder().options().getAttributeBool(
               attribute.attributeType, 'skip_attribute_transform', false)) {
-          // Attribute transform should not be performed. In this case, we replace
-          // the output geometry attribute with the portable attribute.
+          // Skip the transform: use the portable attribute as the output.
           this._sequentialDecoders[i].attribute.copyFrom(portableAttribute);
           continue;
         }
@@ -6238,7 +5543,6 @@ class SequentialAttributeDecodersController extends AttributesDecoder {
       case SequentialAttributeEncoderType.SEQUENTIAL_ATTRIBUTE_ENCODER_NORMALS:
         return new SequentialNormalAttributeDecoder();
     }
-    // Unknown or unsupported decoder type.
     return null;
   }
 
@@ -6246,11 +5550,9 @@ class SequentialAttributeDecodersController extends AttributesDecoder {
 
 // compression/attributes/LinearSequencer.js - ported from compression/attributes/linear_sequencer.h
 
-// A simple sequencer that generates a linear sequence [0, numPoints - 1]; i.e.
-// the order of the points is preserved for the input data. Used by the mesh
-// sequential decoder, where attribute values are stored directly in point order.
-// Implements the same interface the SequentialAttributeDecodersController drives
-// (generateSequence / getOutputPointIds / updatePointToAttributeIndexMapping).
+// Sequencer that preserves point order: generates the sequence [0, numPoints-1].
+// Used by the mesh sequential decoder. Implements the interface driven by
+// SequentialAttributeDecodersController.
 class LinearSequencer {
 
   constructor(numPoints) {
@@ -6258,8 +5560,6 @@ class LinearSequencer {
     this._outPointIds = new Int32Array(0);
   }
 
-  // Fills the output sequence with [0, numPoints - 1]. (PointsSequencer::
-  // GenerateSequence -> LinearSequencer::GenerateSequenceInternal.)
   generateSequence(/* outPointIds */) {
     if (this._numPoints < 0) {
       return false;
@@ -6276,7 +5576,6 @@ class LinearSequencer {
     return this._outPointIds;
   }
 
-  // For the linear sequence the value index equals the point index.
   updatePointToAttributeIndexMapping(attribute) {
     attribute.setIdentityMapping();
     return true;
@@ -6287,7 +5586,6 @@ class LinearSequencer {
 // compression/mesh/MeshSequentialDecoder.js - ported from mesh/mesh_sequential_decoder.h/cc
 
 
-// Class for decoding data encoded by MeshSequentialEncoder.
 class MeshSequentialDecoder extends MeshDecoder {
 
   constructor() {
@@ -6310,13 +5608,11 @@ class MeshSequentialDecoder extends MeshDecoder {
       if (numPoints === undefined) return false;
     }
 
-    // Check that numFaces is a valid value.
     // Compressed sequential encoding can only handle (2^32 - 1) / 3 indices.
     if (numFaces > 0xFFFFFFFF / 3) {
       return false;
     }
     if (numFaces > this.buffer().remainingSize / 3) {
-      // The number of faces is unreasonably high.
       return false;
     }
 
@@ -6331,7 +5627,6 @@ class MeshSequentialDecoder extends MeshDecoder {
       }
     } else {
       if (numPoints < 256) {
-        // Decode indices as uint8.
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -6342,7 +5637,6 @@ class MeshSequentialDecoder extends MeshDecoder {
           this.mesh().addFace(face);
         }
       } else if (numPoints < (1 << 16)) {
-        // Decode indices as uint16.
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -6354,7 +5648,6 @@ class MeshSequentialDecoder extends MeshDecoder {
         }
       } else if (numPoints < (1 << 21) &&
                  this.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 2)) {
-        // Decode indices as varint.
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -6365,7 +5658,6 @@ class MeshSequentialDecoder extends MeshDecoder {
           this.mesh().addFace(face);
         }
       } else {
-        // Decode faces as uint32 (default).
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -6383,9 +5675,8 @@ class MeshSequentialDecoder extends MeshDecoder {
   }
 
   createAttributesDecoder(attDecoderId) {
-    // Always create the basic attribute decoder. Sequential meshes store
-    // attribute values directly in point order, so a LinearSequencer drives the
-    // SequentialAttributeDecodersController.
+    // Sequential meshes store attribute values directly in point order, so a
+    // LinearSequencer drives the SequentialAttributeDecodersController.
     return this.setAttributesDecoder(
       attDecoderId,
       new SequentialAttributeDecodersController(
@@ -6394,9 +5685,7 @@ class MeshSequentialDecoder extends MeshDecoder {
     );
   }
 
-  // Decodes face indices that were compressed with an entropy code.
   _decodeAndDecompressIndices(numFaces) {
-    // Get decoded indices differences that were encoded with an entropy code.
     const indicesBuffer = new Uint32Array(numFaces * 3);
     if (!decodeSymbols(numFaces * 3, 1, this.buffer(), indicesBuffer)) {
       return false;
@@ -6435,26 +5724,22 @@ class MeshSequentialDecoder extends MeshDecoder {
 
 // compression/mesh/MeshEdgebreakerShared.js - ported from mesh/mesh_edgebreaker_shared.h
 
-// Edgebreaker topology bit patterns.
-// Variable length encoding for storing all possible topology configurations
-// during traversal of mesh's surface.
+// Edgebreaker topology bit patterns (variable-length codes; trailing comment is
+// the bit sequence as stored in the bitstream).
 const TOPOLOGY_C = 0x0;  // 0
 const TOPOLOGY_S = 0x1;  // 1 0 0
 const TOPOLOGY_L = 0x3;  // 1 1 0
 const TOPOLOGY_R = 0x5;  // 1 0 1
 const TOPOLOGY_E = 0x7;  // 1 1 1
-// Special value used to indicate an invalid symbol.
 const TOPOLOGY_INVALID = 9;
 
-// Reverse mapping between symbol id and topology pattern symbol.
 const edgeBreakerSymbolToTopologyId = [
   TOPOLOGY_C, TOPOLOGY_S, TOPOLOGY_L, TOPOLOGY_R, TOPOLOGY_E
 ];
 const RIGHT_FACE_EDGE = 1;
 
-// Struct used for storing data about a source face that connects to an
-// already traversed face that was either the initial face or a face encoded
-// with the topology S (split) symbol.
+// Data about a source face connecting to an already-traversed face that was
+// either the initial face or one encoded with the topology S (split) symbol.
 class TopologySplitEventData {
 
   constructor() {
@@ -6465,8 +5750,7 @@ class TopologySplitEventData {
 
 }
 
-// Hole event is used to store info about the first symbol that reached a
-// vertex of a so far unvisited hole.
+// Info about the first symbol that reached a vertex of a so-far unvisited hole.
 class HoleEventData {
 
   constructor(symbolId) {
@@ -6475,7 +5759,7 @@ class HoleEventData {
 
 }
 
-// List of supported modes for valence based edgebreaker coding.
+// Valence-based edgebreaker coding modes.
 const EDGEBREAKER_VALENCE_MODE_2_7 = 0;
 
 // compression/mesh/traverser/DepthFirstTraverser.js
@@ -6485,8 +5769,7 @@ const kInvalidCornerIndex$3 = -1;
 const kInvalidFaceIndex$1 = -1;
 const kInvalidVertexIndex$1 = -1;
 
-// Basic traverser that traverses a mesh in a DFS like fashion using the
-// CornerTable data structure.
+// DFS traversal of a mesh over the CornerTable.
 class DepthFirstTraverser {
 
   constructor() {
@@ -6545,8 +5828,7 @@ class DepthFirstTraverser {
     let stackSize = 0;
     stack[stackSize++] = cornerId;
 
-    // For the first face, check the remaining corners as they may not be
-    // processed yet.
+    // For the first face the other two corners may not be processed yet.
     const nextCorner = (cornerId % 3) === 2 ? cornerId - 2 : cornerId + 1;
     const prevCorner = (cornerId % 3) === 0 ? cornerId + 2 : cornerId - 1;
     const nextVert = cornerToVertex[nextCorner];
@@ -6563,12 +5845,10 @@ class DepthFirstTraverser {
       observer.onNewVertexVisited(prevVert, prevCorner);
     }
 
-    // Start the actual traversal.
     while (stackSize > 0) {
       cornerId = stack[stackSize - 1];
       let faceId = (cornerId / 3) | 0;
 
-      // Make sure the face hasn't been visited yet.
       if (cornerId === kInvalidCornerIndex$3 || isFaceVisited[faceId]) {
         stackSize--;
         continue;
@@ -6593,7 +5873,7 @@ class DepthFirstTraverser {
           isVertexVisited[vertId] = true;
           observer.onNewVertexVisited(vertId, cornerId);
           if (!onBoundary) {
-            // Get right corner: oppositeCorners[next(cornerId)]
+            // Move to the right corner: opposite(next(cornerId)).
             const nextCornerId = (cornerId % 3) === 2 ? cornerId - 2 : cornerId + 1;
             cornerId = oppositeCorners[nextCornerId];
             faceId = (cornerId / 3) | 0;
@@ -6620,21 +5900,19 @@ class DepthFirstTraverser {
 
         if (isRightVisited) {
           if (isLeftVisited) {
-            // Both neighboring faces are visited. End reached.
+            // Both neighbors visited: this branch ends.
             stackSize--;
             break;
           } else {
-            // Go to the left face.
             cornerId = leftCornerId;
             faceId = leftFaceId;
           }
         } else {
           if (isLeftVisited) {
-            // Left face visited, go to the right one.
             cornerId = rightCornerId;
             faceId = rightFaceId;
           } else {
-            // Both neighboring faces are unvisited, split the traversal.
+            // Both neighbors unvisited: continue left, push right to resume later.
             stack[stackSize - 1] = leftCornerId;
             stack[stackSize++] = rightCornerId;
             break;
@@ -6711,7 +5989,6 @@ class MaxPredictionDegreeTraverser {
   }
 
   onTraversalStart() {
-    // prediction_degree_.resize(num_vertices, 0)
     this._predictionDegree = new Int32Array(this._cornerTable.numVertices());
   }
 
@@ -6767,13 +6044,10 @@ class MaxPredictionDegreeTraverser {
     const isVertexVisited = this._isVertexVisited;
     const observer = this._observer;
 
-    // Traversal starts from |cornerId|; it follows the right or left
-    // neighboring faces based on their prediction degree.
     this._traversalStacks[0].push(cornerId);
     this._bestPriority = 0;
 
-    // For the first face, check the remaining corners as they may not be
-    // processed yet.
+    // For the first face the other two corners may not be processed yet.
     const firstNext = this._next(cornerId);
     const firstPrev = this._previous(cornerId);
     const nextVert = cornerToVertex[firstNext];
@@ -6792,10 +6066,8 @@ class MaxPredictionDegreeTraverser {
       observer.onNewVertexVisited(tipVertex, cornerId);
     }
 
-    // Start the actual traversal.
     while ((cornerId = this._popNextCornerToTraverse()) !== kInvalidCornerIndex$2) {
       let faceId = (cornerId / 3) | 0;
-      // Make sure the face hasn't been visited yet.
       if (isFaceVisited[faceId]) {
         continue;
       }
@@ -6805,15 +6077,13 @@ class MaxPredictionDegreeTraverser {
         isFaceVisited[faceId] = 1;
         this._numVisitedFaces++;
 
-        // If the newly reached vertex hasn't been visited, mark and notify.
         const vertId = cornerToVertex[cornerId];
         if (!isVertexVisited[vertId]) {
           isVertexVisited[vertId] = 1;
           observer.onNewVertexVisited(vertId, cornerId);
         }
 
-        // GetRightCorner = opposite(next(corner)); GetLeftCorner =
-        // opposite(previous(corner)).
+        // right = opposite(next(corner)); left = opposite(previous(corner)).
         const rightCornerId = oppositeCorners[this._next(cornerId)];
         const leftCornerId = oppositeCorners[this._previous(cornerId)];
         const rightFaceId = rightCornerId === kInvalidCornerIndex$2
@@ -6826,11 +6096,10 @@ class MaxPredictionDegreeTraverser {
           isFaceVisited[leftFaceId] !== 0;
 
         if (!isLeftFaceVisited) {
-          // We can go to the left face.
           const priority = this._computePriority(leftCornerId);
           if (isRightFaceVisited && priority <= this._bestPriority) {
-            // Right face already visited and priority is best — the left face
-            // is traversed next, no need to push it onto the stack.
+            // Best priority and nothing else pending: traverse left without
+            // a stack round-trip.
             cornerId = leftCornerId;
             continue;
           } else {
@@ -6838,10 +6107,9 @@ class MaxPredictionDegreeTraverser {
           }
         }
         if (!isRightFaceVisited) {
-          // Go to the right face.
           const priority = this._computePriority(rightCornerId);
           if (priority <= this._bestPriority) {
-            // The right face is traversed next — no need to push it.
+            // Best priority: traverse right without a stack round-trip.
             cornerId = rightCornerId;
             continue;
           } else {
@@ -6880,7 +6148,6 @@ class MeshTraversalSequencer {
     this._traverser = traverser;
   }
 
-  // Called by SequentialAttributeDecodersController.
   generateSequence(/* outPointIds */) {
     // A traversal's output (point order + encoding maps) depends only on the
     // corner table's connectivity AND the traversal method, not on the
@@ -6965,7 +6232,6 @@ class MeshTraversalSequencer {
   }
 
   _generateSequenceInternal() {
-    // Preallocate.
     this._numOutPoints = 0;
     this._outPointIds = new Int32Array(this._mesh.numPoints());
 
@@ -7005,15 +6271,11 @@ class MeshAttributeIndicesEncodingObserver {
 
   onNewVertexVisited(vertex, corner) {
     const pointId = this._faces[corner];
-    // Append the visited attribute to the encoding order.
     this._sequencer.addPointId(pointId);
 
-    // Keep track of visited corners.
     const numValues = this._encodingData.numValues;
     this._encodedToCornerMap[numValues] = corner;
-
     this._vertexToEncodedMap[vertex] = numValues;
-
     this._encodingData.numValues++;
   }
 
@@ -7044,15 +6306,14 @@ class MeshAttributeCornerTable {
       return false;
     }
 
-    // Typed arrays keep the hot accessors (isEdgeOnSeam/vertex/opposite, called
-    // per corner during attribute connectivity recompute) monomorphic. Uint8Array
-    // defaults to 0 (== false); corner_to_vertex_map_ uses signed -1 sentinel.
+    // Typed arrays keep the per-corner hot accessors monomorphic. Uint8Array
+    // defaults to 0 (== false); corner_to_vertex_map_ uses a signed -1 sentinel.
     this.is_edge_on_seam_ = new Uint8Array(table.numCorners());
     this.is_vertex_on_seam_ = new Uint8Array(table.numVertices());
     this.corner_to_vertex_map_ = new Int32Array(table.numCorners()).fill(kInvalidVertexIndex);
     this.vertex_to_attribute_entry_id_map_ = [];
     this.vertex_to_left_most_corner_map_ = [];
-    // Lazily built seam-aware opposite array (see oppositeCornerArray).
+    // Lazily built; see oppositeCornerArray.
     this._effectiveOpposite = null;
     this.corner_table_ = table;
     this.no_interior_seams_ = true;
@@ -7092,25 +6353,23 @@ class MeshAttributeCornerTable {
 
   }
 
-  // The decoder always recomputes the attribute-vertex maps from connectivity
-  // alone (no source mesh/attribute), so this is the single path the C++
-  // RecomputeVertices(nullptr, nullptr) overload takes.
+  // Only the C++ RecomputeVertices(nullptr, nullptr) path: the decoder always
+  // rebuilds the attribute-vertex maps from connectivity alone.
   _recomputeVerticesInternal() {
 
     const ct = this.corner_table_;
     const numCorners = ct.numCorners();
     const numBaseVertices = ct.numVertices();
-    // Each corner maps to exactly one attribute entry, so the number of new
-    // (attribute) vertices is bounded by the corner count. Preallocate the two
-    // maps as Int32Arrays indexed by new-vertex id (the push order equals the
-    // numNewVertices counter), avoiding per-entry Array.push() growth + GC.
+    // New-vertex count is bounded by numCorners, so preallocate Int32Arrays
+    // indexed by new-vertex id (push order == numNewVertices) instead of growing
+    // Arrays with push().
     const attEntryMap = new Int32Array(numCorners);
     const leftMostMap = new Int32Array(numCorners);
     const cornerToVertex = this.corner_to_vertex_map_;
     const isVertexOnSeam = this.is_vertex_on_seam_;
     const isEdgeOnSeam = this.is_edge_on_seam_;
-    // Flat connectivity arrays so the per-corner swing operations are inlined
-    // typed-array arithmetic instead of polymorphic method dispatch.
+    // Flat connectivity arrays so the per-corner swings inline to typed-array
+    // arithmetic instead of polymorphic dispatch.
     //   - seamOpp: seam-aware opposite (== this.opposite), used by swingLeft.
     //   - baseOpp: raw opposite of the underlying table, used by swingRight
     //     (matches corner_table_.swingRight, which is NOT seam-aware here).
@@ -7178,8 +6437,7 @@ class MeshAttributeCornerTable {
       }
     }
 
-    // Expose exact-length views (no copy) so numVertices() and the per-vertex
-    // accessors see the right length.
+    // subarray, not copy: exact-length views so numVertices()/accessors see the right length.
     this.vertex_to_attribute_entry_id_map_ = attEntryMap.subarray(0, numNewVertices);
     this.vertex_to_left_most_corner_map_ = leftMostMap.subarray(0, numNewVertices);
 
@@ -7282,16 +6540,14 @@ class MeshAttributeCornerTable {
 
   }
 
-  // --- Flat-array accessors used by DepthFirstTraverser to avoid polymorphic
-  // per-corner method dispatch in the traversal hot loop. ---
+  // --- Flat-array accessors: let DepthFirstTraverser avoid per-corner dispatch. ---
 
   cornerToVertexArray() {
     return this.corner_to_vertex_map_;
   }
 
-  // Returns an Int32Array of seam-aware opposite corners (seam edges map to -1),
-  // matching opposite(). Built once on first use; the seam data and underlying
-  // connectivity are finalized before traversal, so the result is stable.
+  // Seam-aware opposite corners (seam edges -> -1), matching opposite(). Cached on
+  // first use; seams and connectivity are finalized before traversal, so it's stable.
   oppositeCornerArray() {
     if (this._effectiveOpposite === null) {
       const nc = this.corner_table_.numCorners();
@@ -7310,8 +6566,7 @@ class MeshAttributeCornerTable {
     return this.vertex_to_left_most_corner_map_;
   }
 
-  // Per-(base-)vertex seam flag (Uint8Array). isCornerOnSeam(c) reads this at
-  // the corner's base vertex; exposed so hot dedup loops can inline that.
+  // Per-base-vertex seam flag (Uint8Array); exposed so hot dedup loops inline the lookup.
   vertexOnSeamArray() {
     return this.is_vertex_on_seam_;
   }
@@ -7346,21 +6601,16 @@ class MeshAttributeCornerTable {
 // compression/mesh/MeshEdgebreakerDecoderImpl.js - ported from mesh/mesh_edgebreaker_decoder_impl.h/cc
 
 
-// Invalid index constant (used for corners and vertices).
 const kInvalidCornerIndex = -1;
 
-// Reads a count that is encoded as a varint in bitstream >= 2.0 and as a raw
-// little-endian uint32 below it. Returns the value, or undefined on a short
-// read. Used by the many version-gated header reads below.
+// varint in bitstream >= 2.0, raw little-endian uint32 below it; undefined on short read.
 function decodeVarintOrUint32(buffer, bitstreamVersion) {
   return bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)
     ? buffer.decodeUint32()
     : decodeVarint(buffer);
 }
 
-// Implementation of the edgebreaker decoder that decodes data encoded with the
-// MeshEdgebreakerEncoderImpl class. The implementation is based on the
-// algorithm presented in Isenburg et al'02 "Spirale Reversi: Reverse
+// Edgebreaker decoder; based on Isenburg et al'02 "Spirale Reversi: Reverse
 // decoding of the Edgebreaker encoding".
 class MeshEdgebreakerDecoderImpl {
 
@@ -7376,8 +6626,8 @@ class MeshEdgebreakerDecoderImpl {
     this._numEncodedVertices = 0;
     this._posEncodingData = new MeshAttributeIndicesEncodingData();
     this._posDataDecoderId = -1;
-    // Per-decode cache of vertex-traversal results, keyed by corner table, so
-    // multiple vertex-mapped attributes that share connectivity traverse once.
+    // Cache of vertex-traversal results keyed by corner table, so attributes
+    // sharing connectivity traverse once.
     this._vertexTraversalCache = new Map();
     this._attributeData = [];
     this._traversalDecoder = new TraversalDecoderClass();
@@ -7467,7 +6717,6 @@ class MeshEdgebreakerDecoderImpl {
     let sequencer = null;
 
     if (decoderType === MeshAttributeElementType.MESH_VERTEX_ATTRIBUTE) {
-      // Per-vertex attribute decoder.
       let encodingData = null;
       if (attDataId < 0) {
         encodingData = this._posEncodingData;
@@ -7476,7 +6725,6 @@ class MeshEdgebreakerDecoderImpl {
         this._attributeData[attDataId].isConnectivityUsed = false;
       }
 
-      // Create vertex traversal sequencer using the main corner table.
       sequencer = this._createVertexTraversalSequencer(
         encodingData, this._cornerTable, mesh, traversalMethod);
     } else {
@@ -7521,8 +6769,7 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   decodeConnectivity() {
-    // Bitstreams < 2.2 prefix a new-vertex count here; it is read only to
-    // advance the cursor (the value is unused by this decoder).
+    // Bitstreams < 2.2 prefix an unused new-vertex count here; read only to advance the cursor.
     if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
       const numNewVerts = decodeVarintOrUint32(
         this._decoder.buffer(), this._decoder.bitstreamVersion());
@@ -7542,17 +6789,16 @@ class MeshEdgebreakerDecoderImpl {
       return false; // Draco cannot handle this many faces.
     }
     if (this._numEncodedVertices > numFaces * 3) {
-      return false; // There cannot be more vertices than 3 * numFaces.
+      return false;
     }
 
-    // Minimum number of edges of the mesh assuming each edge is shared between
-    // two faces.
+    // Min edges assuming each is shared by two faces vs max edges between the
+    // vertices; if max < min a manifold mesh is impossible.
     const minNumFaceEdges = Math.floor(3 * numFaces / 2);
-    // Maximum number of edges that can exist between numEncodedVertices.
     const maxNumVertexEdges = this._numEncodedVertices *
       (this._numEncodedVertices - 1) / 2;
     if (maxNumVertexEdges < minNumFaceEdges) {
-      return false; // Impossible to construct a manifold mesh.
+      return false;
     }
 
     const numAttributeData = this._decoder.buffer().decodeUint8();
@@ -7577,7 +6823,6 @@ class MeshEdgebreakerDecoderImpl {
     if (numEncodedSplitSymbols > numEncodedSymbols) {
       return false; // Split symbols are a sub-set of all symbols.
     }
-    // Decode topology (connectivity).
     this._cornerTable = new CornerTable();
     this._vertexTraversalCache = new Map();
     this._topologySplitData = [];
@@ -7598,9 +6843,8 @@ class MeshEdgebreakerDecoderImpl {
       return false;
     }
 
-    // Start with all vertices marked as holes (boundaries). Uint8Array (1=hole)
-    // keeps the per-vertex reads/writes in _decodeConnectivity and
-    // _assignPointsToCorners monomorphic. The vertex count never exceeds this
+    // All vertices start as holes (boundaries). Uint8Array (1=hole) keeps the
+    // per-vertex reads/writes monomorphic; vertex count never exceeds this
     // length (enforced via maxNumVertices), so fixed-size storage is safe.
     this._isVertHole = new Uint8Array(
       this._numEncodedVertices + numEncodedSplitSymbols).fill(1);
@@ -7633,7 +6877,7 @@ class MeshEdgebreakerDecoderImpl {
     }
 
     this._traversalDecoder.init(this);
-    // Add one extra vertex for each split symbol.
+    // One extra vertex per split symbol.
     this._traversalDecoder.setNumEncodedVertices(
       this._numEncodedVertices + numEncodedSplitSymbols);
     this._traversalDecoder.setNumAttributeData(numAttributeData);
@@ -7648,7 +6892,6 @@ class MeshEdgebreakerDecoderImpl {
       return false;
     }
 
-    // Set the main buffer to the end of the traversal.
     this._decoder.buffer().init(
       traversalEndBuffer.dataHead,
       traversalEndBuffer.remainingSize,
@@ -7660,7 +6903,6 @@ class MeshEdgebreakerDecoderImpl {
       this._decoder.buffer().advance(topologySplitDecodedBytes);
     }
 
-    // Decode connectivity of non-position attributes.
     if (this._attributeData.length > 0) {
       if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 1)) {
         for (let ci = 0; ci < this._cornerTable.numCorners(); ci += 3) {
@@ -7678,18 +6920,16 @@ class MeshEdgebreakerDecoderImpl {
     }
     this._traversalDecoder.done();
 
-    // Decode attribute connectivity.
     let previousConnectivityData = null;
     for (let i = 0; i < this._attributeData.length; ++i) {
       const connectivityData = this._attributeData[i].connectivityData;
       connectivityData.initEmpty(this._cornerTable);
-      // Add all seams (indexed loop — avoids a for..of iterator per seam).
+      // Indexed loop avoids a for..of iterator per seam.
       const seamCorners = this._attributeData[i].attributeSeamCorners;
       const seamCount = this._attributeData[i].numSeamCorners;
       for (let s = 0; s < seamCount; ++s) {
         connectivityData.addSeamEdge(seamCorners[s]);
       }
-      // Recompute vertices from the newly added seam edges.
       if (connectivityData.hasSameSeams(previousConnectivityData)) {
         connectivityData.adoptVertexRecompute(previousConnectivityData);
       } else if (!connectivityData.recomputeVertices(null, null)) {
@@ -7717,16 +6957,13 @@ class MeshEdgebreakerDecoderImpl {
     return true;
   }
 
-  // --- Private methods ---
-
   _isTopologySplit(encoderSymbolId, outResult) {
     if (this._topologySplitData.length === 0) {
       return false;
     }
     const back = this._topologySplitData[this._topologySplitData.length - 1];
     if (back.sourceSymbolId > encoderSymbolId) {
-      // Something is wrong; the desired source symbol is greater than the
-      // current encoder_symbol_id.
+      // Malformed: source symbol is greater than the current encoder_symbol_id.
       outResult.encoderSplitSymbolId = -1;
       return true;
     }
@@ -7735,15 +6972,13 @@ class MeshEdgebreakerDecoderImpl {
     }
     outResult.faceEdge = back.sourceEdge;
     outResult.encoderSplitSymbolId = back.splitSymbolId;
-    // Remove the latest split event.
     this._topologySplitData.pop();
     return true;
   }
 
 
   _decodeConnectivity(numSymbols) {
-    // Algorithm does the reverse decoding of the symbols encoded with the
-    // edgebreaker method.
+    // Reverse decoding of the edgebreaker-encoded symbols.
     const activeCornerStack =
       new Int32Array(numSymbols + this._topologySplitData.length + 16);
     let activeCornerStackSize = 0;
@@ -7756,15 +6991,13 @@ class MeshEdgebreakerDecoderImpl {
 
     // Hoist the two corner-indexed flat arrays. Unlike _vertexCorners (grown by
     // addNewVertex), these are sized once in reset() and never reallocated, so
-    // direct indexed writes are safe here and skip the per-call method dispatch
-    // (mapCornerToVertex / setOppositeCorner) that showed up in profiles. All
-    // corners written below are freshly constructed (>= 0), so no guard needed.
+    // direct indexed writes are safe and skip the per-call method dispatch that
+    // showed up in profiles. All corners written below are fresh (>= 0).
     const cornerToVertex = this._cornerTable._cornerToVertex;
     const oppositeCorners = this._cornerTable._oppositeCorners;
     const numCorners = this._cornerTable.numCorners();
 
-    // Safe, inlinable arrow functions for CornerTable accessors that correctly
-    // handle negative indices and avoid polymorphic method dispatch.
+    // Inlinable accessors that handle negative indices and avoid polymorphic dispatch.
     const next = (c) => c < 0 ? -1 : ((c % 3 === 2) ? c - 2 : c + 1);
     const prev = (c) => c < 0 ? -1 : ((c % 3 === 0) ? c + 2 : c - 1);
     const vertex = (c) => (c < 0 || c >= numCorners) ? -1 : cornerToVertex[c];
@@ -7782,15 +7015,13 @@ class MeshEdgebreakerDecoderImpl {
       return o < 0 ? -1 : prev(o);
     };
 
-    // Hot loop: the CornerTable accessors are inlined directly as flat-array
-    // reads + corner-triple arithmetic rather than calling the next/prev/vertex/
-    // opposite/leftMostCorner helpers above. _decodeConnectivity is far larger
-    // than V8's inlining budget, so those helpers stayed real (monomorphic)
-    // calls and cost ~15% of total decode in profiles. All corners reached here
-    // during a well-formed stream are valid (>= 0, < numCorners) and the flat
-    // arrays are -1-initialized, so the helpers' negative/bounds guards are not
-    // needed -- except the swing-left boundary terminator, kept below. The
-    // helpers remain defined for the (cold) post-loop cleanup code.
+    // Hot loop: accessors are inlined as flat-array reads + corner-triple
+    // arithmetic rather than calling the helpers above. _decodeConnectivity
+    // exceeds V8's inlining budget, so those helpers stayed real monomorphic
+    // calls costing ~15% of decode in profiles. All corners reached here in a
+    // well-formed stream are valid (>= 0, < numCorners) and the flat arrays are
+    // -1-initialized, so the helpers' guards are unneeded -- except the swing-
+    // left boundary terminator below. Helpers remain for the cold post-loop code.
     const vc = this._cornerTable; // _vertexCorners is re-read (addNewVertex may realloc).
     for (let symbolId = 0; symbolId < numSymbols; ++symbolId) {
       const faceIndex = numFacesDecoded++;
@@ -7830,8 +7061,7 @@ class MeshEdgebreakerDecoderImpl {
         cornerToVertex[corner + 1] = vertBNext;
         cornerToVertex[corner + 2] = vertAPrev;
         vc._vertexCorners[vertAPrev] = corner + 2;
-        // Mark the vertex x as interior.
-        this._isVertHole[vertexX] = 0;
+        this._isVertHole[vertexX] = 0; // mark vertex x interior
         activeCornerStack[activeCornerStackSize - 1] = corner;
 
       } else if (symbol === TOPOLOGY_R || symbol === TOPOLOGY_L) {
@@ -7875,15 +7105,13 @@ class MeshEdgebreakerDecoderImpl {
         checkTopologySplit = true;
 
       } else if (symbol === TOPOLOGY_S) {
-        // Create a new face that merges two last active edges from the active
-        // stack.
+        // Merge the two last active edges from the active stack into a new face.
         if (activeCornerStackSize === 0) return -1;
 
         const cornerB = activeCornerStack[activeCornerStackSize - 1];
         activeCornerStackSize--;
 
-        // Corner "a" can correspond to a normal active edge, or to an edge
-        // created from the topology split event.
+        // Corner "a" may be a normal active edge or one from a topology split event.
         const splitCorner = topologySplitActiveCorners.get(symbolId);
         if (splitCorner !== undefined) {
           activeCornerStack[activeCornerStackSize++] = splitCorner;
@@ -7917,11 +7145,11 @@ class MeshEdgebreakerDecoderImpl {
         let cornerN = cornerB % 3 === 2 ? cornerB - 2 : cornerB + 1; // next(cornerB)
         const vertexN = cornerToVertex[cornerN];
         this._traversalDecoder.mergeVertices(vertexP, vertexN);
-        // Update the left most corner on the newly merged vertex.
+        // Update the left-most corner on the newly merged vertex.
         vc._vertexCorners[vertexP] = vc._vertexCorners[vertexN]; // leftMostCorner(vertexN)
 
-        // Update vertex id at corner "n" and all corners connected to it
-        // in the CCW direction. swingLeft(c) = next(opposite(next(c))).
+        // Update vertex id at corner "n" and all corners CCW from it.
+        // swingLeft(c) = next(opposite(next(c))).
         const firstCorner = cornerN;
         while (cornerN !== kInvalidCornerIndex) {
           cornerToVertex[cornerN] = vertexP;
@@ -7929,12 +7157,10 @@ class MeshEdgebreakerDecoderImpl {
           const so = oppositeCorners[sn];                           // opposite(sn)
           cornerN = so < 0 ? -1 : (so % 3 === 2 ? so - 2 : so + 1); // next(so) or boundary
           if (cornerN === firstCorner) {
-            // We reached the start again which should not happen for split
-            // symbols.
-            return -1;
+            return -1; // back at start: should not happen for split symbols
           }
         }
-        // Make the old vertex n isolated.
+        // Isolate the old vertex n.
         vc._vertexCorners[vertexN] = -1;
         if (removeInvalidVertices) {
           invalidVertices.push(vertexN);
@@ -7944,7 +7170,7 @@ class MeshEdgebreakerDecoderImpl {
       } else if (symbol === TOPOLOGY_E) {
         const corner = 3 * faceIndex;
         const firstVertIndex = this._cornerTable.addNewVertex();
-        // Create three new vertices at the corners of the new face.
+        // Three new vertices at the corners of the new face.
         this._cornerTable.addNewVertex();
         this._cornerTable.addNewVertex();
 
@@ -7957,21 +7183,17 @@ class MeshEdgebreakerDecoderImpl {
         vc._vertexCorners[firstVertIndex] = corner;
         vc._vertexCorners[firstVertIndex + 1] = corner + 1;
         vc._vertexCorners[firstVertIndex + 2] = corner + 2;
-        // Add the tip corner to the active stack.
-        activeCornerStack[activeCornerStackSize++] = corner;
+        activeCornerStack[activeCornerStackSize++] = corner; // push the tip corner
         checkTopologySplit = true;
 
       } else {
-        // Unknown symbol.
-        return -1;
+        return -1; // unknown symbol
       }
 
-      // Inform the traversal decoder that a new corner has been reached.
       this._traversalDecoder.newActiveCornerReached(
         activeCornerStack[activeCornerStackSize - 1]);
 
       if (checkTopologySplit) {
-        // Check for topology splits.
         const encoderSymbolId = numSymbols - symbolId - 1;
         const splitResult = { faceEdge: 0, encoderSplitSymbolId: 0 };
         while (this._isTopologySplit(encoderSymbolId, splitResult)) {
@@ -7986,7 +7208,7 @@ class MeshEdgebreakerDecoderImpl {
             // prev(actTopCorner)
             newActiveCorner = actTopCorner % 3 === 0 ? actTopCorner + 2 : actTopCorner - 1;
           }
-          // Convert the encoder split symbol id to decoder symbol id.
+          // Encoder split symbol id -> decoder symbol id.
           const decoderSplitSymbolId =
             numSymbols - splitResult.encoderSplitSymbolId - 1;
           topologySplitActiveCorners.set(decoderSplitSymbolId, newActiveCorner);
@@ -8042,7 +7264,7 @@ class MeshEdgebreakerDecoderImpl {
         cornerToVertex[newCorner + 1] = vertP;
         cornerToVertex[newCorner + 2] = vertN;
 
-        // Mark all three vertices as interior.
+        // Mark all three vertices interior.
         this._isVertHole[vertX] = 0;
         this._isVertHole[vertP] = 0;
         this._isVertHole[vertN] = 0;
@@ -8066,16 +7288,14 @@ class MeshEdgebreakerDecoderImpl {
     // Must iterate forward (not reverse) to match C++ iteration order.
     for (let ivIdx = 0; ivIdx < invalidVertices.length; ++ivIdx) {
       const invalidVert = invalidVertices[ivIdx];
-      // Find the last valid vertex.
       let srcVert = numVertices - 1;
       while (leftMostCorner(srcVert) === kInvalidCornerIndex) {
         srcVert = --numVertices - 1;
       }
       if (srcVert < invalidVert) continue;
 
-      // Remap all corners mapped to srcVert to invalidVert.
-      // Use VertexCornersIterator logic: swing left first, then swing right
-      // on boundary to cover all corners around the vertex.
+      // Remap all corners of srcVert to invalidVert. VertexCornersIterator
+      // logic: swing left first, then swing right on boundary.
       const startCid = leftMostCorner(srcVert);
       let cid = startCid;
       let leftTraversal = true;
@@ -8084,16 +7304,14 @@ class MeshEdgebreakerDecoderImpl {
           return -1;
         }
         cornerToVertex[cid] = invalidVert;
-        // Advance to the next corner around the vertex.
         if (leftTraversal) {
           const nextC = swingLeft(cid);
           if (nextC === kInvalidCornerIndex) {
-            // Open boundary reached, switch to right traversal from start.
+            // Open boundary reached; switch to right traversal from start.
             leftTraversal = false;
             cid = swingRight(startCid);
           } else if (nextC === startCid) {
-            // Closed fan, we're done.
-            break;
+            break; // closed fan
           } else {
             cid = nextC;
           }
@@ -8133,7 +7351,7 @@ class MeshEdgebreakerDecoderImpl {
           this._topologySplitData.push(eventData);
         }
       } else {
-        // Decode source and split symbol ids using delta and varint coding.
+        // Source and split symbol ids use delta + varint coding.
         let lastSourceSymbolId = 0;
         for (let i = 0; i < numTopologySplits; ++i) {
           const eventData = new TopologySplitEventData();
@@ -8147,7 +7365,7 @@ class MeshEdgebreakerDecoderImpl {
           lastSourceSymbolId = eventData.sourceSymbolId;
           this._topologySplitData.push(eventData);
         }
-        // Split edges are decoded from a direct bit decoder.
+        // Split edges come from a direct bit decoder.
         decoderBuffer.startBitDecoding(false);
         for (let i = 0; i < numTopologySplits; ++i) {
           let edgeData;
@@ -8221,9 +7439,8 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   _decodeAttributeConnectivitiesOnFace(corner) {
-    // corner is the first corner of a face (a multiple of 3), so its three
-    // corners are corner, corner+1, corner+2. Iterate them without allocating a
-    // [corner, next, prev] array, reading opposites from the flat array.
+    // Iterate the face's three corners without allocating a [corner, next, prev]
+    // array; read opposites from the flat array.
     const ct = this._cornerTable;
     const oppositeCorners = ct.oppositeCornerArray();
     const attributeData = this._attributeData;
@@ -8231,8 +7448,7 @@ class MeshEdgebreakerDecoderImpl {
     const srcFaceId = (corner / 3) | 0;
     const faceBase = srcFaceId * 3;
 
-    // Visit the face's corners in the order [corner, next(corner),
-    // previous(corner)] to match the encoder's edge order exactly.
+    // Order [corner, next, previous] to match the encoder's edge order.
     const rem = corner - faceBase;
     const nextCorner = rem === 2 ? corner - 2 : corner + 1;
     const prevCorner = rem === 0 ? corner + 2 : corner - 1;
@@ -8309,15 +7525,13 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   _assignPointsToCorners(numConnectivityVerts) {
-    // Map between the existing and deduplicated point ids.
     this._decoder.mesh().setNumFaces(this._cornerTable.numFaces());
 
     const mesh = this._decoder.mesh();
     const ct = this._cornerTable;
 
     if (this._attributeData.length === 0) {
-      // We have connectivity for position only. In this case all vertex indices
-      // are equal to point indices.
+      // Position-only connectivity: vertex indices equal point indices.
       const numFaces = mesh.numFaces();
       const faces = mesh.faces_;
       const baseCornerToVertex = ct.cornerToVertexArray();
@@ -8331,9 +7545,8 @@ class MeshEdgebreakerDecoderImpl {
       return true;
     }
 
-    // Else we need to deduplicate multiple attributes. pointToCornerMap is only
-    // ever used for its length (the running point id), so track that as a
-    // counter instead of growing an array.
+    // Multiple attributes: deduplicate. pointToCornerMap is only used for its
+    // length (the running point id), so track it as a counter, not an array.
     const attributeData = this._attributeData;
     const numAttrData = attributeData.length;
     let numPoints = 0;
@@ -8341,9 +7554,8 @@ class MeshEdgebreakerDecoderImpl {
 
     const numVertices = ct.numVertices();
     // Flat connectivity for the inlined swingRight ring walk and per-attribute
-    // vertex / seam lookups — avoids method dispatch on the (polymorphic) corner
-    // tables for every corner of every vertex ring. swingRight(x) here is the
-    // base table's: previous(baseOpp[previous(x)]).
+    // lookups — avoids dispatch on the polymorphic corner tables for every
+    // corner of every ring. swingRight(x) = previous(baseOpp[previous(x)]).
     const vertexLeftmost = ct.vertexLeftmostCornerArray();
     const baseOpp = ct.oppositeCornerArray();
     ct.cornerToVertexArray();
@@ -8356,7 +7568,7 @@ class MeshEdgebreakerDecoderImpl {
     }
     const singleAttC2V = numAttrData === 1 ? attCornerToVertex[0] : null;
 
-    // Precalculate a unified anyAttVertexOnSeam flag for each vertex.
+    // Unified per-vertex anyAttVertexOnSeam flag.
     let anyAttVertexOnSeam;
     if (numAttrData === 1) {
       anyAttVertexOnSeam = attVertexOnSeam[0];
@@ -8374,12 +7586,12 @@ class MeshEdgebreakerDecoderImpl {
 
     for (let v = 0; v < numVertices; ++v) {
       let c = vertexLeftmost[v];
-      if (c === kInvalidCornerIndex) continue; // Isolated vertex.
+      if (c === kInvalidCornerIndex) continue; // isolated vertex
 
       const isSeamVertex = isVertHole[v] || anyAttVertexOnSeam[v];
 
       if (!isSeamVertex) {
-        // Fast path for non-seam vertices: all corners in this ring get the same point ID
+        // Fast path: every corner in this ring gets the same point id.
         const initialC = c;
         const pointId = numPoints++;
         cornerToPointMap[initialC] = pointId;
@@ -8489,7 +7701,6 @@ class MeshEdgebreakerDecoderImpl {
       }
     }
 
-    // Add faces.
     const numFaces = mesh.numFaces();
     const faces = mesh.faces_;
     for (let f = 0; f < numFaces; ++f) {
@@ -8514,17 +7725,16 @@ class MeshAttributeIndicesEncodingData {
   }
 
   init(numVertices) {
-    // Int32Array: written by index only (encoding observer) and read in every
-    // parallelogram/texcoord/normal prediction lookup; values are non-negative
-    // data indices, so keeping it typed keeps those hot reads monomorphic.
+    // Int32Array (non-negative data indices) keeps the hot prediction-lookup
+    // reads monomorphic.
     this._vertexToEncodedAttributeValueIndexMap = new Int32Array(numVertices);
     this._encodedAttributeValueIndexToCornerMap = new Int32Array(numVertices);
     this._numValues = 0;
   }
 
-  // Adopts a traversal result computed for an identical corner table, avoiding a
-  // redundant full mesh traversal. These maps depend only on connectivity (not
-  // on attribute values) and are read-only downstream, so they can be shared.
+  // Adopts a traversal result from an identical corner table, avoiding a
+  // redundant traversal. The maps depend only on connectivity and are read-only
+  // downstream, so sharing is safe.
   adoptTraversalResult(vertexToEncodedMap, encodedToCornerMap, numValues) {
     this._vertexToEncodedAttributeValueIndexMap = vertexToEncodedMap;
     this._encodedAttributeValueIndexToCornerMap = encodedToCornerMap;
@@ -8563,27 +7773,23 @@ class AttributeData {
 
 }
 
-// Minimal CornerTable class for use within the decoder.
-// The full CornerTable would be in the mesh module.
+// Minimal CornerTable for the decoder (the full one lives in the mesh module).
 class CornerTable {
 
   constructor() {
     this._numFaces = 0;
     this._numCorners = 0;
     this._numVertices = 0;
-    // For each corner, the vertex it maps to.
-    this._cornerToVertex = null;
-    // For each corner, the opposite corner.
-    this._oppositeCorners = null;
-    // For each vertex, the left-most corner.
-    this._vertexCorners = null;
+    this._cornerToVertex = null;   // corner -> vertex
+    this._oppositeCorners = null;  // corner -> opposite corner
+    this._vertexCorners = null;    // vertex -> left-most corner
   }
 
   reset(numFaces, numVertices) {
     this._numFaces = numFaces;
     this._numCorners = numFaces * 3;
-    // C++ uses reserve() which allocates capacity but keeps size at 0.
-    // Vertices are added incrementally via addNewVertex().
+    // C++ reserve() allocates capacity but keeps size 0; vertices are added
+    // incrementally via addNewVertex().
     this._numVertices = 0;
     this._cornerToVertex = new Int32Array(this._numCorners).fill(-1);
     this._oppositeCorners = new Int32Array(this._numCorners).fill(-1);
@@ -8603,7 +7809,6 @@ class CornerTable {
     return this._numVertices;
   }
 
-  // Corner traversal.
   next(corner) {
     if (corner < 0) return -1;
     const rem = corner - ((corner / 3) | 0) * 3;
@@ -8616,20 +7821,17 @@ class CornerTable {
     return rem === 0 ? corner + 2 : corner - 1;
   }
 
-  // Get the vertex at a corner.
   vertex(corner) {
     if (corner < 0 || corner >= this._numCorners) return -1;
     return this._cornerToVertex[corner];
   }
 
-  // Get the opposite corner.
   opposite(corner) {
     if (corner < 0 || corner >= this._numCorners) return -1;
     return this._oppositeCorners[corner];
   }
 
-  // --- Flat-array accessors used by DepthFirstTraverser to avoid polymorphic
-  // per-corner method dispatch in the traversal hot loop. ---
+  // Flat-array accessors; let callers avoid polymorphic per-corner dispatch.
   cornerToVertexArray() {
     return this._cornerToVertex;
   }
@@ -8640,13 +7842,11 @@ class CornerTable {
     return this._vertexCorners;
   }
 
-  // Add a new vertex. Mirrors C++ CornerTable::AddNewVertex() which does
-  // vertex_corners_.push_back(kInvalidCornerIndex).
+  // Mirrors C++ CornerTable::AddNewVertex() (push_back(kInvalidCornerIndex)).
   addNewVertex() {
     const newVertex = this._numVertices;
     this._numVertices++;
-    // The array was pre-allocated with capacity in reset().
-    // Extend only if we exceed that capacity.
+    // Array pre-allocated in reset(); extend only when capacity is exceeded.
     if (newVertex >= this._vertexCorners.length) {
       const newArr = new Int32Array(this._vertexCorners.length + 64);
       newArr.fill(-1);
@@ -8657,8 +7857,7 @@ class CornerTable {
     return newVertex;
   }
 
-  // Swing left: go to the next corner around a vertex in the CCW direction.
-  // SwingLeft(c) = Next(Opposite(Next(c)))
+  // Next corner around a vertex, CCW. SwingLeft(c) = Next(Opposite(Next(c))).
   swingLeft(corner) {
     const nextCorner = this.next(corner);
     const oppCorner = this.opposite(nextCorner);
@@ -8666,8 +7865,7 @@ class CornerTable {
     return this.next(oppCorner);
   }
 
-  // Swing right: go to the next corner around a vertex in the CW direction.
-  // SwingRight(c) = Previous(Opposite(Previous(c)))
+  // Next corner around a vertex, CW. SwingRight(c) = Previous(Opposite(Previous(c))).
   swingRight(corner) {
     const prevCorner = this.previous(corner);
     const oppCorner = this.opposite(prevCorner);
@@ -8680,8 +7878,7 @@ class CornerTable {
 // compression/mesh/MeshEdgebreakerTraversalDecoder.js - ported from mesh/mesh_edgebreaker_traversal_decoder.h
 
 
-// Default implementation of the edgebreaker traversal decoder that reads the
-// traversal data directly from a buffer.
+// Default traversal decoder: reads traversal data directly from a buffer.
 class MeshEdgebreakerTraversalDecoder {
 
   constructor() {
@@ -8704,26 +7901,19 @@ class MeshEdgebreakerTraversalDecoder {
     );
   }
 
-  // Returns the Draco bitstream version.
   bitstreamVersion() {
     return this._decoderImpl.getDecoder().bitstreamVersion();
   }
 
-  // Used to tell the decoder what is the number of expected decoded vertices.
-  // Ignored by default.
+  // Ignored by default; overridden by predictive/valence decoders.
   setNumEncodedVertices(/* numVertices */) {}
 
-  // Set the number of non-position attribute data for which we need to decode
-  // the connectivity.
   setNumAttributeData(numData) {
     this._numAttributeData = numData;
   }
 
-  // Called before the traversal decoding is started.
-  // Returns true on success and sets outBuffer to data encoded after traversal.
+  // Sets outBuffer to the data encoded after the traversal section.
   start(outBuffer) {
-    // Decode symbols from the main buffer decoder and face configurations from
-    // the start_face_buffer decoder.
     if (!this.decodeTraversalSymbols()) {
       return false;
     }
@@ -8733,7 +7923,6 @@ class MeshEdgebreakerTraversalDecoder {
     if (!this.decodeAttributeSeams()) {
       return false;
     }
-    // Copy buffer state to outBuffer.
     outBuffer.init(
       this._buffer.dataHead,
       this._buffer.remainingSize,
@@ -8742,7 +7931,6 @@ class MeshEdgebreakerTraversalDecoder {
     return true;
   }
 
-  // Returns the configuration of a new initial face.
   decodeStartFaceConfiguration() {
     if (this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
       const faceConfiguration = this._startFaceBuffer.decodeLeastSignificantBits32(1);
@@ -8753,31 +7941,25 @@ class MeshEdgebreakerTraversalDecoder {
     }
   }
 
-  // Returns the next edgebreaker symbol that was reached during the traversal.
   decodeSymbol() {
     let symbol = this._symbolBuffer.decodeLeastSignificantBits32(1);
     if (symbol === TOPOLOGY_C) {
       return symbol;
     }
-    // Else decode two additional bits.
+    // Non-C symbols carry two additional bits.
     const symbolSuffix = this._symbolBuffer.decodeLeastSignificantBits32(2);
     symbol |= (symbolSuffix << 1);
     return symbol;
   }
 
-  // Called whenever a new active corner is set in the decoder.
   newActiveCornerReached(/* corner */) {}
 
-  // Called whenever source vertex is about to be merged into the dest vertex.
   mergeVertices(/* dest, source */) {}
 
-  // Returns true if there is an attribute seam for the next processed pair
-  // of visited faces.
   decodeAttributeSeam(attribute) {
     return this._attributeConnectivityDecoders[attribute].decodeNextBit() ? true : false;
   }
 
-  // Called when the traversal is finished.
   done() {
     if (this._symbolBuffer.bitDecoderActive) {
       this._symbolBuffer.endBitDecoding();
@@ -8791,14 +7973,11 @@ class MeshEdgebreakerTraversalDecoder {
     }
   }
 
-  // -- Protected methods --
-
   get buffer() {
     return this._buffer;
   }
 
   decodeTraversalSymbols() {
-    // Copy current buffer state to symbolBuffer.
     this._symbolBuffer.init(
       this._buffer.dataHead,
       this._buffer.remainingSize,
@@ -8808,7 +7987,7 @@ class MeshEdgebreakerTraversalDecoder {
     if (traversalSize === undefined) {
       return false;
     }
-    // Update buffer to point after the symbol data.
+    // Advance the main buffer past the symbol data.
     this._buffer.init(
       this._symbolBuffer.dataHead,
       this._symbolBuffer.remainingSize,
@@ -8843,11 +8022,8 @@ class MeshEdgebreakerTraversalDecoder {
       this._buffer.advance(traversalSize);
       return true;
     }
-    // For version >= 2.2, use the RAnsBitDecoder for start faces.
-    // The RAnsBitDecoder must be provided from the bit_coders module.
-    // Placeholder: create a lazy-loaded decoder.
+    // Version >= 2.2 codes start faces with an RAnsBitDecoder.
     try {
-      // Dynamically create RAnsBitDecoder if available
       this._startFaceDecoder = this._createRAnsBitDecoder();
       if (this._startFaceDecoder === null) {
         return false;
@@ -8875,7 +8051,6 @@ class MeshEdgebreakerTraversalDecoder {
     return true;
   }
 
-  // Factory method for creating a RAnsBitDecoder.
   _createRAnsBitDecoder() {
     return new RAnsBitDecoder();
   }
@@ -8921,7 +8096,6 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
     if (numSplitSymbols >= this._numVertices) {
       return false;
     }
-    // Set the valences of all initial vertices to 0.
     this._vertexValences = new Array(this._numVertices).fill(0);
     this._predictionDecoder = this._createRAnsBitDecoder();
     if (this._predictionDecoder === null) {
@@ -8934,16 +8108,14 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
   }
 
   decodeSymbol() {
-    // First check if we have a predicted symbol.
     if (this._predictedSymbol !== -1) {
-      // Double check that the predicted symbol was predicted correctly.
+      // The bit confirms whether the prediction was correct.
       if (this._predictionDecoder.decodeNextBit()) {
         this._lastSymbol = this._predictedSymbol;
         return this._predictedSymbol;
       }
     }
-    // We don't have a predicted symbol or the symbol was mis-predicted.
-    // Decode it directly.
+    // No prediction or mis-predicted: decode directly.
     this._lastSymbol = super.decodeSymbol();
     return this._lastSymbol;
   }
@@ -8953,7 +8125,6 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
     const next = ct.next(corner);
     const prev = ct.previous(corner);
 
-    // Update valences.
     switch (this._lastSymbol) {
       case TOPOLOGY_C:
       case TOPOLOGY_S:
@@ -8977,7 +8148,6 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
         break;
     }
 
-    // Compute the new predicted symbol.
     if (this._lastSymbol === TOPOLOGY_C || this._lastSymbol === TOPOLOGY_R) {
       const pivot = ct.vertex(ct.next(corner));
       if (this._vertexValences[pivot] < 6) {
@@ -8991,7 +8161,6 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
   }
 
   mergeVertices(dest, source) {
-    // Update valences on the merged vertices.
     this._vertexValences[dest] += this._vertexValences[source];
   }
 
@@ -9065,8 +8234,7 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
         this._minValence = 2;
         this._maxValence = 7;
       } else {
-        // Unsupported mode.
-        return false;
+        return false; // Unsupported mode.
       }
     } else {
       this._minValence = 2;
@@ -9076,12 +8244,10 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
     if (this._numVertices < 0) {
       return false;
     }
-    // Set the valences of all initial vertices to 0.
     this._vertexValences = new Array(this._numVertices).fill(0);
 
     const numUniqueValences = this._maxValence - this._minValence + 1;
 
-    // Decode all symbols for all contexts.
     this._contextSymbols = new Array(numUniqueValences);
     this._contextCounters = new Array(numUniqueValences);
 
@@ -9109,7 +8275,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
   }
 
   decodeSymbol() {
-    // First check if we have a valid context.
     if (this._activeContext !== -1) {
       const contextCounter = --this._contextCounters[this._activeContext];
       if (contextCounter < 0) {
@@ -9122,11 +8287,9 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
       this._lastSymbol = edgeBreakerSymbolToTopologyId[symbolId];
     } else {
       if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-        // We don't have a predicted symbol or the symbol was mis-predicted.
-        // Decode it directly.
         this._lastSymbol = super.decodeSymbol();
       } else {
-        // The first symbol must be E.
+        // The first symbol is always E.
         this._lastSymbol = TOPOLOGY_E;
       }
     }
@@ -9138,7 +8301,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
     const next = ct.next(corner);
     const prev = ct.previous(corner);
 
-    // Update valences.
     switch (this._lastSymbol) {
       case TOPOLOGY_C:
       case TOPOLOGY_S:
@@ -9162,8 +8324,7 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
         break;
     }
 
-    // Compute the new context that is going to be used to decode the next
-    // symbol.
+    // The clamped valence of the next vertex selects the entropy context.
     const activeValence = this._vertexValences[ct.vertex(next)];
     let clampedValence;
     if (activeValence < this._minValence) {
@@ -9177,7 +8338,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
   }
 
   mergeVertices(dest, source) {
-    // Update valences on the merged vertices.
     this._vertexValences[dest] += this._vertexValences[source];
   }
 
@@ -9186,7 +8346,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
 // compression/mesh/MeshEdgebreakerDecoder.js - ported from mesh/mesh_edgebreaker_decoder.h/cc
 
 
-// Class for decoding data encoded by MeshEdgebreakerEncoder.
 class MeshEdgebreakerDecoder extends MeshDecoder {
 
   constructor() {
@@ -9254,17 +8413,15 @@ class MeshEdgebreakerDecoder extends MeshDecoder {
 // compression/Decode.js - ported from compression/decode.h/cc
 
 
-// Reads the Draco header from a read-only copy of inBuffer (without advancing
-// the original), so the geometry type can be checked before picking a decoder.
-// Reuses PointCloudDecoder.decodeHeader and adapts its Status to a plain object.
+// Reads the Draco header from a copy of inBuffer without advancing the original,
+// so the geometry type can be checked before picking a decoder.
 // Returns { ok, header, message }.
 function peekHeader(inBuffer) {
 
   const tempBuffer = new DecoderBuffer();
   tempBuffer.init(inBuffer.data, inBuffer.data.length);
   tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-  // Restore position to match the original buffer's current position.
-  tempBuffer.advance(inBuffer.decodedSize);
+  tempBuffer.advance(inBuffer.decodedSize); // match the original's position
 
   const header = new DracoHeader();
   const status = PointCloudDecoder.decodeHeader(tempBuffer, header);
@@ -9272,7 +8429,6 @@ function peekHeader(inBuffer) {
 
 }
 
-// Creates a mesh decoder based on the encoding method.
 function createMeshDecoder(method) {
 
   if (method === MeshEncoderMethod.MESH_SEQUENTIAL_ENCODING) {
@@ -9289,8 +8445,7 @@ function createMeshDecoder(method) {
 
 }
 
-// Class responsible for decoding meshes and point clouds that were
-// compressed by a Draco encoder.
+// Decodes Draco-compressed meshes and point clouds.
 class Decoder {
 
   constructor() {
@@ -9299,9 +8454,7 @@ class Decoder {
 
   }
 
-  // Returns the geometry type encoded in the input buffer.
-  // The return value is one of EncodedGeometryType values:
-  // POINT_CLOUD, TRIANGULAR_MESH, or INVALID_GEOMETRY_TYPE on error.
+  // Returns an EncodedGeometryType value, or INVALID_GEOMETRY_TYPE on error.
   static getEncodedGeometryType(inBuffer) {
 
     const result = peekHeader(inBuffer);
@@ -9317,8 +8470,7 @@ class Decoder {
 
   }
 
-  // Decodes point cloud from the provided buffer. If the input contains a
-  // mesh, the returned instance will be a Mesh (which extends PointCloud).
+  // If the input is a mesh, pointCloud is a Mesh (which extends PointCloud).
   // Returns { pointCloud, ok, message }.
   decodePointCloudFromBuffer(inBuffer) {
 
@@ -9350,7 +8502,6 @@ class Decoder {
 
   }
 
-  // Decodes a triangular mesh from the provided buffer.
   // Returns { mesh, ok, message }.
   decodeMeshFromBuffer(inBuffer) {
 
@@ -9364,17 +8515,14 @@ class Decoder {
 
   }
 
-  // Point-cloud geometry decoding is not implemented (only triangle meshes are
-  // supported). The point-cloud-specific decoders are intentionally absent; the
-  // shared PointCloudDecoder base only backs the mesh decoders.
-  // Returns { ok, message }.
+  // Point-cloud decoding is intentionally unimplemented: only triangle meshes
+  // are supported, and PointCloudDecoder exists only as the mesh decoders' base.
   decodeBufferToPointCloud() {
 
     return { ok: false, message: 'Point cloud decoding is not supported.' };
 
   }
 
-  // Decodes the buffer into a provided Mesh geometry.
   // Returns { ok, message }.
   decodeBufferToMesh(inBuffer, outGeometry) {
 
@@ -9392,7 +8540,6 @@ class Decoder {
 
   }
 
-  // Returns the options instance used by the decoder.
   options() {
 
     return this.options_;
