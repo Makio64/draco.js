@@ -170,7 +170,7 @@ class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecod
 
       if (hasPrediction) {
         for (let c = 0; c < numComponents; ++c) {
-          let pred = (outData[vNextOff + c] + outData[vPrevOff + c]) - outData[vOppOff + c];
+          let pred = ((outData[vNextOff + c] + outData[vPrevOff + c]) - outData[vOppOff + c]) | 0;
           if (pred > maxValue) {
             pred = maxValue;
           } else if (pred < minValue) {
@@ -268,8 +268,8 @@ class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecod
       }
 
       if (hasPrediction) {
-        pred0 = (outData[vNextOff] + outData[vPrevOff]) - outData[vOppOff];
-        pred1 = (outData[vNextOff + 1] + outData[vPrevOff + 1]) - outData[vOppOff + 1];
+        pred0 = ((outData[vNextOff] + outData[vPrevOff]) - outData[vOppOff]) | 0;
+        pred1 = ((outData[vNextOff + 1] + outData[vPrevOff + 1]) - outData[vOppOff + 1]) | 0;
       } else {
         const srcOffset = dstOffset - 2;
         pred0 = outData[srcOffset];
@@ -378,9 +378,9 @@ class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecod
       }
 
       if (hasPrediction) {
-        pred0 = (outData[vNextOff] + outData[vPrevOff]) - outData[vOppOff];
-        pred1 = (outData[vNextOff + 1] + outData[vPrevOff + 1]) - outData[vOppOff + 1];
-        pred2 = (outData[vNextOff + 2] + outData[vPrevOff + 2]) - outData[vOppOff + 2];
+        pred0 = ((outData[vNextOff] + outData[vPrevOff]) - outData[vOppOff]) | 0;
+        pred1 = ((outData[vNextOff + 1] + outData[vPrevOff + 1]) - outData[vOppOff + 1]) | 0;
+        pred2 = ((outData[vNextOff + 2] + outData[vPrevOff + 2]) - outData[vOppOff + 2]) | 0;
       } else {
         const srcOffset = dstOffset - 3;
         pred0 = outData[srcOffset];
