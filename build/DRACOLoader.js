@@ -2363,10 +2363,6 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
     return this._transform.areCorrectionsPositive();
   }
 
-  get transform() {
-    return this._transform;
-  }
-
 }
 
 // src/compression/attributes/prediction_schemes/PredictionSchemeDeltaDecoder.js
@@ -2882,13 +2878,11 @@ function computeParallelogramPrediction(dataEntryId, ci, oppositeCorners,
   return false;
 }
 
-// mesh/CornerTable.js - ported from mesh/corner_table.h/cc
-
-const kInvalidCornerIndex$4 = -1;
-
 // src/compression/attributes/prediction_schemes/MeshPredictionSchemeMultiParallelogramDecoder.js
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_multi_parallelogram_decoder.h
 
+
+const kInvalidCornerIndex$5 = -1;
 
 /**
  * Decoder for the multi-parallelogram scheme: parallelogram predictions around
@@ -2934,7 +2928,7 @@ class MeshPredictionSchemeMultiParallelogramDecoder extends MeshPredictionScheme
         predVals[i] = 0;
       }
 
-      while (cornerId !== kInvalidCornerIndex$4) {
+      while (cornerId !== kInvalidCornerIndex$5) {
         if (computeParallelogramPrediction(
           p, cornerId, oppositeCorners, cornerToVertex, vertexToDataMap,
           outData, numComponents, parallelogramPredVals)) {
@@ -2946,7 +2940,7 @@ class MeshPredictionSchemeMultiParallelogramDecoder extends MeshPredictionScheme
 
         cornerId = table.swingRight(cornerId);
         if (cornerId === startCornerId) {
-          cornerId = kInvalidCornerIndex$4;
+          cornerId = kInvalidCornerIndex$5;
         }
       }
 
@@ -3045,6 +3039,8 @@ class RAnsBitDecoder {
 // src/compression/attributes/prediction_schemes/MeshPredictionSchemeConstrainedMultiParallelogramDecoder.js
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_constrained_multi_parallelogram_decoder.h
 
+
+const kInvalidCornerIndex$4 = -1;
 
 const OPTIMAL_MULTI_PARALLELOGRAM = 0;
 const MAX_NUM_PARALLELOGRAMS = 4;
@@ -4741,23 +4737,6 @@ class AttributeTransformData {
     this._transformType = type;
   }
 
-  // |type| is a string tag: 'int32', 'uint32', 'float32', 'uint8', etc.
-  getParameterValue(byteOffset, type) {
-    const data = this._buffer.data;
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    switch (type) {
-      case 'int32': return view.getInt32(byteOffset, true);
-      case 'uint32': return view.getUint32(byteOffset, true);
-      case 'float32': return view.getFloat32(byteOffset, true);
-      case 'float64': return view.getFloat64(byteOffset, true);
-      case 'int8': return view.getInt8(byteOffset);
-      case 'uint8': return view.getUint8(byteOffset);
-      case 'int16': return view.getInt16(byteOffset, true);
-      case 'uint16': return view.getUint16(byteOffset, true);
-      default: return view.getInt32(byteOffset, true);
-    }
-  }
-
   setParameterValue(byteOffset, value, type) {
     const sizeNeeded = byteOffset + this._typeSize(type);
     if (sizeNeeded > this._buffer.dataSize) {
@@ -4836,11 +4815,6 @@ class Dequantizer {
     // C++ computes delta_ as `range / static_cast<float>(max_quantized_value)` in float32.
     // JS double division is 1-2 ULP off the WASM decoder, so fround every step.
     this._delta = Math.fround(range / Math.fround(maxQuantizedValue));
-    return true;
-  }
-
-  initFromDelta(delta) {
-    this._delta = Math.fround(delta);
     return true;
   }
 
