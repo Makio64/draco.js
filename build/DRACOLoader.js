@@ -77,6 +77,7 @@ const PredictionSchemeTransformType = {
 // List of all mesh traversal methods supported by Draco framework.
 const MeshTraversalMethod = {
   MESH_TRAVERSAL_DEPTH_FIRST: 0,
+  MESH_TRAVERSAL_PREDICTION_DEGREE: 1,
   NUM_TRAVERSAL_METHODS: 2
 };
 
@@ -727,6 +728,573 @@ function okStatus() {
   return new Status(StatusCode.OK);
 }
 
+// metadata/Metadata.js - ported from metadata/metadata.h/cc
+
+// EntryValue wraps a Uint8Array buffer that stores arbitrary typed data.
+class EntryValue {
+
+  constructor(data) {
+
+    if (data instanceof Uint8Array) {
+
+      this.data = new Uint8Array(data);
+
+    } else if (typeof data === 'string') {
+
+      const encoder = new TextEncoder();
+      this.data = encoder.encode(data);
+
+    } else if (ArrayBuffer.isView(data)) {
+
+      this.data = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+
+    } else if (typeof data === 'number') {
+
+      // Store as int32 by default
+      const buf = new ArrayBuffer(4);
+      new Int32Array(buf)[0] = data;
+      this.data = new Uint8Array(buf);
+
+    } else {
+
+      this.data = new Uint8Array(0);
+
+    }
+
+  }
+
+  getValueAsInt32() {
+
+    if (this.data.length !== 4) return null;
+    return new Int32Array(this.data.buffer, this.data.byteOffset, 1)[0];
+
+  }
+
+  getValueAsDouble() {
+
+    if (this.data.length !== 8) return null;
+    return new Float64Array(this.data.buffer, this.data.byteOffset, 1)[0];
+
+  }
+
+  getValueAsString() {
+
+    if (this.data.length === 0) return null;
+    const decoder = new TextDecoder();
+    return decoder.decode(this.data);
+
+  }
+
+  getValueAsBinary() {
+
+    return this.data;
+
+  }
+
+}
+
+class Metadata {
+
+  constructor(other) {
+
+    // entries_: Map<string, EntryValue>
+    this.entries_ = new Map();
+    // sub_metadatas_: Map<string, Metadata>
+    this.sub_metadatas_ = new Map();
+
+    if (other instanceof Metadata) {
+
+      for (const [key, value] of other.entries_) {
+
+        this.entries_.set(key, new EntryValue(value.data));
+
+      }
+
+      for (const [key, value] of other.sub_metadatas_) {
+
+        this.sub_metadatas_.set(key, new Metadata(value));
+
+      }
+
+    }
+
+  }
+
+  addEntryInt(name, value) {
+
+    const buf = new ArrayBuffer(4);
+    new Int32Array(buf)[0] = value;
+    this.entries_.set(name, new EntryValue(new Uint8Array(buf)));
+
+  }
+
+  getEntryInt(name) {
+
+    const entry = this.entries_.get(name);
+    if (entry === undefined) return null;
+    return entry.getValueAsInt32();
+
+  }
+
+  addEntryIntArray(name, values) {
+
+    const buf = new Int32Array(values);
+    this.entries_.set(name, new EntryValue(new Uint8Array(buf.buffer)));
+
+  }
+
+  getEntryIntArray(name) {
+
+    const entry = this.entries_.get(name);
+    if (entry === undefined) return null;
+    if (entry.data.length === 0 || entry.data.length % 4 !== 0) return null;
+    const result = new Int32Array(entry.data.buffer, entry.data.byteOffset, entry.data.length / 4);
+    return Array.from(result);
+
+  }
+
+  addEntryDouble(name, value) {
+
+    const buf = new ArrayBuffer(8);
+    new Float64Array(buf)[0] = value;
+    this.entries_.set(name, new EntryValue(new Uint8Array(buf)));
+
+  }
+
+  getEntryDouble(name) {
+
+    const entry = this.entries_.get(name);
+    if (entry === undefined) return null;
+    return entry.getValueAsDouble();
+
+  }
+
+  addEntryDoubleArray(name, values) {
+
+    const buf = new Float64Array(values);
+    this.entries_.set(name, new EntryValue(new Uint8Array(buf.buffer)));
+
+  }
+
+  getEntryDoubleArray(name) {
+
+    const entry = this.entries_.get(name);
+    if (entry === undefined) return null;
+    if (entry.data.length === 0 || entry.data.length % 8 !== 0) return null;
+    const result = new Float64Array(entry.data.buffer, entry.data.byteOffset, entry.data.length / 8);
+    return Array.from(result);
+
+  }
+
+  addEntryString(name, value) {
+
+    this.entries_.set(name, new EntryValue(value));
+
+  }
+
+  getEntryString(name) {
+
+    const entry = this.entries_.get(name);
+    if (entry === undefined) return null;
+    return entry.getValueAsString();
+
+  }
+
+  addEntryBinary(name, value) {
+
+    this.entries_.set(name, new EntryValue(new Uint8Array(value)));
+
+  }
+
+  getEntryBinary(name) {
+
+    const entry = this.entries_.get(name);
+    if (entry === undefined) return null;
+    return entry.getValueAsBinary();
+
+  }
+
+  addSubMetadata(name, subMetadata) {
+
+    if (this.sub_metadatas_.has(name)) {
+      return false;
+    }
+
+    this.sub_metadatas_.set(name, subMetadata);
+    return true;
+
+  }
+
+  getSubMetadata(name) {
+
+    return this.sub_metadatas_.get(name) || null;
+
+  }
+
+  removeEntry(name) {
+
+    this.entries_.delete(name);
+
+  }
+
+  numEntries() {
+
+    return this.entries_.size;
+
+  }
+
+  entries() {
+
+    return this.entries_;
+
+  }
+
+  subMetadatas() {
+
+    return this.sub_metadatas_;
+
+  }
+
+}
+
+// metadata/GeometryMetadata.js - ported from metadata/geometry_metadata.h/cc
+
+
+class AttributeMetadata extends Metadata {
+
+  constructor(other) {
+
+    if (other instanceof AttributeMetadata) {
+
+      super(other);
+      this.att_unique_id_ = other.att_unique_id_;
+
+    } else if (other instanceof Metadata) {
+
+      super(other);
+      this.att_unique_id_ = 0;
+
+    } else {
+
+      super();
+      this.att_unique_id_ = 0;
+
+    }
+
+  }
+
+  setAttUniqueId(attUniqueId) {
+
+    this.att_unique_id_ = attUniqueId;
+
+  }
+
+  attUniqueId() {
+
+    return this.att_unique_id_;
+
+  }
+
+}
+
+class GeometryMetadata extends Metadata {
+
+  constructor(other) {
+
+    if (other instanceof GeometryMetadata) {
+
+      super(other);
+      this.att_metadatas_ = [];
+
+      for (let i = 0; i < other.att_metadatas_.length; ++i) {
+
+        this.att_metadatas_.push(new AttributeMetadata(other.att_metadatas_[i]));
+
+      }
+
+    } else if (other instanceof Metadata) {
+
+      super(other);
+      this.att_metadatas_ = [];
+
+    } else {
+
+      super();
+      this.att_metadatas_ = [];
+
+    }
+
+  }
+
+  getAttributeMetadataByStringEntry(entryName, entryValue) {
+
+    for (const attMetadata of this.att_metadatas_) {
+
+      const value = attMetadata.getEntryString(entryName);
+      if (value === null) continue;
+      if (value === entryValue) {
+        return attMetadata;
+      }
+
+    }
+
+    return null;
+
+  }
+
+  addAttributeMetadata(attMetadata) {
+
+    if (!attMetadata) {
+      return false;
+    }
+
+    this.att_metadatas_.push(attMetadata);
+    return true;
+
+  }
+
+  deleteAttributeMetadataByUniqueId(attUniqueId) {
+
+    if (attUniqueId < 0) return;
+
+    for (let i = 0; i < this.att_metadatas_.length; ++i) {
+
+      if (this.att_metadatas_[i].attUniqueId() === attUniqueId) {
+
+        this.att_metadatas_.splice(i, 1);
+        return;
+
+      }
+
+    }
+
+  }
+
+  getAttributeMetadataByUniqueId(attUniqueId) {
+
+    if (attUniqueId < 0) return null;
+
+    for (const attMetadata of this.att_metadatas_) {
+
+      if (attMetadata.attUniqueId() === attUniqueId) {
+        return attMetadata;
+      }
+
+    }
+
+    return null;
+
+  }
+
+  attributeMetadatas() {
+
+    return this.att_metadatas_;
+
+  }
+
+}
+
+// metadata/MetadataDecoder.js - ported from metadata/metadata_decoder.h/cc
+
+
+// Class for decoding the metadata.
+class MetadataDecoder {
+
+  constructor() {
+
+    this.buffer_ = null;
+
+  }
+
+  // Decodes metadata from the buffer into the provided Metadata object.
+  // Returns true on success.
+  decodeMetadata(inBuffer, metadata) {
+
+    if (!metadata) {
+      return false;
+    }
+
+    this.buffer_ = inBuffer;
+    return this._decodeMetadata(metadata);
+
+  }
+
+  // Decodes geometry metadata (including attribute metadata) from the buffer.
+  // Returns true on success.
+  decodeGeometryMetadata(inBuffer, metadata) {
+
+    if (!metadata) {
+      return false;
+    }
+
+    this.buffer_ = inBuffer;
+
+    const numAttMetadata = decodeVarint(this.buffer_);
+    if (numAttMetadata === undefined) {
+      return false;
+    }
+
+    // Decode attribute metadata.
+    for (let i = 0; i < numAttMetadata; ++i) {
+
+      const attUniqueId = decodeVarint(this.buffer_);
+      if (attUniqueId === undefined) {
+        return false;
+      }
+
+      const attMetadata = new AttributeMetadata();
+      attMetadata.setAttUniqueId(attUniqueId);
+
+      if (!this._decodeMetadata(attMetadata)) {
+        return false;
+      }
+
+      metadata.addAttributeMetadata(attMetadata);
+
+    }
+
+    return this._decodeMetadata(metadata);
+
+  }
+
+  // Internal iterative metadata decoder using a stack to avoid deep recursion.
+  _decodeMetadata(metadata) {
+
+    // Limit metadata nesting depth to avoid stack overflow.
+    const kMaxSubmetadataLevel = 1000;
+
+    const metadataStack = [];
+    metadataStack.push({
+      parentMetadata: null,
+      decodedMetadata: metadata,
+      level: 0
+    });
+
+    while (metadataStack.length > 0) {
+
+      const mp = metadataStack.pop();
+      let currentMetadata = mp.decodedMetadata;
+
+      if (mp.parentMetadata !== null) {
+
+        if (mp.level > kMaxSubmetadataLevel) {
+          return false;
+        }
+
+        const subMetadataName = this._decodeName();
+        if (subMetadataName === null) {
+          return false;
+        }
+
+        const subMetadata = new Metadata();
+        currentMetadata = subMetadata;
+
+        if (!mp.parentMetadata.addSubMetadata(subMetadataName, subMetadata)) {
+          return false;
+        }
+
+      }
+
+      if (currentMetadata === null) {
+        return false;
+      }
+
+      // Decode entries.
+      const numEntries = decodeVarint(this.buffer_);
+      if (numEntries === undefined) {
+        return false;
+      }
+
+      for (let i = 0; i < numEntries; ++i) {
+
+        if (!this._decodeEntry(currentMetadata)) {
+          return false;
+        }
+
+      }
+
+      // Decode sub-metadata count.
+      const numSubMetadata = decodeVarint(this.buffer_);
+      if (numSubMetadata === undefined) {
+        return false;
+      }
+
+      if (numSubMetadata > this.buffer_.remainingSize) {
+        // The decoded number of metadata items is unreasonably high.
+        return false;
+      }
+
+      for (let i = 0; i < numSubMetadata; ++i) {
+
+        metadataStack.push({
+          parentMetadata: currentMetadata,
+          decodedMetadata: null,
+          level: mp.parentMetadata ? mp.level + 1 : mp.level
+        });
+
+      }
+
+    }
+
+    return true;
+
+  }
+
+  // Decodes a single key-value entry and adds it to the metadata.
+  _decodeEntry(metadata) {
+
+    const entryName = this._decodeName();
+    if (entryName === null) {
+      return false;
+    }
+
+    const dataSize = decodeVarint(this.buffer_);
+    if (dataSize === undefined) {
+      return false;
+    }
+
+    if (dataSize === 0) {
+      return false;
+    }
+
+    if (dataSize > this.buffer_.remainingSize) {
+      return false;
+    }
+
+    const entryValue = this.buffer_.decodeBytes(dataSize);
+    if (entryValue === undefined) {
+      return false;
+    }
+
+    metadata.addEntryBinary(entryName, entryValue);
+    return true;
+
+  }
+
+  // Decodes a name string (uint8 length prefix followed by ASCII bytes).
+  _decodeName() {
+
+    const nameLen = this.buffer_.decodeUint8();
+    if (nameLen === undefined) {
+      return null;
+    }
+
+    if (nameLen === 0) {
+      return '';
+    }
+
+    const nameBytes = this.buffer_.decodeBytes(nameLen);
+    if (nameBytes === undefined) {
+      return null;
+    }
+
+    const decoder = new TextDecoder();
+    return decoder.decode(nameBytes);
+
+  }
+
+}
+
 // compression/point_cloud/PointCloudDecoder.js - ported from point_cloud/point_cloud_decoder.h/cc
 
 
@@ -965,8 +1533,15 @@ class PointCloudDecoder {
   }
 
   _decodeMetadata() {
-    // Metadata decoding is a stub - actual MetadataDecoder would be needed.
-    // For now, skip metadata if present (this mirrors the typical JS decoder).
+    // Decode the geometry metadata from the bitstream. The content is not
+    // surfaced on the output geometry, but it must be decoded so the bytes are
+    // consumed and the rest of the bitstream stays aligned (otherwise a file
+    // with metadata decodes to garbage / empty geometry).
+    const metadata = new GeometryMetadata();
+    const metadataDecoder = new MetadataDecoder();
+    if (!metadataDecoder.decodeGeometryMetadata(this._buffer, metadata)) {
+      return new Status(StatusCode.DRACO_ERROR, 'Failed to decode metadata.');
+    }
     return okStatus();
   }
 
@@ -3208,7 +3783,7 @@ function computeParallelogramPrediction(dataEntryId, ci, oppositeCorners,
 
 // mesh/CornerTable.js - ported from mesh/corner_table.h/cc
 
-const kInvalidCornerIndex$3 = -1;
+const kInvalidCornerIndex$4 = -1;
 
 // src/compression/attributes/prediction_schemes/MeshPredictionSchemeMultiParallelogramDecoder.js
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_multi_parallelogram_decoder.h
@@ -3274,7 +3849,7 @@ class MeshPredictionSchemeMultiParallelogramDecoder extends MeshPredictionScheme
         predVals[i] = 0;
       }
 
-      while (cornerId !== kInvalidCornerIndex$3) {
+      while (cornerId !== kInvalidCornerIndex$4) {
         if (computeParallelogramPrediction(
           p, cornerId, oppositeCorners, cornerToVertex, vertexToDataMap,
           outData, numComponents, parallelogramPredVals)) {
@@ -3286,7 +3861,7 @@ class MeshPredictionSchemeMultiParallelogramDecoder extends MeshPredictionScheme
 
         cornerId = table.swingRight(cornerId);
         if (cornerId === startCornerId) {
-          cornerId = kInvalidCornerIndex$3;
+          cornerId = kInvalidCornerIndex$4;
         }
       }
 
@@ -3519,7 +4094,7 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
       let numParallelograms = 0;
       let firstPass = true;
 
-      while (cornerId !== kInvalidCornerIndex$3) {
+      while (cornerId !== kInvalidCornerIndex$4) {
         if (computeParallelogramPrediction(
           p, cornerId, oppositeCorners, cornerToVertex, vertexToDataMap,
           outData, numComponents, predVals[numParallelograms])) {
@@ -3534,7 +4109,7 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
           cornerId = table.swingRight(cornerId);
         }
         if (cornerId === startCornerId) break;
-        if (cornerId === kInvalidCornerIndex$3 && firstPass) {
+        if (cornerId === kInvalidCornerIndex$4 && firstPass) {
           firstPass = false;
           cornerId = table.swingRight(startCornerId);
         }
@@ -3852,6 +4427,27 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_predictor.h
 
 
+// Any integer product strictly below this is exactly representable as a JS
+// double; at or above it the double path may lose precision and we switch to
+// the BigInt path. (2^53.)
+const SAFE_PRODUCT = 9007199254740992;
+
+const MASK64 = (1n << 64n) - 1n;
+const INT64_MAX_BIG = (1n << 63n) - 1n;
+
+// Floor of the integer square root of a non-negative BigInt (matches the C++
+// IntSqrt used by the portable UV predictor).
+function bigIntSqrt(value) {
+  if (value < 2n) return value;
+  let x = value;
+  let y = (x + 1n) >> 1n;
+  while (y < x) {
+    x = y;
+    y = (x + value / x) >> 1n;
+  }
+  return x;
+}
+
 /**
  * Predictor functionality used for portable UV prediction by both encoder and
  * decoder. This implements only the decoder path (is_encoder_t = false).
@@ -4037,6 +4633,26 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
           return false;
         }
 
+        // The remaining arithmetic is int64 in the C++ reference. For meshes
+        // with small quantized positions every intermediate stays within JS's
+        // exact-integer range (2^53), so double math is bit-exact; for high
+        // position quantization (e.g. cl10's 20-bit) the products exceed 2^53
+        // and we fall back to a BigInt path mirroring the C++ int64/uint64
+        // semantics. The products that can grow past 2^53 are nUV*pnNorm2,
+        // cnDotPn*pnUV, cnDotPn*pn, and cxNorm2*pnNorm2 — the last bounded by
+        // cnNorm2*pnNorm2 (the perpendicular cx is never longer than cn).
+        const cnNorm2 = cn0 * cn0 + cn1 * cn1 + cn2 * cn2;
+        const pnAbsMaxG = Math.max(Math.abs(pn0), Math.abs(pn1), Math.abs(pn2));
+        const cnDotPnAbs = Math.abs(cnDotPn);
+        if (cnNorm2 > SAFE_PRODUCT / pnNorm2Squared ||
+            nUVAbsMax > SAFE_PRODUCT / pnNorm2Squared ||
+            (pnUVAbsMax > 0 && cnDotPnAbs > SAFE_PRODUCT / pnUVAbsMax) ||
+            (pnAbsMaxG > 0 && cnDotPnAbs > SAFE_PRODUCT / pnAbsMaxG)) {
+          return this._computePredictedValueBig(
+            tip0, tip1, tip2, next0, next1, next2,
+            pn0, pn1, pn2, nUV0, nUV1, pUV0, pUV1, pnNorm2Squared);
+        }
+
         // x_uv = nUV * pnNorm2Squared + cnDotPn * pnUV
         const xUV0 = nUV0 * pnNorm2Squared + cnDotPn * pnUV0;
         const xUV1 = nUV1 * pnNorm2Squared + cnDotPn * pnUV1;
@@ -4094,6 +4710,77 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
     }
     this._predictedValue[0] = data[dataOffset];
     this._predictedValue[1] = data[dataOffset + 1];
+    return true;
+  }
+
+  // 64-bit-exact version of the projection prediction, used when the double
+  // path would lose precision (high position quantization). Mirrors the C++
+  // VectorD<int64_t>/VectorD<uint64_t> arithmetic, including the uint64
+  // wraparound in the IntSqrt(cxNorm2*pnNorm2) term and the unsigned add/sub
+  // used to form the final UV. Returns false in the same overflow cases as the
+  // double path so the encoder and decoder agree on when to fall back to delta.
+  _computePredictedValueBig(tip0, tip1, tip2, next0, next1, next2,
+    pn0, pn1, pn2, nUV0, nUV1, pUV0, pUV1, pnNorm2SquaredNum) {
+    const B = BigInt;
+    const tip = [B(tip0), B(tip1), B(tip2)];
+    const nxt = [B(next0), B(next1), B(next2)];
+    const pn = [B(pn0), B(pn1), B(pn2)];
+    const nUVb0 = B(nUV0), nUVb1 = B(nUV1);
+    const pnN2 = B(pnNorm2SquaredNum);
+
+    const cn0 = tip[0] - nxt[0];
+    const cn1 = tip[1] - nxt[1];
+    const cn2 = tip[2] - nxt[2];
+    const cnDotPn = pn[0] * cn0 + pn[1] * cn1 + pn[2] * cn2;
+    const pnUV0 = B(pUV0) - nUVb0;
+    const pnUV1 = B(pUV1) - nUVb1;
+
+    const babs = (x) => (x < 0n ? -x : x);
+    const nUVAbsMax = babs(nUVb0) > babs(nUVb1) ? babs(nUVb0) : babs(nUVb1);
+    if (nUVAbsMax > INT64_MAX_BIG / pnN2) return false;
+    let pnUVAbsMax = babs(pnUV0) > babs(pnUV1) ? babs(pnUV0) : babs(pnUV1);
+    if (pnUVAbsMax > 0n && babs(cnDotPn) > INT64_MAX_BIG / pnUVAbsMax) return false;
+
+    // x_uv = nUV * pnNorm2 + cnDotPn * pnUV (int64 vector; wraps on overflow).
+    const xUV0 = B.asIntN(64, nUVb0 * pnN2 + cnDotPn * pnUV0);
+    const xUV1 = B.asIntN(64, nUVb1 * pnN2 + cnDotPn * pnUV1);
+
+    let pnAbsMax = babs(pn[0]);
+    if (babs(pn[1]) > pnAbsMax) pnAbsMax = babs(pn[1]);
+    if (babs(pn[2]) > pnAbsMax) pnAbsMax = babs(pn[2]);
+    if (pnAbsMax > 0n && babs(cnDotPn) > INT64_MAX_BIG / pnAbsMax) return false;
+
+    // x_pos = next + (cnDotPn * pn) / pnNorm2 (signed truncating division).
+    const xPos0 = nxt[0] + (cnDotPn * pn[0]) / pnN2;
+    const xPos1 = nxt[1] + (cnDotPn * pn[1]) / pnN2;
+    const xPos2 = nxt[2] + (cnDotPn * pn[2]) / pnN2;
+    const cx0 = tip[0] - xPos0;
+    const cx1 = tip[1] - xPos1;
+    const cx2 = tip[2] - xPos2;
+    const cxNorm2 = cx0 * cx0 + cx1 * cx1 + cx2 * cx2;
+
+    // norm_squared = IntSqrt(cxNorm2 * pnNorm2), with the multiply in uint64.
+    const normSquared = bigIntSqrt((cxNorm2 * pnN2) & MASK64);
+
+    // cx_uv = Rot(pnUV) * normSquared (int64; wraps on overflow).
+    const cxUV0 = B.asIntN(64, pnUV1 * normSquared);
+    const cxUV1 = B.asIntN(64, (-pnUV0) * normSquared);
+
+    if (this._numOrientations === 0) return false;
+    const orientation = this._orientations[--this._numOrientations];
+
+    // predicted_uv = (uint64(x_uv) +/- uint64(cx_uv)) / pnNorm2, as int64,
+    // then truncated to int32 (static_cast<int>).
+    let s0, s1;
+    if (orientation) {
+      s0 = B.asUintN(64, B.asUintN(64, xUV0) + B.asUintN(64, cxUV0));
+      s1 = B.asUintN(64, B.asUintN(64, xUV1) + B.asUintN(64, cxUV1));
+    } else {
+      s0 = B.asUintN(64, B.asUintN(64, xUV0) - B.asUintN(64, cxUV0));
+      s1 = B.asUintN(64, B.asUintN(64, xUV1) - B.asUintN(64, cxUV1));
+    }
+    this._predictedValue[0] = Number(B.asIntN(32, B.asIntN(64, s0) / pnN2));
+    this._predictedValue[1] = Number(B.asIntN(32, B.asIntN(64, s1) / pnN2));
     return true;
   }
 
@@ -6654,8 +7341,8 @@ const EDGEBREAKER_VALENCE_MODE_2_7 = 0;
 // compression/mesh/traverser/DepthFirstTraverser.js
 // Ported from compression/mesh/traverser/depth_first_traverser.h
 
-const kInvalidCornerIndex$2 = -1;
-const kInvalidFaceIndex = -1;
+const kInvalidCornerIndex$3 = -1;
+const kInvalidFaceIndex$1 = -1;
 const kInvalidVertexIndex$1 = -1;
 
 // Basic traverser that traverses a mesh in a DFS like fashion using the
@@ -6669,6 +7356,9 @@ class DepthFirstTraverser {
     this._isVertexVisited = null;
     this._cornerTraversalStack = [];
     this._numVisitedFaces = 0;
+    // Identifies the traversal order for the shared traversal cache
+    // (MESH_TRAVERSAL_DEPTH_FIRST). See MeshTraversalSequencer.
+    this._traversalMethodId = 0;
   }
 
   init(cornerTable, observer) {
@@ -6766,7 +7456,7 @@ class DepthFirstTraverser {
       let faceId = (cornerId / 3) | 0;
 
       // Make sure the face hasn't been visited yet.
-      if (cornerId === kInvalidCornerIndex$2 || isFaceVisited[faceId]) {
+      if (cornerId === kInvalidCornerIndex$3 || isFaceVisited[faceId]) {
         stackSize--;
         continue;
       }
@@ -6808,14 +7498,14 @@ class DepthFirstTraverser {
         const prevCornerId = (cornerId % 3) === 0 ? cornerId + 2 : cornerId - 1;
         const leftCornerId = oppositeCorners[prevCornerId];
 
-        const rightFaceId = rightCornerId === kInvalidCornerIndex$2
-          ? kInvalidFaceIndex : (rightCornerId / 3) | 0;
-        const leftFaceId = leftCornerId === kInvalidCornerIndex$2
-          ? kInvalidFaceIndex : (leftCornerId / 3) | 0;
+        const rightFaceId = rightCornerId === kInvalidCornerIndex$3
+          ? kInvalidFaceIndex$1 : (rightCornerId / 3) | 0;
+        const leftFaceId = leftCornerId === kInvalidCornerIndex$3
+          ? kInvalidFaceIndex$1 : (leftCornerId / 3) | 0;
 
-        const isRightVisited = rightFaceId === kInvalidFaceIndex ||
+        const isRightVisited = rightFaceId === kInvalidFaceIndex$1 ||
           isFaceVisited[rightFaceId];
-        const isLeftVisited = leftFaceId === kInvalidFaceIndex ||
+        const isLeftVisited = leftFaceId === kInvalidFaceIndex$1 ||
           isFaceVisited[leftFaceId];
 
         if (isRightVisited) {
@@ -6848,6 +7538,222 @@ class DepthFirstTraverser {
 
 }
 
+// compression/mesh/traverser/MaxPredictionDegreeTraverser.js
+// Ported from compression/mesh/traverser/max_prediction_degree_traverser.h
+
+const kInvalidCornerIndex$2 = -1;
+const kInvalidFaceIndex = -1;
+
+// For efficiency the priority traversal uses buckets, where each bucket is a
+// stack of available corners for a given priority. Corners with the highest
+// priority (lowest bucket index) are always processed first.
+const kMaxPriority = 3;
+
+// Traverser that visits a mesh in an order implicitly guided by the prediction
+// degree of the destination vertices ("Multi-way Geometry Encoding",
+// Cohen-or et al. '02). Implements the same interface as DepthFirstTraverser so
+// it is a drop-in alternative inside MeshTraversalSequencer. Used when the
+// bitstream selects MESH_TRAVERSAL_PREDICTION_DEGREE (higher compression
+// levels).
+class MaxPredictionDegreeTraverser {
+
+  constructor() {
+    this._cornerTable = null;
+    this._observer = null;
+    this._isFaceVisited = null;
+    this._isVertexVisited = null;
+    this._numVisitedFaces = 0;
+    // One stack (bucket) per priority level [0, kMaxPriority).
+    this._traversalStacks = null;
+    this._bestPriority = 0;
+    // Prediction degree accumulated per vertex during traversal.
+    this._predictionDegree = null;
+    // Flat connectivity arrays (see DepthFirstTraverser for why).
+    this._cornerToVertex = null;
+    this._oppositeCorners = null;
+    this._hasOnNewFaceVisited = false;
+    // Identifies the traversal order for the shared traversal cache
+    // (MESH_TRAVERSAL_PREDICTION_DEGREE). See MeshTraversalSequencer.
+    this._traversalMethodId = 1;
+  }
+
+  init(cornerTable, observer) {
+    this._cornerTable = cornerTable;
+    this._observer = observer;
+    this._isFaceVisited = new Uint8Array(cornerTable.numFaces());
+    this._isVertexVisited = new Uint8Array(cornerTable.numVertices());
+    this._numVisitedFaces = 0;
+    this._cornerToVertex = cornerTable.cornerToVertexArray();
+    this._oppositeCorners = cornerTable.oppositeCornerArray();
+    this._hasOnNewFaceVisited = typeof observer.onNewFaceVisited === 'function';
+    this._traversalStacks = [[], [], []]; // kMaxPriority buckets
+    this._bestPriority = 0;
+  }
+
+  cornerTable() {
+    return this._cornerTable;
+  }
+
+  // corner is always valid (>= 0) where these are used.
+  _next(c) {
+    return (c % 3) === 2 ? c - 2 : c + 1;
+  }
+  _previous(c) {
+    return (c % 3) === 0 ? c + 2 : c - 1;
+  }
+
+  onTraversalStart() {
+    // prediction_degree_.resize(num_vertices, 0)
+    this._predictionDegree = new Int32Array(this._cornerTable.numVertices());
+  }
+
+  onTraversalEnd() {}
+
+  // Returns the priority of traversing the edge leading to cornerId. Mutates
+  // the prediction degree of the destination vertex.
+  _computePriority(cornerId) {
+    const vTip = this._cornerToVertex[cornerId];
+    // Priority 0 when traversing to already visited vertices.
+    let priority = 0;
+    if (!this._isVertexVisited[vTip]) {
+      const degree = ++this._predictionDegree[vTip];
+      // Priority 1 when prediction degree > 1, otherwise 2.
+      priority = degree > 1 ? 1 : 2;
+    }
+    if (priority >= kMaxPriority) {
+      priority = kMaxPriority - 1;
+    }
+    return priority;
+  }
+
+  _addCornerToTraversalStack(ci, priority) {
+    this._traversalStacks[priority].push(ci);
+    // Keep the best available priority up to date.
+    if (priority < this._bestPriority) {
+      this._bestPriority = priority;
+    }
+  }
+
+  // Retrieves the next available corner to traverse, processed by priority.
+  // Returns kInvalidCornerIndex when no corner is available.
+  _popNextCornerToTraverse() {
+    for (let i = this._bestPriority; i < kMaxPriority; ++i) {
+      const stack = this._traversalStacks[i];
+      if (stack.length > 0) {
+        const ret = stack.pop();
+        this._bestPriority = i;
+        return ret;
+      }
+    }
+    return kInvalidCornerIndex$2;
+  }
+
+  traverseFromCorner(cornerId) {
+    if (this._predictionDegree.length === 0) {
+      return true;
+    }
+
+    const cornerToVertex = this._cornerToVertex;
+    const oppositeCorners = this._oppositeCorners;
+    const isFaceVisited = this._isFaceVisited;
+    const isVertexVisited = this._isVertexVisited;
+    const observer = this._observer;
+    const hasOnNewFaceVisited = this._hasOnNewFaceVisited;
+
+    // Traversal starts from |cornerId|; it follows the right or left
+    // neighboring faces based on their prediction degree.
+    this._traversalStacks[0].push(cornerId);
+    this._bestPriority = 0;
+
+    // For the first face, check the remaining corners as they may not be
+    // processed yet.
+    const firstNext = this._next(cornerId);
+    const firstPrev = this._previous(cornerId);
+    const nextVert = cornerToVertex[firstNext];
+    const prevVert = cornerToVertex[firstPrev];
+    if (!isVertexVisited[nextVert]) {
+      isVertexVisited[nextVert] = 1;
+      observer.onNewVertexVisited(nextVert, firstNext);
+    }
+    if (!isVertexVisited[prevVert]) {
+      isVertexVisited[prevVert] = 1;
+      observer.onNewVertexVisited(prevVert, firstPrev);
+    }
+    const tipVertex = cornerToVertex[cornerId];
+    if (!isVertexVisited[tipVertex]) {
+      isVertexVisited[tipVertex] = 1;
+      observer.onNewVertexVisited(tipVertex, cornerId);
+    }
+
+    // Start the actual traversal.
+    while ((cornerId = this._popNextCornerToTraverse()) !== kInvalidCornerIndex$2) {
+      let faceId = (cornerId / 3) | 0;
+      // Make sure the face hasn't been visited yet.
+      if (isFaceVisited[faceId]) {
+        continue;
+      }
+
+      while (true) {
+        faceId = (cornerId / 3) | 0;
+        isFaceVisited[faceId] = 1;
+        this._numVisitedFaces++;
+        if (hasOnNewFaceVisited) {
+          observer.onNewFaceVisited(faceId);
+        }
+
+        // If the newly reached vertex hasn't been visited, mark and notify.
+        const vertId = cornerToVertex[cornerId];
+        if (!isVertexVisited[vertId]) {
+          isVertexVisited[vertId] = 1;
+          observer.onNewVertexVisited(vertId, cornerId);
+        }
+
+        // GetRightCorner = opposite(next(corner)); GetLeftCorner =
+        // opposite(previous(corner)).
+        const rightCornerId = oppositeCorners[this._next(cornerId)];
+        const leftCornerId = oppositeCorners[this._previous(cornerId)];
+        const rightFaceId = rightCornerId === kInvalidCornerIndex$2
+          ? kInvalidFaceIndex : (rightCornerId / 3) | 0;
+        const leftFaceId = leftCornerId === kInvalidCornerIndex$2
+          ? kInvalidFaceIndex : (leftCornerId / 3) | 0;
+        const isRightFaceVisited = rightFaceId === kInvalidFaceIndex ||
+          isFaceVisited[rightFaceId] !== 0;
+        const isLeftFaceVisited = leftFaceId === kInvalidFaceIndex ||
+          isFaceVisited[leftFaceId] !== 0;
+
+        if (!isLeftFaceVisited) {
+          // We can go to the left face.
+          const priority = this._computePriority(leftCornerId);
+          if (isRightFaceVisited && priority <= this._bestPriority) {
+            // Right face already visited and priority is best — the left face
+            // is traversed next, no need to push it onto the stack.
+            cornerId = leftCornerId;
+            continue;
+          } else {
+            this._addCornerToTraversalStack(leftCornerId, priority);
+          }
+        }
+        if (!isRightFaceVisited) {
+          // Go to the right face.
+          const priority = this._computePriority(rightCornerId);
+          if (priority <= this._bestPriority) {
+            // The right face is traversed next — no need to push it.
+            cornerId = rightCornerId;
+            continue;
+          } else {
+            this._addCornerToTraversalStack(rightCornerId, priority);
+          }
+        }
+
+        // Couldn't proceed directly to the next corner.
+        break;
+      }
+    }
+    return true;
+  }
+
+}
+
 // compression/mesh/traverser/MeshTraversalSequencer.js
 // Ported from compression/mesh/traverser/mesh_traversal_sequencer.h
 
@@ -6873,12 +7779,16 @@ class MeshTraversalSequencer {
   // Called by SequentialAttributeDecodersController.
   generateSequence(/* outPointIds */) {
     // A traversal's output (point order + encoding maps) depends only on the
-    // corner table's connectivity, not on the attribute being decoded. Meshes
-    // with several vertex-mapped attributes share one corner table, so reuse a
-    // previously computed result instead of repeating the O(faces) traversal.
+    // corner table's connectivity AND the traversal method, not on the
+    // attribute being decoded. Meshes with several vertex-mapped attributes
+    // share one corner table, so reuse a previously computed result instead of
+    // repeating the O(faces) traversal — but only for the same traversal
+    // method, since different methods produce different orders.
     const cornerTable = this._traverser.cornerTable();
+    const methodId = this._traverser._traversalMethodId;
     if (this._traversalCache) {
-      const cached = this._traversalCache.get(cornerTable);
+      const byMethod = this._traversalCache.get(cornerTable);
+      const cached = byMethod && byMethod.get(methodId);
       if (cached !== undefined) {
         this._outPointIds = cached.pointIds;
         this._encodingData.adoptTraversalResult(
@@ -6897,7 +7807,12 @@ class MeshTraversalSequencer {
     }
 
     if (this._traversalCache) {
-      this._traversalCache.set(cornerTable, {
+      let byMethod = this._traversalCache.get(cornerTable);
+      if (byMethod === undefined) {
+        byMethod = new Map();
+        this._traversalCache.set(cornerTable, byMethod);
+      }
+      byMethod.set(methodId, {
         pointIds: this._outPointIds,
         vertexMap: this._encodingData.vertexToEncodedAttributeValueIndexMap,
         cornerMap: this._encodingData.encodedAttributeValueIndexToCornerMap,
@@ -7477,7 +8392,7 @@ class MeshEdgebreakerDecoderImpl {
 
       // Create vertex traversal sequencer using the main corner table.
       sequencer = this._createVertexTraversalSequencer(
-        encodingData, this._cornerTable, mesh);
+        encodingData, this._cornerTable, mesh, traversalMethod);
     } else {
       // Per-corner attribute decoder.
       if (traversalMethod !== MeshTraversalMethod.MESH_TRAVERSAL_DEPTH_FIRST) {
@@ -7491,7 +8406,7 @@ class MeshEdgebreakerDecoderImpl {
       const attCornerTable = this._attributeData[attDataId].connectivityData;
 
       sequencer = this._createVertexTraversalSequencer(
-        encodingData, attCornerTable, mesh);
+        encodingData, attCornerTable, mesh, traversalMethod);
     }
 
     if (!sequencer) {
@@ -7502,14 +8417,17 @@ class MeshEdgebreakerDecoderImpl {
     return this._decoder.setAttributesDecoder(attDecoderId, attController);
   }
 
-  _createVertexTraversalSequencer(encodingData, cornerTable, mesh) {
+  _createVertexTraversalSequencer(encodingData, cornerTable, mesh, traversalMethod) {
     const traversalSequencer = new MeshTraversalSequencer(
       mesh, encodingData, this._vertexTraversalCache);
 
     const observer = new MeshAttributeIndicesEncodingObserver(
       cornerTable, mesh, traversalSequencer, encodingData);
 
-    const traverser = new DepthFirstTraverser();
+    const traverser =
+      traversalMethod === MeshTraversalMethod.MESH_TRAVERSAL_PREDICTION_DEGREE
+        ? new MaxPredictionDegreeTraverser()
+        : new DepthFirstTraverser();
     traverser.init(cornerTable, observer);
 
     traversalSequencer.setTraverser(traverser);
