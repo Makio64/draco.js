@@ -1,12 +1,12 @@
-// scripts/bench.mjs
+// tools/bench.mjs
 //
 // Headless decode benchmark + correctness-regression harness for the pure-JS
 // Draco decoder. The core decoder (src/compression/Decode.js) has no `three`
 // dependency, so it runs directly in Node without installing anything.
 //
-//   node scripts/bench.mjs           # time decode + check output vs baseline
-//   node scripts/bench.mjs --save    # (re)write the correctness baseline
-//   node scripts/bench.mjs --wasm    # also time the draco3d WASM decoder (adds a JS× speedup column)
+//   node tools/bench.mjs           # time decode + check output vs baseline
+//   node tools/bench.mjs --save    # (re)write the correctness baseline
+//   node tools/bench.mjs --wasm    # also time the draco3d WASM decoder (adds a JS× speedup column)
 //
 // For each sample it prints ms/decode, faces/points and MB/s, plus a sha256 of
 // the fully decoded geometry (face indices + every attribute's per-point values,

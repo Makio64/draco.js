@@ -1,4 +1,4 @@
-// scripts/verify-wasm.mjs
+// tools/verify-wasm.mjs
 //
 // WASM-parity test: decode every sample with BOTH the pure-JS decoder and
 // Google's reference draco3d WASM decoder, and assert the results are identical
@@ -6,8 +6,8 @@
 // floating-point tolerance reported separately). This is the ground-truth check
 // that our optimizations (and the decoder in general) are correct.
 //
-//   node scripts/verify-wasm.mjs            # check all samples
-//   node scripts/verify-wasm.mjs bunny.drc  # check one sample
+//   node tools/verify-wasm.mjs            # check all samples
+//   node tools/verify-wasm.mjs bunny.drc  # check one sample
 //
 // Exits non-zero if any primitive diverges from the WASM reference.
 
