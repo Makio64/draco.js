@@ -344,10 +344,16 @@ function partsFromData(name, data) {
 }
 
 // Decode a whole model (all primitives) once; returns { ms, geometries }.
+// Primitives are decoded concurrently — the way a real glTF load drives them —
+// so the WASM loader's worker pool can parallelize across them instead of being
+// serialized into back-to-back round-trips. The main-thread JS loader runs them
+// sequentially regardless, so this only affects multi-primitive models, and
+// times the same thing for both: each decodeDracoFile call to its callback.
 async function decodeModel(loader, parts) {
-  const geometries = [];
   const t0 = performance.now();
-  for (const p of parts) geometries.push(await decodeOne(loader, p.buffer.slice(0), p.attributeIDs, p.attributeTypes));
+  const geometries = await Promise.all(
+    parts.map(p => decodeOne(loader, p.buffer.slice(0), p.attributeIDs, p.attributeTypes))
+  );
   return { ms: performance.now() - t0, geometries };
 }
 
