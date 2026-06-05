@@ -7,7 +7,6 @@ import { MeshEdgebreakerTraversalPredictiveDecoder } from './MeshEdgebreakerTrav
 import { MeshEdgebreakerTraversalValenceDecoder } from './MeshEdgebreakerTraversalValenceDecoder.js';
 import { MeshEdgebreakerConnectivityEncodingMethod } from '../config/CompressionShared.js';
 
-// Class for decoding data encoded by MeshEdgebreakerEncoder.
 class MeshEdgebreakerDecoder extends MeshDecoder {
 
   constructor() {

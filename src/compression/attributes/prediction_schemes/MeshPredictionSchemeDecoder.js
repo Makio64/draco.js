@@ -4,18 +4,11 @@
 import { PredictionSchemeDecoder } from './PredictionSchemeDecoder.js';
 
 /**
- * Base class for all mesh prediction scheme decoders that use mesh
- * connectivity data. Extends PredictionSchemeDecoder with mesh data access.
- *
- * In C++ this is templated on MeshDataT. In JS, meshData is a constructor param.
+ * Base class for mesh prediction scheme decoders that use mesh connectivity.
+ * C++ templates this on MeshDataT; here meshData is a constructor param.
  */
 class MeshPredictionSchemeDecoder extends PredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform);
     this._meshData = meshData;

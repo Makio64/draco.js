@@ -24,42 +24,25 @@ class PredictionSchemeWrapDecodingTransform {
     this._maxDif = 0;
   }
 
-  /**
-   * @returns {number}
-   */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_WRAP;
   }
 
-  /**
-   * @param {number} numComponents
-   */
   init(numComponents) {
     this._numComponents = numComponents;
   }
 
-  /**
-   * @returns {boolean}
-   */
   areCorrectionsPositive() {
     return false;
   }
 
   /**
-   * Computes the original value from predicted and correction values,
-   * unwrapping values that fall outside the [min, max] range.
-   * @param {Int32Array|TypedArray} predictedVals
-   * @param {number} predictedOffset
-   * @param {Int32Array|TypedArray} corrVals
-   * @param {number} corrOffset
-   * @param {Int32Array|TypedArray} outOriginalVals
-   * @param {number} outOffset
+   * Unwraps values that fall outside the [min, max] range.
    */
   computeOriginalValue(predictedVals, predictedOffset, corrVals, corrOffset,
     outOriginalVals, outOffset) {
-    // Clamp and wrap fused into a single pass over the components, reading the
-    // bounds from locals — clamps each predicted value to [min, max] and then
-    // unwraps it, in one loop with no scratch buffer.
+    // Clamp to [min, max] then unwrap, fused into one pass with bounds in
+    // locals and no scratch buffer.
     const nc = this._numComponents;
     const minValue = this._minValue;
     const maxValue = this._maxValue;
@@ -71,7 +54,7 @@ class PredictionSchemeWrapDecodingTransform {
       } else if (pred < minValue) {
         pred = minValue;
       }
-      // Perform the wrapping using 32-bit arithmetic to avoid signed overflow.
+      // 32-bit (| 0) arithmetic to avoid signed overflow.
       let orig = (pred + corrVals[corrOffset + i]) | 0;
       if (orig > maxValue) {
         orig -= maxDif;
@@ -82,11 +65,7 @@ class PredictionSchemeWrapDecodingTransform {
     }
   }
 
-  /**
-   * Decodes the transform-specific data (min and max values) from the buffer.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
+  /** Decodes the min and max values from the buffer. */
   decodeTransformData(buffer) {
     const minValue = buffer.decodeInt32();
     if (minValue === undefined) return false;
@@ -99,10 +78,6 @@ class PredictionSchemeWrapDecodingTransform {
     return this._initCorrectionBounds();
   }
 
-  /**
-   * @private
-   * @returns {boolean}
-   */
   _initCorrectionBounds() {
     const dif = this._maxValue - this._minValue;
     if (dif < 0 || dif >= 0x7FFFFFFF) {

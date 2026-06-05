@@ -1,5 +1,4 @@
 // attributes/GeometryIndices.js - ported from attributes/geometry_indices.h
 
-// Sentinel for an invalid attribute value index.
-// In C++ this is std::numeric_limits<uint32_t>::max(), i.e. 0xFFFFFFFF.
+// Invalid-index sentinel; matches C++ std::numeric_limits<uint32_t>::max().
 export const kInvalidAttributeValueIndex = 0xFFFFFFFF >>> 0;

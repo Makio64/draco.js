@@ -10,18 +10,10 @@ import { PredictionSchemeNormalOctahedronTransformBase } from './PredictionSchem
  */
 class PredictionSchemeNormalOctahedronDecodingTransform extends PredictionSchemeNormalOctahedronTransformBase {
 
-  /**
-   * @returns {number}
-   */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON;
   }
 
-  /**
-   * Decodes the max quantized value from the buffer.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodeTransformData(buffer) {
     const maxQuantizedValue = buffer.decodeInt32();
     if (maxQuantizedValue === undefined) return false;
@@ -35,15 +27,6 @@ class PredictionSchemeNormalOctahedronDecodingTransform extends PredictionScheme
     return this._setMaxQuantizedValue(maxQuantizedValue);
   }
 
-  /**
-   * Computes the original value from predicted and correction values.
-   * @param {Int32Array|TypedArray} predVals
-   * @param {number} predOffset
-   * @param {Int32Array|TypedArray} corrVals
-   * @param {number} corrOffset
-   * @param {Int32Array|TypedArray} outOrigVals
-   * @param {number} outOffset
-   */
   computeOriginalValue(predVals, predOffset, corrVals, corrOffset,
     outOrigVals, outOffset) {
     const toolBox = this._octahedronToolBox;

@@ -3,8 +3,7 @@
 import { AttributeTransform } from './AttributeTransform.js';
 import { AttributeTransformType } from './AttributeTransformType.js';
 import { DataType } from '../core/DracoTypes.js';
-// Reuse the shared OctahedronToolBox (decode math is identical) instead of a
-// hand-synchronized inline copy.
+// Reuse the shared OctahedronToolBox (decode math is identical) instead of a hand-synced inline copy.
 import { OctahedronToolBox } from '../compression/attributes/NormalCompressionUtils.js';
 
 class AttributeOctahedronTransform extends AttributeTransform {
@@ -14,13 +13,11 @@ class AttributeOctahedronTransform extends AttributeTransform {
     this._quantizationBits = -1;
   }
 
-  // Copy parameter values into the provided AttributeTransformData instance.
   copyToAttributeTransformData(outData) {
     outData.transformType = AttributeTransformType.OCTAHEDRON_TRANSFORM;
     outData.appendParameterValue(this._quantizationBits, 'int32');
   }
 
-  // Decodes quantization bits from the decoder buffer.
   decodeParameters(attribute, decoderBuffer) {
     const qBits = decoderBuffer.decodeUint8();
     if (qBits === undefined) return false;
@@ -28,7 +25,6 @@ class AttributeOctahedronTransform extends AttributeTransform {
     return true;
   }
 
-  // Inverse transform: converts octahedral coordinates to unit vectors (float32).
   inverseTransformAttribute(attribute, targetAttribute) {
     if (targetAttribute.dataType !== DataType.FLOAT32) {
       return false;

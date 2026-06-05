@@ -7,39 +7,23 @@ import { computeParallelogramPrediction } from './MeshPredictionSchemeParallelog
 import { kInvalidCornerIndex } from '../../../mesh/CornerTable.js';
 
 /**
- * Decoder for predictions encoded by multi-parallelogram encoding scheme.
- * Multiple parallelogram predictions around a vertex are averaged to
- * produce the final prediction.
+ * Decoder for the multi-parallelogram scheme: parallelogram predictions around
+ * a vertex are averaged to produce the final prediction.
  */
 class MeshPredictionSchemeMultiParallelogramDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform, meshData);
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_MULTI_PARALLELOGRAM;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._meshData.isInitialized();
   }
 
-  /**
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array|null} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     this._transform.init(numComponents);
 

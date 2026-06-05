@@ -14,8 +14,7 @@ import {
   kDracoMeshBitstreamVersionMinor
 } from '../config/CompressionShared.js';
 
-// Abstract base class for all point cloud and mesh decoders. It provides a
-// basic functionality that is shared between different decoders.
+// Abstract base for all point cloud and mesh decoders; holds shared logic.
 class PointCloudDecoder {
 
   constructor() {
@@ -32,8 +31,7 @@ class PointCloudDecoder {
     return EncodedGeometryType.POINT_CLOUD;
   }
 
-  // Decodes a Draco header from the provided buffer.
-  // Returns a Status. On success, out_header is populated.
+  // Returns a Status; on success outHeader is populated.
   static decodeHeader(buffer, outHeader) {
     const kIoErrorMsg = 'Failed to parse Draco header.';
     const bytes = buffer.decodeBytes(5);
@@ -43,7 +41,6 @@ class PointCloudDecoder {
     for (let i = 0; i < 5; i++) {
       outHeader.dracoString[i] = bytes[i];
     }
-    // Check for "DRACO" magic string
     const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]);
     if (magic !== 'DRACO') {
       return new Status(StatusCode.DRACO_ERROR, 'Not a Draco file.');
@@ -71,7 +68,7 @@ class PointCloudDecoder {
     return okStatus();
   }
 
-  // The main entry point for point cloud decoding.
+  // Main entry point for point cloud decoding.
   decode(options, inBuffer, outPointCloud) {
     this._options = options;
     this._buffer = inBuffer;
@@ -83,7 +80,6 @@ class PointCloudDecoder {
       return headerStatus;
     }
 
-    // Sanity check that we are using the right decoder.
     if (header.encoderType !== this.getGeometryType()) {
       return new Status(StatusCode.DRACO_ERROR,
         'Using incompatible decoder for the input geometry.');
@@ -101,7 +97,7 @@ class PointCloudDecoder {
         ? kDracoPointCloudBitstreamVersionMinor
         : kDracoMeshBitstreamVersionMinor;
 
-    // Check for version compatibility (backwards compatibility supported).
+    // Version compatibility check (older bitstreams are still supported).
     if (this._versionMajor < 1 || this._versionMajor > maxSupportedMajorVersion) {
       return new Status(StatusCode.UNKNOWN_VERSION, 'Unknown major version.');
     }
@@ -196,25 +192,22 @@ class PointCloudDecoder {
     if (numAttributesDecoders === undefined) {
       return false;
     }
-    // Create all attribute decoders.
     for (let i = 0; i < numAttributesDecoders; ++i) {
       if (!this.createAttributesDecoder(i)) {
         return false;
       }
     }
-    // Initialize all attributes decoders.
     for (let i = 0; i < this._attributesDecoders.length; ++i) {
       if (!this._attributesDecoders[i].init(this, this._pointCloud)) {
         return false;
       }
     }
-    // Decode data needed by the attribute decoders.
     for (let i = 0; i < numAttributesDecoders; ++i) {
       if (!this._attributesDecoders[i].decodeAttributesDecoderData(this._buffer)) {
         return false;
       }
     }
-    // Create map between attribute and decoder ids.
+    // Map each attribute id to its decoder id.
     for (let i = 0; i < numAttributesDecoders; ++i) {
       const numAttributes = this._attributesDecoders[i].getNumAttributes();
       for (let j = 0; j < numAttributes; ++j) {
@@ -225,7 +218,6 @@ class PointCloudDecoder {
         this._attributeToDecoderMap[attId] = i;
       }
     }
-    // Decode the actual attributes.
     if (!this.decodeAllAttributes()) {
       return false;
     }
@@ -249,9 +241,8 @@ class PointCloudDecoder {
   }
 
   _decodeMetadata() {
-    // Skip over the geometry metadata so the bytes are consumed and the rest of
-    // the bitstream stays aligned (the content is not surfaced on the output
-    // geometry; otherwise a metadata-bearing file decodes to empty geometry).
+    // Skip (not surface) the geometry metadata so its bytes are consumed and the
+    // bitstream stays aligned; otherwise a metadata-bearing file decodes to empty.
     const metadataDecoder = new MetadataDecoder();
     if (!metadataDecoder.skipGeometryMetadata(this._buffer)) {
       return new Status(StatusCode.DRACO_ERROR, 'Failed to decode metadata.');

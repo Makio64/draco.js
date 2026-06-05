@@ -14,7 +14,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
     this._range = 0;
   }
 
-  // Copy parameter values into the provided AttributeTransformData instance.
   copyToAttributeTransformData(outData) {
     outData.transformType = AttributeTransformType.QUANTIZATION_TRANSFORM;
     outData.appendParameterValue(this._quantizationBits, 'int32');
@@ -24,24 +23,20 @@ class AttributeQuantizationTransform extends AttributeTransform {
     outData.appendParameterValue(this._range, 'float32');
   }
 
-  // Decodes quantization parameters from the decoder buffer.
   decodeParameters(attribute, decoderBuffer) {
     const numComponents = attribute.numComponents;
     this._minValues = new Array(numComponents);
 
-    // Read min values (float32 per component).
     for (let i = 0; i < numComponents; i++) {
       const val = decoderBuffer.decodeFloat32();
       if (val === undefined) return false;
       this._minValues[i] = val;
     }
 
-    // Read range (float32).
     const range = decoderBuffer.decodeFloat32();
     if (range === undefined) return false;
     this._range = range;
 
-    // Read quantization bits (uint8).
     const qBits = decoderBuffer.decodeUint8();
     if (qBits === undefined) return false;
     if (!AttributeQuantizationTransform._isQuantizationValid(qBits)) {
@@ -51,7 +46,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
     return true;
   }
 
-  // Inverse transform: dequantizes uint32 values back to float32.
   inverseTransformAttribute(attribute, targetAttribute) {
     if (targetAttribute.dataType !== DataType.FLOAT32) {
       return false;

@@ -1,7 +1,6 @@
 // point_cloud/PointCloud.js - ported from point_cloud/point_cloud.h/cc
 
-// Mirrors GeometryAttribute::Type enum values used for named attribute indexing.
-// These must match the C++ GeometryAttribute::Type enum.
+// Must match the C++ GeometryAttribute::Type enum count.
 const NAMED_ATTRIBUTES_COUNT = 8;
 
 class PointCloud {
@@ -11,7 +10,7 @@ class PointCloud {
     this.num_points_ = 0;
     this.attributes_ = [];
 
-    // Array of arrays: named_attribute_index_[type] = [att_id, ...]
+    // named_attribute_index_[type] = [att_id, ...]
     this.named_attribute_index_ = [];
     for (let i = 0; i < NAMED_ATTRIBUTES_COUNT; ++i) {
 
@@ -21,7 +20,6 @@ class PointCloud {
 
   }
 
-  // Returns the number of named attributes of a given type.
   numNamedAttributes(type) {
 
     if (type < 0 || type >= NAMED_ATTRIBUTES_COUNT) {
@@ -32,7 +30,6 @@ class PointCloud {
 
   }
 
-  // Returns attribute id of the i-th named attribute with a given type or -1.
   getNamedAttributeId(type, i) {
 
     if (i === undefined) i = 0;
@@ -44,7 +41,6 @@ class PointCloud {
 
   }
 
-  // Returns the first or i-th named attribute of a given type or null.
   getNamedAttribute(type, i) {
 
     if (i === undefined) i = 0;
@@ -57,7 +53,6 @@ class PointCloud {
 
   }
 
-  // Returns the attribute with a given unique id.
   getAttributeByUniqueId(uniqueId) {
 
     const attId = this.getAttributeIdByUniqueId(uniqueId);
@@ -95,7 +90,6 @@ class PointCloud {
 
   }
 
-  // Adds a new attribute to the point cloud. Returns the attribute id.
   addAttribute(pa) {
 
     this.setAttribute(this.attributes_.length, pa);
@@ -103,12 +97,10 @@ class PointCloud {
 
   }
 
-  // Assigns an attribute to a given attribute id.
   setAttribute(attId, pa) {
 
     if (this.attributes_.length <= attId) {
 
-      // Resize the array to accommodate the new attribute id.
       while (this.attributes_.length <= attId) {
         this.attributes_.push(null);
       }

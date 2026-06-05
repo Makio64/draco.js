@@ -4,12 +4,10 @@ import { AttributeTransformData } from './AttributeTransformData.js';
 
 class AttributeTransform {
 
-  // Virtual: copy parameter values into the provided AttributeTransformData.
+  // Virtual: override in subclass.
   copyToAttributeTransformData(/* outData */) {
-    // Must be overridden.
   }
 
-  // Transfers transform data to the attribute.
   transferToAttribute(attribute) {
     const transformData = new AttributeTransformData();
     this.copyToAttributeTransformData(transformData);
@@ -17,12 +15,12 @@ class AttributeTransform {
     return true;
   }
 
-  // Virtual: applies an inverse transform to attribute.
+  // Virtual: override in subclass.
   inverseTransformAttribute(/* attribute, targetAttribute */) {
     return false;
   }
 
-  // Virtual: decodes all data needed to transform attribute back to original format.
+  // Virtual: override in subclass.
   decodeParameters(/* attribute, decoderBuffer */) {
     return false;
   }

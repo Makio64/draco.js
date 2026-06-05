@@ -28,7 +28,7 @@ class BitDecoder {
     const byteOffset = off >> 3;
     const bitShift = off & 7;
 
-    // Fast path: if we have enough bytes left in the buffer to read 32 bits safely.
+    // Fast path: enough bytes remain to read 32 bits safely.
     if (byteOffset + 4 < this._byteLength) {
       const val = (buf[byteOffset] | (buf[byteOffset + 1] << 8) | (buf[byteOffset + 2] << 16) | (buf[byteOffset + 3] << 24)) >>> 0;
       let result;
@@ -45,7 +45,7 @@ class BitDecoder {
       return nbits === 32 ? result : (result & ((1 << nbits) - 1));
     }
 
-    // Safe/fallback path for the end of the buffer
+    // Safe fallback path near the end of the buffer.
     let value = 0;
     let bitsRead = 0;
     let currOff = off;
@@ -95,7 +95,7 @@ export class DecoderBuffer {
     }
   }
 
-  // Decode typed values (little-endian)
+  // Typed little-endian reads.
   decodeUint8() {
     if (this._pos + 1 > this._dataSize) return undefined;
     const val = this._data[this._pos];
@@ -143,11 +143,10 @@ export class DecoderBuffer {
     const lo = this._dataView.getUint32(this._pos, true);
     const hi = this._dataView.getUint32(this._pos + 4, true);
     this._pos += 8;
-    // Return as BigInt-free number (safe up to 2^53)
+    // BigInt-free number, safe up to 2^53.
     return hi * 0x100000000 + lo;
   }
 
-  // Decode raw bytes into a Uint8Array
   decodeBytes(size) {
     if (this._pos + size > this._dataSize) return undefined;
     const result = this._data.slice(this._pos, this._pos + size);
@@ -155,7 +154,6 @@ export class DecoderBuffer {
     return result;
   }
 
-  // Bit decoding
   startBitDecoding(decodeSize) {
     let outSize = 0;
     if (decodeSize) {
@@ -187,12 +185,10 @@ export class DecoderBuffer {
     return this._bitDecoder.getBits(nbits);
   }
 
-  // Decode a varint-encoded uint32 value.
   decodeVarintUint32() {
     return decodeVarint(this, false);
   }
 
-  // Decode a varint-encoded uint64 value.
   decodeVarintUint64() {
     return decodeVarint(this, false);
   }

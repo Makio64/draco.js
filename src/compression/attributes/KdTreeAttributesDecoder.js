@@ -9,7 +9,7 @@ import { Dequantizer } from '../../core/QuantizationUtils.js';
 import { decodeVarint } from '../../core/VarintDecoding.js';
 import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
-// Defines types of kD-tree compression (from kd_tree_attributes_shared.h).
+// kD-tree compression types (from kd_tree_attributes_shared.h).
 const KdTreeAttributesEncodingMethod = {
   kKdTreeQuantizationEncoding: 0,
   kKdTreeIntegerEncoding: 1
@@ -20,11 +20,10 @@ const KdTreeAttributesEncodingMethod = {
 class PointAttributeVectorOutputIterator {
 
   constructor(atts) {
-    // atts is an array of { attribute, offsetDimensionality, dataType, dataSize, numComponents }
+    // atts: array of { attribute, offsetDimensionality, dataType, dataSize, numComponents }
     this._attributes = atts;
     this._pointId = 0;
 
-    // Compute maximum decode buffer size needed.
     let requiredDecodeBytes = 0;
     for (let i = 0; i < atts.length; i++) {
       const att = atts[i];
@@ -37,7 +36,6 @@ class PointAttributeVectorOutputIterator {
     this._pointId++;
   }
 
-  // Assign a vector of uint32 values to the current point.
   set(val) {
     for (let index = 0; index < this._attributes.length; index++) {
       const att = this._attributes[index];
@@ -51,21 +49,18 @@ class PointAttributeVectorOutputIterator {
       const numComponents = att.numComponents;
 
       if (dataSize < 4) {
-        // Handle uint16_t, uint8_t: selectively copy data bytes.
+        // uint16/uint8: copy only the low dataSize bytes of each uint32.
         let dataCounter = 0;
         for (let c = 0; c < numComponents; c++) {
-          // Copy dataSize bytes from val[offset + c] (as uint32)
           const srcVal = val[offset + c];
           for (let b = 0; b < dataSize; b++) {
             this._memory[dataCounter + b] = (srcVal >> (b * 8)) & 0xFF;
           }
           dataCounter += dataSize;
         }
-        // Set from copied bytes.
         const entryBytes = new Uint8Array(this._memory.buffer, 0, dataSize * numComponents);
         attribute.setAttributeValue(avi, entryBytes);
       } else {
-        // 4-byte types: create a view into val starting at offset.
         const entryData = new Uint32Array(numComponents);
         for (let c = 0; c < numComponents; c++) {
           entryData[c] = val[offset + c];
@@ -112,17 +107,15 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
       let targetAtt = null;
       if (att.dataType === DataType.UINT32 || att.dataType === DataType.UINT16 ||
           att.dataType === DataType.UINT8) {
-        // We can decode to these attributes directly.
         targetAtt = att;
       } else if (att.dataType === DataType.INT32 || att.dataType === DataType.INT16 ||
                  att.dataType === DataType.INT8) {
-        // Prepare storage for signed value conversion.
         for (let c = 0; c < att.numComponents; c++) {
           this._minSignedValues.push(0);
         }
         targetAtt = att;
       } else if (att.dataType === DataType.FLOAT32) {
-        // Create a portable attribute for quantized data.
+        // Float decodes into a separate portable attribute holding quantized data.
         const numComponents = att.numComponents;
         const va = new GeometryAttribute();
         va.init(att.attributeType, null, numComponents, DataType.UINT32, false,
@@ -133,7 +126,6 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
         this._quantizedPortableAttributes.push(portAtt);
         targetAtt = this._quantizedPortableAttributes[this._quantizedPortableAttributes.length - 1];
       } else {
-        // Unsupported type.
         return false;
       }
 
@@ -164,7 +156,6 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
 
   decodeDataNeededByPortableTransforms(buffer) {
     if (buffer.bitstreamVersion >= DRACO_BITSTREAM_VERSION(2, 3)) {
-      // Decode quantization data for each attribute that needs it.
       const minValue = [];
       for (let i = 0; i < this.getNumAttributes(); i++) {
         const attId = this.getAttributeId(i);
@@ -200,7 +191,6 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
         }
       }
 
-      // Decode transform data for signed integer attributes.
       for (let i = 0; i < this._minSignedValues.length; i++) {
         const val = decodeVarint(buffer, true);
         if (val === undefined) return false;
@@ -238,7 +228,6 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
     const att0 = this.getDecoder().pointCloud().attribute(att0Id);
     att0.setIdentityMapping();
 
-    // Decode method.
     const method = buffer.decodeUint8();
     if (method === undefined) return false;
 
@@ -255,14 +244,13 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
 
       att0.reset(numPoints);
 
-      // FloatPointsTreeDecoder - delegate to external decoder.
+      // Delegate to the external FloatPointsTreeDecoder.
       if (typeof KdTreeAttributesDecoder._floatPointsTreeDecoderFn === 'function') {
         if (!KdTreeAttributesDecoder._floatPointsTreeDecoderFn(
               buffer, atts, numPoints)) {
           return false;
         }
       } else {
-        // FloatPointsTreeDecoder not available.
         return false;
       }
     } else if (method === KdTreeAttributesEncodingMethod.kKdTreeIntegerEncoding) {
@@ -287,7 +275,6 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
         return false;
       }
     } else {
-      // Invalid method.
       return false;
     }
     return true;
@@ -302,14 +289,12 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
     let numProcessedQuantizedAttributes = 0;
     let numProcessedSignedComponents = 0;
 
-    // Dequantize attributes that needed it.
     for (let i = 0; i < this.getNumAttributes(); i++) {
       const attId = this.getAttributeId(i);
       const att = this.getDecoder().pointCloud().attribute(attId);
 
       if (att.dataType === DataType.INT32 || att.dataType === DataType.INT16 ||
           att.dataType === DataType.INT8) {
-        // Values are stored as unsigned; make them signed again.
         if (!this._transformAttributeBackToSignedType(
               att, numProcessedSignedComponents)) {
           return false;
@@ -323,12 +308,10 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
         if (this.getDecoder().options() &&
             this.getDecoder().options().getAttributeBool(
               att.attributeType, 'skip_attribute_transform', false)) {
-          // Attribute transform should not be performed.
           att.copyFrom(srcAtt);
           continue;
         }
 
-        // Convert all quantized values back to floats.
         const maxQuantizedValue = ((1 << transform.quantizationBits) >>> 0) - 1;
         const numComponents = att.numComponents;
         const entrySize = 4 * numComponents; // sizeof(float32) * numComponents
@@ -355,7 +338,6 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
             value = value + transform.minValue(c);
             attVal[c] = value;
           }
-          // Store the floating point value into the attribute buffer.
           att.buffer.write(outBytePos, attValBytes, entrySize);
           outBytePos += entrySize;
         }
@@ -370,12 +352,10 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
     const dtLength = dataTypeLength(att.dataType);
 
     for (let avi = 0; avi < att.size; avi++) {
-      // Read unsigned values.
       const bytePos = avi * att.byteStride;
       const rawData = att.getAddress(0).subarray(bytePos, bytePos + att.byteStride);
       const readView = new DataView(rawData.buffer, rawData.byteOffset, rawData.byteLength);
 
-      // Compute signed values.
       let signedVals;
       if (att.dataType === DataType.INT32) {
         signedVals = new Int32Array(numComponents);
@@ -408,35 +388,30 @@ class KdTreeAttributesDecoder extends AttributesDecoder {
     return true;
   }
 
-  // Decodes points using the DynamicIntegerPointsKdTreeDecoder.
-  // Delegates to an external decoder function since the KD-tree decoder
-  // implementation is in the point_cloud/algorithms layer.
+  // Delegates to the external DynamicIntegerPointsKdTreeDecoder (lives in the
+  // point_cloud/algorithms layer).
   _decodePoints(compressionLevel, totalDimensionality, numExpectedPoints, buffer, outIterator) {
     if (typeof KdTreeAttributesDecoder._kdTreeDecoderFn === 'function') {
       return KdTreeAttributesDecoder._kdTreeDecoderFn(
         compressionLevel, totalDimensionality, numExpectedPoints, buffer, outIterator
       );
     }
-    // KD-tree decoder not available.
     return false;
   }
 
-  // Static setter for the KD-tree point decoder function.
-  // Expected signature: fn(compressionLevel, totalDimensionality, numExpectedPoints, buffer, outIterator)
-  // The outIterator has .set(valArray) and .next() methods.
+  // fn(compressionLevel, totalDimensionality, numExpectedPoints, buffer, outIterator);
+  // outIterator exposes .set(valArray) and .next().
   static setKdTreeDecoderFn(fn) {
     KdTreeAttributesDecoder._kdTreeDecoderFn = fn;
   }
 
-  // Static setter for the float points tree decoder function (backward compat).
-  // Expected signature: fn(buffer, atts, numPoints)
+  // fn(buffer, atts, numPoints); backward-compat path.
   static setFloatPointsTreeDecoderFn(fn) {
     KdTreeAttributesDecoder._floatPointsTreeDecoderFn = fn;
   }
 
 }
 
-// Initialize static fields.
 KdTreeAttributesDecoder._kdTreeDecoderFn = null;
 KdTreeAttributesDecoder._floatPointsTreeDecoderFn = null;
 

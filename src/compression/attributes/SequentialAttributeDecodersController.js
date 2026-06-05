@@ -7,10 +7,8 @@ import { SequentialQuantizationAttributeDecoder } from './SequentialQuantization
 import { SequentialNormalAttributeDecoder } from './SequentialNormalAttributeDecoder.js';
 import { SequentialAttributeEncoderType } from '../config/CompressionShared.js';
 
-// A basic implementation of an attribute decoder that decodes data encoded by
-// the SequentialAttributeEncodersController class. Creates a single
-// SequentialAttributeDecoder for each of the decoded attributes, where the
-// type of the decoder is determined by the unique identifier encoded by the encoder.
+// Creates one SequentialAttributeDecoder per attribute; the decoder type is
+// chosen from the id encoded by the matching encoder.
 class SequentialAttributeDecodersController extends AttributesDecoder {
 
   constructor(sequencer) {
@@ -24,14 +22,12 @@ class SequentialAttributeDecodersController extends AttributesDecoder {
     if (!super.decodeAttributesDecoderData(buffer)) {
       return false;
     }
-    // Decode unique ids of all sequential encoders and create them.
     const numAttributes = this.getNumAttributes();
     this._sequentialDecoders.length = numAttributes;
     for (let i = 0; i < numAttributes; i++) {
       const decoderType = buffer.decodeUint8();
       if (decoderType === undefined) return false;
 
-      // Create the decoder from the id.
       this._sequentialDecoders[i] = this.createSequentialDecoder(decoderType);
       if (!this._sequentialDecoders[i]) {
         return false;
@@ -95,15 +91,13 @@ class SequentialAttributeDecodersController extends AttributesDecoder {
   transformAttributesToOriginalFormat() {
     const numAttributes = this.getNumAttributes();
     for (let i = 0; i < numAttributes; i++) {
-      // Check whether the attribute transform should be skipped.
       if (this.getDecoder().options()) {
         const attribute = this._sequentialDecoders[i].attribute;
         const portableAttribute = this._sequentialDecoders[i].getPortableAttribute();
         if (portableAttribute &&
             this.getDecoder().options().getAttributeBool(
               attribute.attributeType, 'skip_attribute_transform', false)) {
-          // Attribute transform should not be performed. In this case, we replace
-          // the output geometry attribute with the portable attribute.
+          // Skip the transform: use the portable attribute as the output.
           this._sequentialDecoders[i].attribute.copyFrom(portableAttribute);
           continue;
         }
@@ -133,7 +127,6 @@ class SequentialAttributeDecodersController extends AttributesDecoder {
       default:
         break;
     }
-    // Unknown or unsupported decoder type.
     return null;
   }
 

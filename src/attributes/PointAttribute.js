@@ -15,7 +15,6 @@ class PointAttribute extends GeometryAttribute {
     this._attributeBuffer = null;
     this._attributeTransformData = null;
 
-    // Copy-construct from a GeometryAttribute if provided.
     if (geometryAttribute instanceof GeometryAttribute) {
       this._buffer = geometryAttribute._buffer;
       this._numComponents = geometryAttribute._numComponents;
@@ -28,7 +27,6 @@ class PointAttribute extends GeometryAttribute {
     }
   }
 
-  // Initializes a point attribute with identity mapping.
   init(attributeType, numComponents, dataType, normalized, numAttributeValues) {
     this._attributeBuffer = new DataBuffer();
     const byteStride = dataTypeLength(dataType) * numComponents;
@@ -37,14 +35,12 @@ class PointAttribute extends GeometryAttribute {
     this.setIdentityMapping();
   }
 
-  // Prepares the attribute storage for the specified number of entries.
   reset(numAttributeValues) {
     if (this._attributeBuffer === null) {
       this._attributeBuffer = new DataBuffer();
     }
     const entrySize = dataTypeLength(this.dataType) * this.numComponents;
     this._attributeBuffer.update(null, numAttributeValues * entrySize);
-    // Assign the new buffer to the parent attribute.
     this.resetBuffer(this._attributeBuffer, entrySize, 0);
     this._numUniqueEntries = numAttributeValues;
     return true;
@@ -54,7 +50,6 @@ class PointAttribute extends GeometryAttribute {
     return this._numUniqueEntries;
   }
 
-  // Returns the mapped attribute value index for a given point index.
   mappedIndex(pointIndex) {
     if (this._identityMapping) {
       return pointIndex;
@@ -80,13 +75,12 @@ class PointAttribute extends GeometryAttribute {
     return this._indicesMap;
   }
 
-  // Sets the mapping to implicit (point indices equal attribute entry indices).
+  // Implicit mapping: point index equals attribute entry index.
   setIdentityMapping() {
     this._identityMapping = true;
     this._indicesMap = [];
   }
 
-  // Sets the mapping to be explicit using the indicesMap array.
   setExplicitMapping(numPoints) {
     this._identityMapping = false;
     // Uint32Array (rather than a plain Array) keeps mappedIndex() monomorphic
@@ -96,12 +90,10 @@ class PointAttribute extends GeometryAttribute {
     this._indicesMap.fill(kInvalidAttributeValueIndex);
   }
 
-  // Set attribute transform data for the attribute.
   setAttributeTransformData(transformData) {
     this._attributeTransformData = transformData;
   }
 
-  // Converts the attribute value at the given index into the output array.
   // Mirrors C++ PointAttribute::ConvertValue<T>().
   convertValue(attIndex, outVal) {
     const bytePos = this._byteOffset + this._byteStride * attIndex;
@@ -109,7 +101,6 @@ class PointAttribute extends GeometryAttribute {
     const dt = this._dataType;
     const nc = this._numComponents;
 
-    // Fast path for FLOAT32 (most common case).
     if (dt === DataType.FLOAT32) {
       if (this._cachedFloat32View === undefined || this._cachedFloat32Buffer !== bufData.buffer) {
         this._cachedFloat32Buffer = bufData.buffer;
@@ -122,11 +113,9 @@ class PointAttribute extends GeometryAttribute {
       return;
     }
 
-    // Fast path for INT32 — the type of every portable (decoded-integer)
-    // attribute, read per-corner by the geometric-normal / texcoords
-    // predictors. A cached Int32Array view indexed by element avoids the
-    // per-component DataView.getInt32 dispatch. Base byte position is always
-    // 4-aligned for these attributes (byteStride is a multiple of 4).
+    // INT32 fast path: every portable attribute is INT32, read per-corner by the
+    // geometric-normal / texcoords predictors. Cached Int32Array view avoids the
+    // per-component DataView dispatch; base is always 4-aligned (byteStride % 4 == 0).
     if (dt === DataType.INT32) {
       if (this._cachedInt32View === undefined || this._cachedInt32Buffer !== bufData.buffer) {
         this._cachedInt32Buffer = bufData.buffer;
@@ -151,7 +140,7 @@ class PointAttribute extends GeometryAttribute {
       return;
     }
 
-    // General path using cached DataView.
+    // General path: cached DataView for non-32-bit-aligned types.
     if (this._cachedDataView === undefined || this._cachedDVBuffer !== bufData.buffer) {
       this._cachedDVBuffer = bufData.buffer;
       this._cachedDataView = new DataView(bufData.buffer, bufData.byteOffset, bufData.byteLength);
@@ -179,8 +168,8 @@ class PointAttribute extends GeometryAttribute {
     }
   }
 
-  // High-performance direct extraction of all values to the output typed array.
-  // Replaces the slow point-by-point copy loop that used temporary arrays.
+  // Flat-array extraction of all values into one output typed array (avoids the
+  // per-point temp-array copy via cached typed-array views over the buffer).
   extractTo(OutputTypedArray, numPoints) {
     const numComponents = this._numComponents;
     const array = new OutputTypedArray(numPoints * numComponents);
@@ -259,7 +248,7 @@ class PointAttribute extends GeometryAttribute {
       const srcStart = (bufData.byteOffset + byteOffset) >> shift;
       const strideElements = byteStride >> shift;
 
-      // Contiguous fast block copy path.
+      // Contiguous: single block copy when source and output types match.
       if (isIdentity && strideElements === numComponents) {
         const srcEnd = srcStart + numPoints * numComponents;
         if (srcView.constructor === OutputTypedArray) {
@@ -268,7 +257,6 @@ class PointAttribute extends GeometryAttribute {
         }
       }
 
-      // Fast assignment loop.
       for (let i = 0; i < numPoints; i++) {
         const attIndex = isIdentity ? i : indicesMap[i];
         const srcOffset = srcStart + attIndex * strideElements;
@@ -280,7 +268,7 @@ class PointAttribute extends GeometryAttribute {
       return array;
     }
 
-    // Slow/fallback path.
+    // Fallback for any other dtype via convertValue.
     const temp = new Array(numComponents);
     for (let i = 0; i < numPoints; i++) {
       const attIndex = isIdentity ? i : indicesMap[i];
@@ -293,7 +281,6 @@ class PointAttribute extends GeometryAttribute {
     return array;
   }
 
-  // Copies attribute data from the provided source attribute.
   copyFrom(srcAtt) {
     if (this.buffer === null) {
       this._attributeBuffer = new DataBuffer();
@@ -306,7 +293,7 @@ class PointAttribute extends GeometryAttribute {
     this._numUniqueEntries = srcAtt._numUniqueEntries;
     this._indicesMap = srcAtt._indicesMap.slice();
     if (srcAtt._attributeTransformData) {
-      // Shallow copy of transform data -- typically set fresh during decode.
+      // Shallow copy; transform data is normally set fresh during decode.
       this._attributeTransformData = srcAtt._attributeTransformData;
     } else {
       this._attributeTransformData = null;

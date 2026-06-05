@@ -13,31 +13,17 @@ class PredictionSchemeNormalOctahedronTransformBase {
     this._octahedronToolBox = new OctahedronToolBox();
   }
 
-  /**
-   * @returns {boolean}
-   */
   areCorrectionsPositive() {
     return true;
   }
 
-  /**
-   * Dummy init to fulfill the transform interface.
-   * @param {number} numComponents
-   */
+  /** No-op to fulfill the transform interface. */
   init(numComponents) {}
 
-  /**
-   * @returns {number}
-   */
   quantizationBits() {
     return this._octahedronToolBox.quantizationBits();
   }
 
-  /**
-   * @protected
-   * @param {number} maxQuantizedValue
-   * @returns {boolean}
-   */
   _setMaxQuantizedValue(maxQuantizedValue) {
     if (maxQuantizedValue % 2 === 0) return false;
     let q = 0;

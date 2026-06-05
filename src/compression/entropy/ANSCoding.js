@@ -1,15 +1,9 @@
 // compression/entropy/ANSCoding.js - ported from compression/entropy/ans.h
-//
-// An implementation of Asymmetric Numeral Systems (rANS).
-// See http://arxiv.org/abs/1311.2540v2 for more information on rANS.
-// Decode-only port.
+// Asymmetric Numeral Systems (rANS), decode-only. http://arxiv.org/abs/1311.2540v2
 
-// Constants
 export const ANS_P8_PRECISION = 256;
 export const ANS_L_BASE = 4096;
 export const ANS_IO_BASE = 256;
-
-// --- Little-endian memory read helpers ---
 
 export function memGetLe16(buf, offset) {
   return buf[offset] | (buf[offset + 1] << 8);
@@ -28,8 +22,6 @@ export function memGetLe32(buf, offset) {
   );
 }
 
-// --- AnsDecoder state object ---
-
 export class AnsDecoder {
 
   constructor() {
@@ -40,10 +32,7 @@ export class AnsDecoder {
 
 }
 
-// --- Core ANS read init / end ---
-
-// Initializes the AnsDecoder from a buffer and an offset (number of encoded bytes).
-// Returns 0 on success, 1 on error.
+// offset is the number of encoded bytes. Returns 0 on success, 1 on error.
 export function ansReadInit(ans, buf, offset) {
   if (offset < 1) {
     return 1;
@@ -79,19 +68,15 @@ export function ansReadEnd(ans) {
   return ans.state === ANS_L_BASE;
 }
 
-// --- rABS descending spread (the default rabs_read) ---
-
-// rABS with descending spread.
-// p0 takes the place of l_s from the paper.
-// ANS_P8_PRECISION is m.
+// rABS with descending spread. p0 is l_s from the paper; ANS_P8_PRECISION is m.
 export function rabsDescRead(ans, p0) {
   const p = ANS_P8_PRECISION - p0;
   if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
     ans.state = (ans.state << 8) | ans.buf[--ans.bufOffset];
   }
   const x = ans.state;
-  const quot = x >>> 8;  // x / 256 (ANS_P8_PRECISION is always 256)
-  const rem = x & 0xFF;  // x % 256
+  const quot = x >>> 8;  // /256 and %256: ANS_P8_PRECISION is always 256
+  const rem = x & 0xFF;
   const xn = quot * p;
   const val = (rem < p) ? 1 : 0;
   if (val) {
@@ -102,10 +87,7 @@ export function rabsDescRead(ans, p0) {
   return val;
 }
 
-// Default rabs_read is the descending variant.
 export const rabsRead = rabsDescRead;
-
-// --- rANS decoder class (template parameter = precision bits) ---
 
 export class RAnsDecoder {
 
@@ -115,18 +97,15 @@ export class RAnsDecoder {
     this.ransPrecisionMask = this.ransPrecision - 1;
     this.lRansBase = this.ransPrecision * 4;
     this.lutTable = null; // Uint32Array
-    this.probTable = null; // Uint32Array — flat array of prob values
-    this.cumProbTable = null; // Uint32Array — flat array of cumProb values
-    // rANS decoder state, inlined here (rather than a nested AnsDecoder object)
-    // so the per-symbol ransRead() hot loop touches own properties / locals.
+    this.probTable = null; // Uint32Array, flat
+    this.cumProbTable = null; // Uint32Array, flat
+    // State inlined (not a nested AnsDecoder) so the ransRead() hot loop touches own props.
     this.buf = null;
     this.bufOffset = 0;
     this.state = 0;
   }
 
-  // Initializes the decoder from the input buffer.
-  // |offset| is the number of bytes encoded by the encoder.
-  // Returns 0 on success, non-zero on error.
+  // offset is the number of bytes encoded. Returns 0 on success, non-zero on error.
   readInit(buf, offset) {
     if (offset < 1) {
       return 1;
@@ -166,8 +145,7 @@ export class RAnsDecoder {
   }
 
   ransRead() {
-    // Cache state in locals for the renormalization loop; properties are read
-    // once and written back once. ransRead runs once per decoded symbol.
+    // Cache state in locals for the renormalization loop: read once, write back once.
     const buf = this.buf;
     const lRansBase = this.lRansBase;
     let state = this.state;
@@ -183,11 +161,8 @@ export class RAnsDecoder {
     return symbol;
   }
 
-  // Decodes |count| symbols into out[0..count). Identical per-symbol arithmetic
-  // to ransRead(), but every decoder field is hoisted into a local for the
-  // whole batch and the state/offset are written back once — removing the
-  // per-symbol property reads and the decodeSymbol()->ransRead() call
-  // indirection that dominated raw symbol decoding.
+  // Batch ransRead() into out[0..count): all fields hoisted to locals, state
+  // written back once. Removes per-symbol property reads and call indirection.
   decodeSymbols(out, count) {
     const buf = this.buf;
     const lRansBase = this.lRansBase;
@@ -211,8 +186,7 @@ export class RAnsDecoder {
     this.bufOffset = bufOffset;
   }
 
-  // Construct a lookup table with |ransPrecision| number of entries.
-  // Returns false if the table couldn't be built (because of wrong input data).
+  // Builds the ransPrecision-entry lookup table. Returns false on bad input data.
   ransBuildLookUpTable(tokenProbs, numSymbols) {
     this.lutTable = new Uint32Array(this.ransPrecision);
     this.probTable = new Uint32Array(numSymbols);

@@ -26,10 +26,8 @@ export class DataBuffer {
   }
 
   write(bytePos, inArray, dataSize) {
-    // Fast path: the overwhelmingly common caller passes a Uint8Array view of
-    // exactly dataSize bytes (one attribute entry). Avoid allocating a wrapper
-    // view on every value, which otherwise dominates attribute storage time and
-    // GC pressure.
+    // Fast path: the common caller passes a Uint8Array of exactly dataSize bytes.
+    // Avoid allocating a wrapper view per value (dominates storage time / GC pressure).
     if (inArray instanceof Uint8Array) {
       this._data.set(inArray.length === dataSize ? inArray : inArray.subarray(0, dataSize), bytePos);
       return;

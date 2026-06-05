@@ -1,16 +1,9 @@
 // src/compression/attributes/NormalCompressionUtils.js
 // Ported from draco/compression/attributes/normal_compression_utils.h
 
-/**
- * OctahedronToolBox provides utilities for converting unit vectors to
- * octahedral coordinates and back, used for normal compression.
- *
- * Key values:
- *   q: number of quantization bits
- *   maxQuantizedValue: max representable value with q bits (odd)
- *   maxValue: maxQuantizedValue - 1 (even)
- *   centerValue: maxValue / 2
- */
+// Converts unit vectors to/from octahedral coordinates for normal compression.
+// Invariants: maxQuantizedValue = 2^q - 1 (odd); maxValue = maxQuantizedValue - 1
+// (even); centerValue = maxValue / 2.
 class OctahedronToolBox {
 
   constructor() {
@@ -21,10 +14,7 @@ class OctahedronToolBox {
     this._centerValue = -1;
   }
 
-  /**
-   * @param {number} q - quantization bits (2..30)
-   * @returns {boolean}
-   */
+  // q: quantization bits, valid range 2..30.
   setQuantizationBits(q) {
     if (q < 2 || q > 30) return false;
     this._quantizationBits = q;
@@ -35,21 +25,14 @@ class OctahedronToolBox {
     return true;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._quantizationBits !== -1;
   }
 
-  /** @returns {number} */
   quantizationBits() { return this._quantizationBits; }
 
-  /**
-   * Canonicalizes edge points so they are in consistent quadrants. Writes the
-   * result into out[0], out[1] (caller-owned reusable 2-element array).
-   * @param {number} s
-   * @param {number} t
-   * @param {number[]|Int32Array} out
-   */
+  // Canonicalizes edge points into consistent quadrants. Writes result into
+  // out[0], out[1] (caller-owned reusable 2-element array).
   canonicalizeOctahedralCoords(s, t, out) {
     if ((s === 0 && t === 0) || (s === 0 && t === this._maxValue) ||
         (s === this._maxValue && t === 0)) {
@@ -68,20 +51,14 @@ class OctahedronToolBox {
     out[1] = t;
   }
 
-  /**
-   * Converts an integer vector to quantized octahedral coordinates.
-   * Precondition: abs sum of intVec must equal centerValue.
-   * @param {Int32Array|Array} intVec - [x, y, z]
-   * @param {Int32Array|Array} out - output [s, t] or writes to out[0], out[1]
-   */
+  // Precondition: abs sum of intVec ([x,y,z]) must equal centerValue.
+  // Writes result to out[0], out[1].
   integerVectorToQuantizedOctahedralCoords(intVec, out) {
     let s, t;
     if (intVec[0] >= 0) {
-      // Right hemisphere.
       s = intVec[1] + this._centerValue;
       t = intVec[2] + this._centerValue;
     } else {
-      // Left hemisphere.
       if (intVec[1] < 0) {
         s = Math.abs(intVec[2]);
       } else {
@@ -96,10 +73,7 @@ class OctahedronToolBox {
     this.canonicalizeOctahedralCoords(s, t, out);
   }
 
-  /**
-   * Normalizes intVec so its abs sum equals centerValue.
-   * @param {Int32Array|Array} vec - [x, y, z], modified in place
-   */
+  // Normalizes vec ([x,y,z], modified in place) so its abs sum equals centerValue.
   canonicalizeIntegerVector(vec) {
     const absSum = Math.abs(vec[0]) + Math.abs(vec[1]) + Math.abs(vec[2]);
     if (absSum === 0) {
@@ -116,12 +90,6 @@ class OctahedronToolBox {
     }
   }
 
-  /**
-   * Converts quantized octahedral coordinates to a unit vector.
-   * @param {number} inS
-   * @param {number} inT
-   * @param {Float32Array|Array} outVector - [x, y, z]
-   */
   quantizedOctahedralCoordsToUnitVector(inS, inT, outVector) {
     // float32 throughout (Math.fround) to stay bit-identical to the WASM
     // decoder, matching the live copy in AttributeOctahedronTransform.js.
@@ -133,9 +101,6 @@ class OctahedronToolBox {
     );
   }
 
-  /**
-   * @private
-   */
   _octahedralCoordsToUnitVector(inSScaled, inTScaled, outVector) {
     // float32 throughout (see quantizedOctahedralCoordsToUnitVector) so normals
     // are bit-identical to WASM.

@@ -1,13 +1,10 @@
 // metadata/MetadataDecoder.js - ported from metadata/metadata_decoder.h/cc
-//
-// The decoder does not surface metadata on the output geometry, so this only
-// parses the metadata structure far enough to consume the exact bytes it
-// occupies, keeping the rest of the bitstream aligned. (A full port that builds
-// Metadata objects lives in the git history if the content is ever needed.)
+// Metadata is never surfaced, so this only parses far enough to consume the exact
+// bytes it occupies, keeping the bitstream aligned. (Full port lives in git history.)
 
 import { decodeVarint } from '../core/VarintDecoding.js';
 
-// Limit metadata nesting depth to avoid stack overflow.
+// Nesting-depth cap to avoid stack overflow.
 const kMaxSubmetadataLevel = 1000;
 
 class MetadataDecoder {
@@ -16,8 +13,7 @@ class MetadataDecoder {
     this.buffer_ = null;
   }
 
-  // Skips the geometry metadata (per-attribute metadata followed by the
-  // geometry-level metadata) in the buffer. Returns true on success.
+  // Skips per-attribute metadata followed by the geometry-level metadata.
   skipGeometryMetadata(inBuffer) {
     this.buffer_ = inBuffer;
 
@@ -27,7 +23,7 @@ class MetadataDecoder {
     }
 
     for (let i = 0; i < numAttMetadata; ++i) {
-      // Attribute unique id, then the attribute's metadata block.
+      // Attribute unique id, then its metadata block.
       if (decodeVarint(this.buffer_) === undefined) {
         return false;
       }
@@ -39,10 +35,8 @@ class MetadataDecoder {
     return this._skipMetadata(0);
   }
 
-  // Reads (and discards) one metadata block: its key-value entries and any
-  // nested sub-metadata. Mirrors the byte layout decoded by the C++
-  // MetadataDecoder. Sub-blocks are read depth-first in stream order, matching
-  // the reference's stack-based traversal.
+  // Discards one metadata block (key-value entries plus nested sub-metadata).
+  // Sub-blocks read depth-first in stream order, matching the C++ stack traversal.
   _skipMetadata(level) {
     if (level > kMaxSubmetadataLevel) {
       return false;
@@ -63,11 +57,10 @@ class MetadataDecoder {
       return false;
     }
     if (numSubMetadata > this.buffer_.remainingSize) {
-      // The decoded number of metadata items is unreasonably high.
       return false;
     }
     for (let i = 0; i < numSubMetadata; ++i) {
-      // Sub-metadata name, then the sub-metadata block.
+      // Sub-metadata name, then its block.
       if (!this._skipName()) {
         return false;
       }
@@ -79,7 +72,7 @@ class MetadataDecoder {
     return true;
   }
 
-  // Skips a single key-value entry: name followed by a length-prefixed value.
+  // Skips a key-value entry: name then a length-prefixed value.
   _skipEntry() {
     if (!this._skipName()) {
       return false;

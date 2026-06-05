@@ -7,32 +7,25 @@ import { DataType, dataTypeLength } from '../../core/DracoTypes.js';
 import { decodeVarint } from '../../core/VarintDecoding.js';
 import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
-// Base class for decoding one or more attributes that were encoded with a
-// matching AttributesEncoder. It is a basic implementation of
-// AttributesDecoderInterface that provides functionality that is shared between
-// all AttributesDecoders.
+// Base class for AttributesDecoders; shared functionality for all of them.
 class AttributesDecoder extends AttributesDecoderInterface {
 
   constructor() {
     super();
-    // List of attribute ids that need to be decoded with this decoder.
     this._pointAttributeIds = [];
-    // Map between point attribute id and the local id (inverse of _pointAttributeIds).
+    // Inverse of _pointAttributeIds: point attribute id -> local id.
     this._pointAttributeToLocalIdMap = [];
     this._pointCloudDecoder = null;
     this._pointCloud = null;
   }
 
-  // Called after all attribute decoders are created.
   init(decoder, pointCloud) {
     this._pointCloudDecoder = decoder;
     this._pointCloud = pointCloud;
     return true;
   }
 
-  // Decodes any attribute decoder specific data from the buffer.
   decodeAttributesDecoderData(buffer) {
-    // Decode and create attributes.
     let numAttributes;
 
     if (this._pointCloudDecoder.bitstreamVersion() <
@@ -44,21 +37,18 @@ class AttributesDecoder extends AttributesDecoderInterface {
       if (numAttributes === undefined) return false;
     }
 
-    // Check that decoded number of attributes is valid.
     if (numAttributes === 0) {
       return false;
     }
     if (numAttributes > 5 * buffer.remainingSize) {
-      // The decoded number of attributes is unreasonably high.
+      // Unreasonably high; reject.
       return false;
     }
 
-    // Decode attribute descriptor data.
     this._pointAttributeIds.length = numAttributes;
     const pc = this._pointCloud;
 
     for (let i = 0; i < numAttributes; i++) {
-      // Decode attribute descriptor data.
       const attType = buffer.decodeUint8();
       if (attType === undefined) return false;
 
@@ -78,12 +68,10 @@ class AttributesDecoder extends AttributesDecoderInterface {
         return false;
       }
 
-      // Check decoded attribute descriptor data.
       if (numComponents === 0) {
         return false;
       }
 
-      // Create a GeometryAttribute and init it.
       const ga = new GeometryAttribute();
       ga.init(
         attType, null, numComponents, dataType,
@@ -103,13 +91,11 @@ class AttributesDecoder extends AttributesDecoderInterface {
         ga.uniqueId = uniqueId;
       }
 
-      // Add the attribute to the point cloud.
       const pa = new PointAttribute(ga);
       const attId = pc.addAttribute(pa);
       pc.attribute(attId).uniqueId = uniqueId;
       this._pointAttributeIds[i] = attId;
 
-      // Update the inverse map.
       if (attId >= this._pointAttributeToLocalIdMap.length) {
         const oldLen = this._pointAttributeToLocalIdMap.length;
         this._pointAttributeToLocalIdMap.length = attId + 1;
@@ -134,7 +120,6 @@ class AttributesDecoder extends AttributesDecoderInterface {
     return this._pointCloudDecoder;
   }
 
-  // Decodes attribute data from the source buffer.
   decodeAttributes(buffer) {
     if (!this.decodePortableAttributes(buffer)) {
       return false;
@@ -155,7 +140,7 @@ class AttributesDecoder extends AttributesDecoderInterface {
     return this._pointAttributeToLocalIdMap[pointAttributeId];
   }
 
-  // Must be overridden.
+  // Must be overridden by derived classes.
   decodePortableAttributes(buffer) {
     return false;
   }

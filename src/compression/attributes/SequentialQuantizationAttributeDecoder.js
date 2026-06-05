@@ -19,7 +19,7 @@ class SequentialQuantizationAttributeDecoder extends SequentialIntegerAttributeD
       return false;
     }
     const attribute = decoder.pointCloud().attribute(attributeId);
-    // Currently we can quantize only floating point arguments.
+    // Only floating point attributes can be quantized.
     if (attribute.dataType !== DataType.FLOAT32) {
       return false;
     }
@@ -36,33 +36,29 @@ class SequentialQuantizationAttributeDecoder extends SequentialIntegerAttributeD
 
   decodeDataNeededByPortableTransform(pointIds, buffer) {
     if (this.decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 0)) {
-      // Decode quantization data here only for files with bitstream version 2.0+
       if (!this._decodeQuantizedDataInfo()) {
         return false;
       }
     }
 
-    // Store the decoded transform data in portable attribute.
     return this._quantizationTransform.transferToAttribute(this.portableAttribute);
   }
 
-  // Override: instead of generic integer store, dequantize the values.
+  // Override: dequantize the values instead of a generic integer store.
   _storeValues(numPoints) {
     return this._dequantizeValues(numPoints);
   }
 
   _decodeQuantizedDataInfo() {
-    // Get attribute used as source for decoding.
     let att = this.getPortableAttribute();
     if (att === null) {
-      // This should happen only in the backward compatibility mode.
+      // Null only in backward-compatibility mode; fall back to the raw attribute.
       att = this.attribute;
     }
     return this._quantizationTransform.decodeParameters(att, this.decoder.buffer());
   }
 
   _dequantizeValues(numValues) {
-    // Convert all quantized values back to floats.
     return this._quantizationTransform.inverseTransformAttribute(
       this.getPortableAttribute(), this.attribute
     );

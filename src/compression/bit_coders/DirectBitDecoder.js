@@ -1,6 +1,6 @@
 // compression/bit_coders/DirectBitDecoder.js - ported from compression/bit_coders/direct_bit_decoder.h/cc
 
-// Simple bit reader: reads a stream of bits packed into 32-bit words.
+// Reads a stream of bits packed into 32-bit words.
 export class DirectBitDecoder {
 
   constructor() {
@@ -9,15 +9,13 @@ export class DirectBitDecoder {
     this.numUsedBits_ = 0;
   }
 
-  // Sets |sourceBuffer| as the buffer to decode bits from.
   startDecoding(sourceBuffer) {
     this.clear();
     const sizeInBytes = sourceBuffer.decodeUint32();
     if (sizeInBytes === undefined) {
       return false;
     }
-    // Check that sizeInBytes is > 0 and a multiple of 4 as the encoder always
-    // encodes 32-bit elements.
+    // Must be > 0 and a multiple of 4: the encoder always writes 32-bit elements.
     if (sizeInBytes === 0 || (sizeInBytes & 0x3) !== 0) {
       return false;
     }
@@ -34,7 +32,6 @@ export class DirectBitDecoder {
     return true;
   }
 
-  // Decode one bit. Returns true if the bit is a 1, otherwise false.
   decodeNextBit() {
     const selector = 1 << (31 - this.numUsedBits_);
     if (this.pos_ >= this.bits_.length) {
@@ -49,7 +46,7 @@ export class DirectBitDecoder {
     return bit;
   }
 
-  // Decode the next |nbits| and return the sequence. |nbits| must be > 0 and <= 32.
+  // nbits must be > 0 and <= 32.
   decodeLeastSignificantBits32(nbits) {
     const remaining = 32 - this.numUsedBits_;
     if (nbits <= remaining) {

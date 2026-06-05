@@ -8,18 +8,11 @@ import { RAnsBitDecoder } from '../../bit_coders/RAnsBitDecoder.js';
 const GEOMETRY_ATTRIBUTE_POSITION = 0;
 
 /**
- * Decoder for predictions of UV coordinates using mesh geometry.
- * This predictor is not portable and is used for backwards compatibility only.
- * See MeshPredictionSchemeTexCoordsPortableDecoder for the portable version.
+ * Decoder for UV coordinate predictions using mesh geometry. Not portable;
+ * kept for backwards compatibility. See MeshPredictionSchemeTexCoordsPortableDecoder.
  */
 class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   * @param {number} version - bitstream version
-   */
   constructor(attribute, transform, meshData, version) {
     super(attribute, transform, meshData);
     this._posAttribute = null;
@@ -30,35 +23,24 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     this._version = version;
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_TEX_COORDS_DEPRECATED;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     if (this._posAttribute === null) return false;
     if (!this._meshData.isInitialized()) return false;
     return true;
   }
 
-  /** @returns {number} */
   getNumParentAttributes() {
     return 1;
   }
 
-  /**
-   * @param {number} i
-   * @returns {number}
-   */
   getParentAttributeType(i) {
     return GEOMETRY_ATTRIBUTE_POSITION;
   }
 
-  /**
-   * @param {object} att - PointAttribute
-   * @returns {boolean}
-   */
   setParentAttribute(att) {
     if (att === null) return false;
     if (att.attributeType !== GEOMETRY_ATTRIBUTE_POSITION) return false;
@@ -67,11 +49,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     return true;
   }
 
-  /**
-   * Decodes prediction data including orientation flags.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodePredictionData(buffer) {
     let numOrientations = 0;
     if (buffer.bitstreamVersion < 0x0202) {
@@ -98,14 +75,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     return super.decodePredictionData(buffer);
   }
 
-  /**
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     if (numComponents !== 2) return false;
     this._numComponents = numComponents;
@@ -126,9 +95,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     return true;
   }
 
-  /**
-   * @private
-   */
   _getPositionForEntryId(entryId) {
     const pointId = this._entryToPointIdMap[entryId];
     const pos = new Float32Array(3);
@@ -138,17 +104,11 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
     return pos;
   }
 
-  /**
-   * @private
-   */
   _getTexCoordForEntryId(entryId, data) {
     const dataOffset = entryId * this._numComponents;
     return [data[dataOffset], data[dataOffset + 1]];
   }
 
-  /**
-   * @private
-   */
   _computePredictedValue(cornerId, data, dataId) {
     const table = this._meshData.cornerTable;
     const nextCornerId = table.next(cornerId);
@@ -181,7 +141,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
       const nextPos = this._getPositionForEntryId(nextDataId);
       const prevPos = this._getPositionForEntryId(prevDataId);
 
-      // Compute vectors pn = prev - next, cn = tip - next.
       const pn = [
         prevPos[0] - nextPos[0],
         prevPos[1] - nextPos[1],
@@ -227,7 +186,6 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
         predictedV = pnvs - pnut;
       }
 
-      // Round the predicted value for integer types.
       const u = Math.floor(predictedU + 0.5);
       if (isNaN(u) || u > 0x7FFFFFFF || u < -0x80000000) {
         this._predictedValue[0] = -0x80000000;
@@ -244,7 +202,7 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
       return true;
     }
 
-    // Fallback: delta coding when both corners are not available.
+    // Fallback to delta coding when a neighbor corner is unavailable.
     let dataOffset = 0;
     if (prevDataId < dataId) {
       dataOffset = prevDataId * this._numComponents;

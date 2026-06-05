@@ -5,8 +5,7 @@ const kInvalidCornerIndex = -1;
 const kInvalidFaceIndex = -1;
 const kInvalidVertexIndex = -1;
 
-// Basic traverser that traverses a mesh in a DFS like fashion using the
-// CornerTable data structure.
+// DFS traversal of a mesh over the CornerTable.
 class DepthFirstTraverser {
 
   constructor() {
@@ -65,8 +64,7 @@ class DepthFirstTraverser {
     let stackSize = 0;
     stack[stackSize++] = cornerId;
 
-    // For the first face, check the remaining corners as they may not be
-    // processed yet.
+    // For the first face the other two corners may not be processed yet.
     const nextCorner = (cornerId % 3) === 2 ? cornerId - 2 : cornerId + 1;
     const prevCorner = (cornerId % 3) === 0 ? cornerId + 2 : cornerId - 1;
     const nextVert = cornerToVertex[nextCorner];
@@ -83,12 +81,10 @@ class DepthFirstTraverser {
       observer.onNewVertexVisited(prevVert, prevCorner);
     }
 
-    // Start the actual traversal.
     while (stackSize > 0) {
       cornerId = stack[stackSize - 1];
       let faceId = (cornerId / 3) | 0;
 
-      // Make sure the face hasn't been visited yet.
       if (cornerId === kInvalidCornerIndex || isFaceVisited[faceId]) {
         stackSize--;
         continue;
@@ -113,7 +109,7 @@ class DepthFirstTraverser {
           isVertexVisited[vertId] = true;
           observer.onNewVertexVisited(vertId, cornerId);
           if (!onBoundary) {
-            // Get right corner: oppositeCorners[next(cornerId)]
+            // Move to the right corner: opposite(next(cornerId)).
             const nextCornerId = (cornerId % 3) === 2 ? cornerId - 2 : cornerId + 1;
             cornerId = oppositeCorners[nextCornerId];
             faceId = (cornerId / 3) | 0;
@@ -140,21 +136,19 @@ class DepthFirstTraverser {
 
         if (isRightVisited) {
           if (isLeftVisited) {
-            // Both neighboring faces are visited. End reached.
+            // Both neighbors visited: this branch ends.
             stackSize--;
             break;
           } else {
-            // Go to the left face.
             cornerId = leftCornerId;
             faceId = leftFaceId;
           }
         } else {
           if (isLeftVisited) {
-            // Left face visited, go to the right one.
             cornerId = rightCornerId;
             faceId = rightFaceId;
           } else {
-            // Both neighboring faces are unvisited, split the traversal.
+            // Both neighbors unvisited: continue left, push right to resume later.
             stack[stackSize - 1] = leftCornerId;
             stack[stackSize++] = rightCornerId;
             break;

@@ -1,9 +1,7 @@
 // compression/bit_coders/FoldedIntegerBitDecoder.js - ported from compression/bit_coders/folded_integer_bit_decoder.h
 
-// See FoldedBit32Encoder for more details.
-// This is a template class parameterized by a BitDecoder type.
-// Usage: new FoldedBit32Decoder(BitDecoderClass)
-// where BitDecoderClass is a constructor for DirectBitDecoder, RAnsBitDecoder, etc.
+// C++ template parameterized by BitDecoder type; pass the class as a constructor
+// arg, e.g. new FoldedBit32Decoder(DirectBitDecoder).
 export class FoldedBit32Decoder {
 
   constructor(BitDecoderClass) {
@@ -15,7 +13,6 @@ export class FoldedBit32Decoder {
     this.bitDecoder_ = new BitDecoderClass();
   }
 
-  // Sets |sourceBuffer| as the buffer to decode bits from.
   startDecoding(sourceBuffer) {
     for (let i = 0; i < 32; i++) {
       if (!this.foldedNumberDecoders_[i].startDecoding(sourceBuffer)) {
@@ -25,12 +22,11 @@ export class FoldedBit32Decoder {
     return this.bitDecoder_.startDecoding(sourceBuffer);
   }
 
-  // Decode one bit. Returns true if the bit is a 1, otherwise false.
   decodeNextBit() {
     return this.bitDecoder_.decodeNextBit();
   }
 
-  // Decode the next |nbits| and return the sequence. |nbits| must be > 0 and <= 32.
+  // nbits must be > 0 and <= 32.
   decodeLeastSignificantBits32(nbits) {
     let result = 0;
     for (let i = 0; i < nbits; ++i) {

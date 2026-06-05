@@ -17,22 +17,17 @@ import { MeshTraversalSequencer } from './traverser/MeshTraversalSequencer.js';
 import { MeshAttributeIndicesEncodingObserver } from './traverser/MeshAttributeIndicesEncodingObserver.js';
 import { MeshAttributeCornerTable } from '../../mesh/MeshAttributeCornerTable.js';
 
-// Invalid index constant (used for corners and vertices).
 const kInvalidCornerIndex = -1;
 const kInvalidVertexIndex = -1;
 
-// Reads a count that is encoded as a varint in bitstream >= 2.0 and as a raw
-// little-endian uint32 below it. Returns the value, or undefined on a short
-// read. Used by the many version-gated header reads below.
+// varint in bitstream >= 2.0, raw little-endian uint32 below it; undefined on short read.
 function decodeVarintOrUint32(buffer, bitstreamVersion) {
   return bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)
     ? buffer.decodeUint32()
     : decodeVarint(buffer);
 }
 
-// Implementation of the edgebreaker decoder that decodes data encoded with the
-// MeshEdgebreakerEncoderImpl class. The implementation is based on the
-// algorithm presented in Isenburg et al'02 "Spirale Reversi: Reverse
+// Edgebreaker decoder; based on Isenburg et al'02 "Spirale Reversi: Reverse
 // decoding of the Edgebreaker encoding".
 class MeshEdgebreakerDecoderImpl {
 
@@ -48,8 +43,8 @@ class MeshEdgebreakerDecoderImpl {
     this._numEncodedVertices = 0;
     this._posEncodingData = new MeshAttributeIndicesEncodingData();
     this._posDataDecoderId = -1;
-    // Per-decode cache of vertex-traversal results, keyed by corner table, so
-    // multiple vertex-mapped attributes that share connectivity traverse once.
+    // Cache of vertex-traversal results keyed by corner table, so attributes
+    // sharing connectivity traverse once.
     this._vertexTraversalCache = new Map();
     this._attributeData = [];
     this._traversalDecoder = new TraversalDecoderClass();
@@ -139,7 +134,6 @@ class MeshEdgebreakerDecoderImpl {
     let sequencer = null;
 
     if (decoderType === MeshAttributeElementType.MESH_VERTEX_ATTRIBUTE) {
-      // Per-vertex attribute decoder.
       let encodingData = null;
       if (attDataId < 0) {
         encodingData = this._posEncodingData;
@@ -148,7 +142,6 @@ class MeshEdgebreakerDecoderImpl {
         this._attributeData[attDataId].isConnectivityUsed = false;
       }
 
-      // Create vertex traversal sequencer using the main corner table.
       sequencer = this._createVertexTraversalSequencer(
         encodingData, this._cornerTable, mesh, traversalMethod);
     } else {
@@ -193,8 +186,7 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   decodeConnectivity() {
-    // Bitstreams < 2.2 prefix a new-vertex count here; it is read only to
-    // advance the cursor (the value is unused by this decoder).
+    // Bitstreams < 2.2 prefix an unused new-vertex count here; read only to advance the cursor.
     if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
       const numNewVerts = decodeVarintOrUint32(
         this._decoder.buffer(), this._decoder.bitstreamVersion());
@@ -214,17 +206,16 @@ class MeshEdgebreakerDecoderImpl {
       return false; // Draco cannot handle this many faces.
     }
     if (this._numEncodedVertices > numFaces * 3) {
-      return false; // There cannot be more vertices than 3 * numFaces.
+      return false;
     }
 
-    // Minimum number of edges of the mesh assuming each edge is shared between
-    // two faces.
+    // Min edges assuming each is shared by two faces vs max edges between the
+    // vertices; if max < min a manifold mesh is impossible.
     const minNumFaceEdges = Math.floor(3 * numFaces / 2);
-    // Maximum number of edges that can exist between numEncodedVertices.
     const maxNumVertexEdges = this._numEncodedVertices *
       (this._numEncodedVertices - 1) / 2;
     if (maxNumVertexEdges < minNumFaceEdges) {
-      return false; // Impossible to construct a manifold mesh.
+      return false;
     }
 
     const numAttributeData = this._decoder.buffer().decodeUint8();
@@ -249,7 +240,6 @@ class MeshEdgebreakerDecoderImpl {
     if (numEncodedSplitSymbols > numEncodedSymbols) {
       return false; // Split symbols are a sub-set of all symbols.
     }
-    // Decode topology (connectivity).
     this._cornerTable = new CornerTable();
     this._vertexTraversalCache = new Map();
     this._topologySplitData = [];
@@ -270,9 +260,8 @@ class MeshEdgebreakerDecoderImpl {
       return false;
     }
 
-    // Start with all vertices marked as holes (boundaries). Uint8Array (1=hole)
-    // keeps the per-vertex reads/writes in _decodeConnectivity and
-    // _assignPointsToCorners monomorphic. The vertex count never exceeds this
+    // All vertices start as holes (boundaries). Uint8Array (1=hole) keeps the
+    // per-vertex reads/writes monomorphic; vertex count never exceeds this
     // length (enforced via maxNumVertices), so fixed-size storage is safe.
     this._isVertHole = new Uint8Array(
       this._numEncodedVertices + numEncodedSplitSymbols).fill(1);
@@ -305,7 +294,7 @@ class MeshEdgebreakerDecoderImpl {
     }
 
     this._traversalDecoder.init(this);
-    // Add one extra vertex for each split symbol.
+    // One extra vertex per split symbol.
     this._traversalDecoder.setNumEncodedVertices(
       this._numEncodedVertices + numEncodedSplitSymbols);
     this._traversalDecoder.setNumAttributeData(numAttributeData);
@@ -320,7 +309,6 @@ class MeshEdgebreakerDecoderImpl {
       return false;
     }
 
-    // Set the main buffer to the end of the traversal.
     this._decoder.buffer().init(
       traversalEndBuffer.dataHead,
       traversalEndBuffer.remainingSize,
@@ -332,7 +320,6 @@ class MeshEdgebreakerDecoderImpl {
       this._decoder.buffer().advance(topologySplitDecodedBytes);
     }
 
-    // Decode connectivity of non-position attributes.
     if (this._attributeData.length > 0) {
       if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 1)) {
         for (let ci = 0; ci < this._cornerTable.numCorners(); ci += 3) {
@@ -350,18 +337,16 @@ class MeshEdgebreakerDecoderImpl {
     }
     this._traversalDecoder.done();
 
-    // Decode attribute connectivity.
     let previousConnectivityData = null;
     for (let i = 0; i < this._attributeData.length; ++i) {
       const connectivityData = this._attributeData[i].connectivityData;
       connectivityData.initEmpty(this._cornerTable);
-      // Add all seams (indexed loop — avoids a for..of iterator per seam).
+      // Indexed loop avoids a for..of iterator per seam.
       const seamCorners = this._attributeData[i].attributeSeamCorners;
       const seamCount = this._attributeData[i].numSeamCorners;
       for (let s = 0; s < seamCount; ++s) {
         connectivityData.addSeamEdge(seamCorners[s]);
       }
-      // Recompute vertices from the newly added seam edges.
       if (connectivityData.hasSameSeams(previousConnectivityData)) {
         connectivityData.adoptVertexRecompute(previousConnectivityData);
       } else if (!connectivityData.recomputeVertices(null, null)) {
@@ -389,16 +374,13 @@ class MeshEdgebreakerDecoderImpl {
     return true;
   }
 
-  // --- Private methods ---
-
   _isTopologySplit(encoderSymbolId, outResult) {
     if (this._topologySplitData.length === 0) {
       return false;
     }
     const back = this._topologySplitData[this._topologySplitData.length - 1];
     if (back.sourceSymbolId > encoderSymbolId) {
-      // Something is wrong; the desired source symbol is greater than the
-      // current encoder_symbol_id.
+      // Malformed: source symbol is greater than the current encoder_symbol_id.
       outResult.encoderSplitSymbolId = -1;
       return true;
     }
@@ -407,15 +389,13 @@ class MeshEdgebreakerDecoderImpl {
     }
     outResult.faceEdge = back.sourceEdge;
     outResult.encoderSplitSymbolId = back.splitSymbolId;
-    // Remove the latest split event.
     this._topologySplitData.pop();
     return true;
   }
 
 
   _decodeConnectivity(numSymbols) {
-    // Algorithm does the reverse decoding of the symbols encoded with the
-    // edgebreaker method.
+    // Reverse decoding of the edgebreaker-encoded symbols.
     const activeCornerStack =
       new Int32Array(numSymbols + this._topologySplitData.length + 16);
     let activeCornerStackSize = 0;
@@ -428,15 +408,13 @@ class MeshEdgebreakerDecoderImpl {
 
     // Hoist the two corner-indexed flat arrays. Unlike _vertexCorners (grown by
     // addNewVertex), these are sized once in reset() and never reallocated, so
-    // direct indexed writes are safe here and skip the per-call method dispatch
-    // (mapCornerToVertex / setOppositeCorner) that showed up in profiles. All
-    // corners written below are freshly constructed (>= 0), so no guard needed.
+    // direct indexed writes are safe and skip the per-call method dispatch that
+    // showed up in profiles. All corners written below are fresh (>= 0).
     const cornerToVertex = this._cornerTable._cornerToVertex;
     const oppositeCorners = this._cornerTable._oppositeCorners;
     const numCorners = this._cornerTable.numCorners();
 
-    // Safe, inlinable arrow functions for CornerTable accessors that correctly
-    // handle negative indices and avoid polymorphic method dispatch.
+    // Inlinable accessors that handle negative indices and avoid polymorphic dispatch.
     const next = (c) => c < 0 ? -1 : ((c % 3 === 2) ? c - 2 : c + 1);
     const prev = (c) => c < 0 ? -1 : ((c % 3 === 0) ? c + 2 : c - 1);
     const vertex = (c) => (c < 0 || c >= numCorners) ? -1 : cornerToVertex[c];
@@ -454,15 +432,13 @@ class MeshEdgebreakerDecoderImpl {
       return o < 0 ? -1 : prev(o);
     };
 
-    // Hot loop: the CornerTable accessors are inlined directly as flat-array
-    // reads + corner-triple arithmetic rather than calling the next/prev/vertex/
-    // opposite/leftMostCorner helpers above. _decodeConnectivity is far larger
-    // than V8's inlining budget, so those helpers stayed real (monomorphic)
-    // calls and cost ~15% of total decode in profiles. All corners reached here
-    // during a well-formed stream are valid (>= 0, < numCorners) and the flat
-    // arrays are -1-initialized, so the helpers' negative/bounds guards are not
-    // needed -- except the swing-left boundary terminator, kept below. The
-    // helpers remain defined for the (cold) post-loop cleanup code.
+    // Hot loop: accessors are inlined as flat-array reads + corner-triple
+    // arithmetic rather than calling the helpers above. _decodeConnectivity
+    // exceeds V8's inlining budget, so those helpers stayed real monomorphic
+    // calls costing ~15% of decode in profiles. All corners reached here in a
+    // well-formed stream are valid (>= 0, < numCorners) and the flat arrays are
+    // -1-initialized, so the helpers' guards are unneeded -- except the swing-
+    // left boundary terminator below. Helpers remain for the cold post-loop code.
     const vc = this._cornerTable; // _vertexCorners is re-read (addNewVertex may realloc).
     for (let symbolId = 0; symbolId < numSymbols; ++symbolId) {
       const faceIndex = numFacesDecoded++;
@@ -502,8 +478,7 @@ class MeshEdgebreakerDecoderImpl {
         cornerToVertex[corner + 1] = vertBNext;
         cornerToVertex[corner + 2] = vertAPrev;
         vc._vertexCorners[vertAPrev] = corner + 2;
-        // Mark the vertex x as interior.
-        this._isVertHole[vertexX] = 0;
+        this._isVertHole[vertexX] = 0; // mark vertex x interior
         activeCornerStack[activeCornerStackSize - 1] = corner;
 
       } else if (symbol === TOPOLOGY_R || symbol === TOPOLOGY_L) {
@@ -547,15 +522,13 @@ class MeshEdgebreakerDecoderImpl {
         checkTopologySplit = true;
 
       } else if (symbol === TOPOLOGY_S) {
-        // Create a new face that merges two last active edges from the active
-        // stack.
+        // Merge the two last active edges from the active stack into a new face.
         if (activeCornerStackSize === 0) return -1;
 
         const cornerB = activeCornerStack[activeCornerStackSize - 1];
         activeCornerStackSize--;
 
-        // Corner "a" can correspond to a normal active edge, or to an edge
-        // created from the topology split event.
+        // Corner "a" may be a normal active edge or one from a topology split event.
         const splitCorner = topologySplitActiveCorners.get(symbolId);
         if (splitCorner !== undefined) {
           activeCornerStack[activeCornerStackSize++] = splitCorner;
@@ -589,11 +562,11 @@ class MeshEdgebreakerDecoderImpl {
         let cornerN = cornerB % 3 === 2 ? cornerB - 2 : cornerB + 1; // next(cornerB)
         const vertexN = cornerToVertex[cornerN];
         this._traversalDecoder.mergeVertices(vertexP, vertexN);
-        // Update the left most corner on the newly merged vertex.
+        // Update the left-most corner on the newly merged vertex.
         vc._vertexCorners[vertexP] = vc._vertexCorners[vertexN]; // leftMostCorner(vertexN)
 
-        // Update vertex id at corner "n" and all corners connected to it
-        // in the CCW direction. swingLeft(c) = next(opposite(next(c))).
+        // Update vertex id at corner "n" and all corners CCW from it.
+        // swingLeft(c) = next(opposite(next(c))).
         const firstCorner = cornerN;
         while (cornerN !== kInvalidCornerIndex) {
           cornerToVertex[cornerN] = vertexP;
@@ -601,12 +574,10 @@ class MeshEdgebreakerDecoderImpl {
           const so = oppositeCorners[sn];                           // opposite(sn)
           cornerN = so < 0 ? -1 : (so % 3 === 2 ? so - 2 : so + 1); // next(so) or boundary
           if (cornerN === firstCorner) {
-            // We reached the start again which should not happen for split
-            // symbols.
-            return -1;
+            return -1; // back at start: should not happen for split symbols
           }
         }
-        // Make the old vertex n isolated.
+        // Isolate the old vertex n.
         vc._vertexCorners[vertexN] = -1;
         if (removeInvalidVertices) {
           invalidVertices.push(vertexN);
@@ -616,7 +587,7 @@ class MeshEdgebreakerDecoderImpl {
       } else if (symbol === TOPOLOGY_E) {
         const corner = 3 * faceIndex;
         const firstVertIndex = this._cornerTable.addNewVertex();
-        // Create three new vertices at the corners of the new face.
+        // Three new vertices at the corners of the new face.
         this._cornerTable.addNewVertex();
         this._cornerTable.addNewVertex();
 
@@ -629,21 +600,17 @@ class MeshEdgebreakerDecoderImpl {
         vc._vertexCorners[firstVertIndex] = corner;
         vc._vertexCorners[firstVertIndex + 1] = corner + 1;
         vc._vertexCorners[firstVertIndex + 2] = corner + 2;
-        // Add the tip corner to the active stack.
-        activeCornerStack[activeCornerStackSize++] = corner;
+        activeCornerStack[activeCornerStackSize++] = corner; // push the tip corner
         checkTopologySplit = true;
 
       } else {
-        // Unknown symbol.
-        return -1;
+        return -1; // unknown symbol
       }
 
-      // Inform the traversal decoder that a new corner has been reached.
       this._traversalDecoder.newActiveCornerReached(
         activeCornerStack[activeCornerStackSize - 1]);
 
       if (checkTopologySplit) {
-        // Check for topology splits.
         const encoderSymbolId = numSymbols - symbolId - 1;
         const splitResult = { faceEdge: 0, encoderSplitSymbolId: 0 };
         while (this._isTopologySplit(encoderSymbolId, splitResult)) {
@@ -658,7 +625,7 @@ class MeshEdgebreakerDecoderImpl {
             // prev(actTopCorner)
             newActiveCorner = actTopCorner % 3 === 0 ? actTopCorner + 2 : actTopCorner - 1;
           }
-          // Convert the encoder split symbol id to decoder symbol id.
+          // Encoder split symbol id -> decoder symbol id.
           const decoderSplitSymbolId =
             numSymbols - splitResult.encoderSplitSymbolId - 1;
           topologySplitActiveCorners.set(decoderSplitSymbolId, newActiveCorner);
@@ -714,7 +681,7 @@ class MeshEdgebreakerDecoderImpl {
         cornerToVertex[newCorner + 1] = vertP;
         cornerToVertex[newCorner + 2] = vertN;
 
-        // Mark all three vertices as interior.
+        // Mark all three vertices interior.
         this._isVertHole[vertX] = 0;
         this._isVertHole[vertP] = 0;
         this._isVertHole[vertN] = 0;
@@ -738,16 +705,14 @@ class MeshEdgebreakerDecoderImpl {
     // Must iterate forward (not reverse) to match C++ iteration order.
     for (let ivIdx = 0; ivIdx < invalidVertices.length; ++ivIdx) {
       const invalidVert = invalidVertices[ivIdx];
-      // Find the last valid vertex.
       let srcVert = numVertices - 1;
       while (leftMostCorner(srcVert) === kInvalidCornerIndex) {
         srcVert = --numVertices - 1;
       }
       if (srcVert < invalidVert) continue;
 
-      // Remap all corners mapped to srcVert to invalidVert.
-      // Use VertexCornersIterator logic: swing left first, then swing right
-      // on boundary to cover all corners around the vertex.
+      // Remap all corners of srcVert to invalidVert. VertexCornersIterator
+      // logic: swing left first, then swing right on boundary.
       const startCid = leftMostCorner(srcVert);
       let cid = startCid;
       let leftTraversal = true;
@@ -756,16 +721,14 @@ class MeshEdgebreakerDecoderImpl {
           return -1;
         }
         cornerToVertex[cid] = invalidVert;
-        // Advance to the next corner around the vertex.
         if (leftTraversal) {
           const nextC = swingLeft(cid);
           if (nextC === kInvalidCornerIndex) {
-            // Open boundary reached, switch to right traversal from start.
+            // Open boundary reached; switch to right traversal from start.
             leftTraversal = false;
             cid = swingRight(startCid);
           } else if (nextC === startCid) {
-            // Closed fan, we're done.
-            break;
+            break; // closed fan
           } else {
             cid = nextC;
           }
@@ -805,7 +768,7 @@ class MeshEdgebreakerDecoderImpl {
           this._topologySplitData.push(eventData);
         }
       } else {
-        // Decode source and split symbol ids using delta and varint coding.
+        // Source and split symbol ids use delta + varint coding.
         let lastSourceSymbolId = 0;
         for (let i = 0; i < numTopologySplits; ++i) {
           const eventData = new TopologySplitEventData();
@@ -819,7 +782,7 @@ class MeshEdgebreakerDecoderImpl {
           lastSourceSymbolId = eventData.sourceSymbolId;
           this._topologySplitData.push(eventData);
         }
-        // Split edges are decoded from a direct bit decoder.
+        // Split edges come from a direct bit decoder.
         decoderBuffer.startBitDecoding(false);
         for (let i = 0; i < numTopologySplits; ++i) {
           let edgeData;
@@ -893,9 +856,8 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   _decodeAttributeConnectivitiesOnFace(corner) {
-    // corner is the first corner of a face (a multiple of 3), so its three
-    // corners are corner, corner+1, corner+2. Iterate them without allocating a
-    // [corner, next, prev] array, reading opposites from the flat array.
+    // Iterate the face's three corners without allocating a [corner, next, prev]
+    // array; read opposites from the flat array.
     const ct = this._cornerTable;
     const oppositeCorners = ct.oppositeCornerArray();
     const attributeData = this._attributeData;
@@ -903,8 +865,7 @@ class MeshEdgebreakerDecoderImpl {
     const srcFaceId = (corner / 3) | 0;
     const faceBase = srcFaceId * 3;
 
-    // Visit the face's corners in the order [corner, next(corner),
-    // previous(corner)] to match the encoder's edge order exactly.
+    // Order [corner, next, previous] to match the encoder's edge order.
     const rem = corner - faceBase;
     const nextCorner = rem === 2 ? corner - 2 : corner + 1;
     const prevCorner = rem === 0 ? corner + 2 : corner - 1;
@@ -981,15 +942,13 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   _assignPointsToCorners(numConnectivityVerts) {
-    // Map between the existing and deduplicated point ids.
     this._decoder.mesh().setNumFaces(this._cornerTable.numFaces());
 
     const mesh = this._decoder.mesh();
     const ct = this._cornerTable;
 
     if (this._attributeData.length === 0) {
-      // We have connectivity for position only. In this case all vertex indices
-      // are equal to point indices.
+      // Position-only connectivity: vertex indices equal point indices.
       const numFaces = mesh.numFaces();
       const faces = mesh.faces_;
       const baseCornerToVertex = ct.cornerToVertexArray();
@@ -1003,9 +962,8 @@ class MeshEdgebreakerDecoderImpl {
       return true;
     }
 
-    // Else we need to deduplicate multiple attributes. pointToCornerMap is only
-    // ever used for its length (the running point id), so track that as a
-    // counter instead of growing an array.
+    // Multiple attributes: deduplicate. pointToCornerMap is only used for its
+    // length (the running point id), so track it as a counter, not an array.
     const attributeData = this._attributeData;
     const numAttrData = attributeData.length;
     let numPoints = 0;
@@ -1013,9 +971,8 @@ class MeshEdgebreakerDecoderImpl {
 
     const numVertices = ct.numVertices();
     // Flat connectivity for the inlined swingRight ring walk and per-attribute
-    // vertex / seam lookups — avoids method dispatch on the (polymorphic) corner
-    // tables for every corner of every vertex ring. swingRight(x) here is the
-    // base table's: previous(baseOpp[previous(x)]).
+    // lookups — avoids dispatch on the polymorphic corner tables for every
+    // corner of every ring. swingRight(x) = previous(baseOpp[previous(x)]).
     const vertexLeftmost = ct.vertexLeftmostCornerArray();
     const baseOpp = ct.oppositeCornerArray();
     const baseCornerToVertex = ct.cornerToVertexArray();
@@ -1028,7 +985,7 @@ class MeshEdgebreakerDecoderImpl {
     }
     const singleAttC2V = numAttrData === 1 ? attCornerToVertex[0] : null;
 
-    // Precalculate a unified anyAttVertexOnSeam flag for each vertex.
+    // Unified per-vertex anyAttVertexOnSeam flag.
     let anyAttVertexOnSeam;
     if (numAttrData === 1) {
       anyAttVertexOnSeam = attVertexOnSeam[0];
@@ -1046,12 +1003,12 @@ class MeshEdgebreakerDecoderImpl {
 
     for (let v = 0; v < numVertices; ++v) {
       let c = vertexLeftmost[v];
-      if (c === kInvalidCornerIndex) continue; // Isolated vertex.
+      if (c === kInvalidCornerIndex) continue; // isolated vertex
 
       const isSeamVertex = isVertHole[v] || anyAttVertexOnSeam[v];
 
       if (!isSeamVertex) {
-        // Fast path for non-seam vertices: all corners in this ring get the same point ID
+        // Fast path: every corner in this ring gets the same point id.
         const initialC = c;
         const pointId = numPoints++;
         cornerToPointMap[initialC] = pointId;
@@ -1161,7 +1118,6 @@ class MeshEdgebreakerDecoderImpl {
       }
     }
 
-    // Add faces.
     const numFaces = mesh.numFaces();
     const faces = mesh.faces_;
     for (let f = 0; f < numFaces; ++f) {
@@ -1186,17 +1142,16 @@ class MeshAttributeIndicesEncodingData {
   }
 
   init(numVertices) {
-    // Int32Array: written by index only (encoding observer) and read in every
-    // parallelogram/texcoord/normal prediction lookup; values are non-negative
-    // data indices, so keeping it typed keeps those hot reads monomorphic.
+    // Int32Array (non-negative data indices) keeps the hot prediction-lookup
+    // reads monomorphic.
     this._vertexToEncodedAttributeValueIndexMap = new Int32Array(numVertices);
     this._encodedAttributeValueIndexToCornerMap = new Int32Array(numVertices);
     this._numValues = 0;
   }
 
-  // Adopts a traversal result computed for an identical corner table, avoiding a
-  // redundant full mesh traversal. These maps depend only on connectivity (not
-  // on attribute values) and are read-only downstream, so they can be shared.
+  // Adopts a traversal result from an identical corner table, avoiding a
+  // redundant traversal. The maps depend only on connectivity and are read-only
+  // downstream, so sharing is safe.
   adoptTraversalResult(vertexToEncodedMap, encodedToCornerMap, numValues) {
     this._vertexToEncodedAttributeValueIndexMap = vertexToEncodedMap;
     this._encodedAttributeValueIndexToCornerMap = encodedToCornerMap;
@@ -1235,27 +1190,23 @@ class AttributeData {
 
 }
 
-// Minimal CornerTable class for use within the decoder.
-// The full CornerTable would be in the mesh module.
+// Minimal CornerTable for the decoder (the full one lives in the mesh module).
 class CornerTable {
 
   constructor() {
     this._numFaces = 0;
     this._numCorners = 0;
     this._numVertices = 0;
-    // For each corner, the vertex it maps to.
-    this._cornerToVertex = null;
-    // For each corner, the opposite corner.
-    this._oppositeCorners = null;
-    // For each vertex, the left-most corner.
-    this._vertexCorners = null;
+    this._cornerToVertex = null;   // corner -> vertex
+    this._oppositeCorners = null;  // corner -> opposite corner
+    this._vertexCorners = null;    // vertex -> left-most corner
   }
 
   reset(numFaces, numVertices) {
     this._numFaces = numFaces;
     this._numCorners = numFaces * 3;
-    // C++ uses reserve() which allocates capacity but keeps size at 0.
-    // Vertices are added incrementally via addNewVertex().
+    // C++ reserve() allocates capacity but keeps size 0; vertices are added
+    // incrementally via addNewVertex().
     this._numVertices = 0;
     this._cornerToVertex = new Int32Array(this._numCorners).fill(-1);
     this._oppositeCorners = new Int32Array(this._numCorners).fill(-1);
@@ -1275,7 +1226,6 @@ class CornerTable {
     return this._numVertices;
   }
 
-  // Corner traversal.
   next(corner) {
     if (corner < 0) return -1;
     const rem = corner - ((corner / 3) | 0) * 3;
@@ -1288,20 +1238,17 @@ class CornerTable {
     return rem === 0 ? corner + 2 : corner - 1;
   }
 
-  // Get the vertex at a corner.
   vertex(corner) {
     if (corner < 0 || corner >= this._numCorners) return -1;
     return this._cornerToVertex[corner];
   }
 
-  // Get the opposite corner.
   opposite(corner) {
     if (corner < 0 || corner >= this._numCorners) return -1;
     return this._oppositeCorners[corner];
   }
 
-  // --- Flat-array accessors used by DepthFirstTraverser to avoid polymorphic
-  // per-corner method dispatch in the traversal hot loop. ---
+  // Flat-array accessors; let callers avoid polymorphic per-corner dispatch.
   cornerToVertexArray() {
     return this._cornerToVertex;
   }
@@ -1312,13 +1259,11 @@ class CornerTable {
     return this._vertexCorners;
   }
 
-  // Add a new vertex. Mirrors C++ CornerTable::AddNewVertex() which does
-  // vertex_corners_.push_back(kInvalidCornerIndex).
+  // Mirrors C++ CornerTable::AddNewVertex() (push_back(kInvalidCornerIndex)).
   addNewVertex() {
     const newVertex = this._numVertices;
     this._numVertices++;
-    // The array was pre-allocated with capacity in reset().
-    // Extend only if we exceed that capacity.
+    // Array pre-allocated in reset(); extend only when capacity is exceeded.
     if (newVertex >= this._vertexCorners.length) {
       const newArr = new Int32Array(this._vertexCorners.length + 64);
       newArr.fill(-1);
@@ -1329,8 +1274,7 @@ class CornerTable {
     return newVertex;
   }
 
-  // Swing left: go to the next corner around a vertex in the CCW direction.
-  // SwingLeft(c) = Next(Opposite(Next(c)))
+  // Next corner around a vertex, CCW. SwingLeft(c) = Next(Opposite(Next(c))).
   swingLeft(corner) {
     const nextCorner = this.next(corner);
     const oppCorner = this.opposite(nextCorner);
@@ -1338,8 +1282,7 @@ class CornerTable {
     return this.next(oppCorner);
   }
 
-  // Swing right: go to the next corner around a vertex in the CW direction.
-  // SwingRight(c) = Previous(Opposite(Previous(c)))
+  // Next corner around a vertex, CW. SwingRight(c) = Previous(Opposite(Previous(c))).
   swingRight(corner) {
     const prevCorner = this.previous(corner);
     const oppCorner = this.opposite(prevCorner);

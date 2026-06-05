@@ -11,16 +11,11 @@ const OPTIMAL_MULTI_PARALLELOGRAM = 0;
 const MAX_NUM_PARALLELOGRAMS = 4;
 
 /**
- * Decoder for predictions encoded with the constrained multi-parallelogram
- * encoder. Uses crease edge flags to determine which parallelograms to use.
+ * Decoder for the constrained multi-parallelogram encoder. Crease edge flags
+ * determine which parallelograms to use.
  */
 class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredictionSchemeDecoder {
 
-  /**
-   * @param {object} attribute - PointAttribute
-   * @param {object} transform - A decoding transform instance
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(attribute, transform, meshData) {
     super(attribute, transform, meshData);
     this._selectedMode = OPTIMAL_MULTI_PARALLELOGRAM;
@@ -31,30 +26,22 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
     }
   }
 
-  /** @returns {number} */
   getPredictionMethod() {
     return PredictionSchemeMethod.MESH_PREDICTION_CONSTRAINED_MULTI_PARALLELOGRAM;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._meshData.isInitialized();
   }
 
-  /**
-   * Decodes prediction data including crease edge flags.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodePredictionData(buffer) {
     if (buffer.bitstreamVersion < 0x0202) {
-      // Decode prediction mode.
       const mode = buffer.decodeUint8();
       if (mode === undefined) return false;
       if (mode !== OPTIMAL_MULTI_PARALLELOGRAM) return false;
     }
 
-    // Decode crease edge flags using rANS bit coder for each context.
+    // Decode crease edge flags via rANS bit coder, one context per parallelogram count.
     for (let i = 0; i < MAX_NUM_PARALLELOGRAMS; ++i) {
       const numFlags = buffer.decodeVarintUint32();
       if (numFlags === undefined) return false;
@@ -69,18 +56,9 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
         decoder.endDecoding();
       }
     }
-    // Call base class to decode transform data.
     return super.decodePredictionData(buffer);
   }
 
-  /**
-   * @param {Int32Array} inCorr
-   * @param {Int32Array} outData
-   * @param {number} size
-   * @param {number} numComponents
-   * @param {Array|null} entryToPointIdMap
-   * @returns {boolean}
-   */
   computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
     this._transform.init(numComponents);
 
@@ -90,7 +68,6 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
       predVals.push(new Int32Array(numComponents));
     }
 
-    // First value.
     this._transform.computeOriginalValue(
       predVals[0], 0, inCorr, 0, outData, 0
     );
@@ -100,10 +77,7 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
     const oppositeCorners = table.oppositeCornerArray();
     const cornerToVertex = table.cornerToVertexArray();
 
-    // Position in each isCreaseEdge context.
     const isCreaseEdgePos = new Int32Array(MAX_NUM_PARALLELOGRAMS);
-
-    // Multi-prediction accumulator.
     const multiPredVals = new Int32Array(numComponents);
 
     const cornerMapSize = this._meshData.dataToCornerMap.length;
@@ -134,7 +108,7 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
         }
       }
 
-      // Check which parallelograms are used via crease edge flags.
+      // Crease edge flags select which parallelograms contribute.
       let numUsedParallelograms = 0;
       if (numParallelograms > 0) {
         for (let i = 0; i < numComponents; ++i) {

@@ -29,8 +29,7 @@ class CornerTable {
 
   }
 
-  // Initializes the CornerTable from an array of faces.
-  // Each face is an array of 3 vertex indices.
+  // faces: array of [v0, v1, v2] vertex-index triples.
   init(faces) {
 
     this.corner_to_vertex_map_ = new Array(faces.length * 3);
@@ -62,7 +61,6 @@ class CornerTable {
 
   }
 
-  // Resets the corner table to the given number of invalid faces.
   reset(numFaces, numVertices) {
 
     if (numVertices === undefined) {
@@ -116,8 +114,7 @@ class CornerTable {
       return kInvalidCornerIndex;
     }
 
-    // Equivalent to: localIndex = (corner % 3); return localIndex === 2 ? corner - 2 : corner + 1
-    // Branchless mod-3 avoidance using the fact that corners are grouped in triples.
+    // rem = corner % 3 via int-divide; corners are grouped in triples.
     const rem = corner - (corner / 3 | 0) * 3;
     return rem === 2 ? corner - 2 : corner + 1;
 
@@ -183,7 +180,6 @@ class CornerTable {
 
   }
 
-  // Returns the left-most corner of a single vertex 1-ring.
   leftMostCorner(v) {
 
     return this.vertex_corners_[v];
@@ -196,33 +192,27 @@ class CornerTable {
 
   }
 
-  // Returns the corner on the right adjacent face that maps to the same vertex.
+  // Inlines previous(opposite(previous(corner))) to avoid per-corner dispatch.
   swingRight(corner) {
 
     if (corner === kInvalidCornerIndex) return kInvalidCornerIndex;
-    // Inline: previous(corner)
     let rem = corner - ((corner / 3) | 0) * 3;
     let prev = rem === 0 ? corner + 2 : corner - 1;
-    // Inline: opposite(prev)
     const opp = this.opposite_corners_[prev];
     if (opp === kInvalidCornerIndex) return kInvalidCornerIndex;
-    // Inline: previous(opp)
     rem = opp - ((opp / 3) | 0) * 3;
     return rem === 0 ? opp + 2 : opp - 1;
 
   }
 
-  // Returns the corner on the left face that maps to the same vertex.
+  // Inlines next(opposite(next(corner))) to avoid per-corner dispatch.
   swingLeft(corner) {
 
     if (corner === kInvalidCornerIndex) return kInvalidCornerIndex;
-    // Inline: next(corner)
     let rem = corner - ((corner / 3) | 0) * 3;
     let nxt = rem === 2 ? corner - 2 : corner + 1;
-    // Inline: opposite(nxt)
     const opp = this.opposite_corners_[nxt];
     if (opp === kInvalidCornerIndex) return kInvalidCornerIndex;
-    // Inline: next(opp)
     rem = opp - ((opp / 3) | 0) * 3;
     return rem === 2 ? opp - 2 : opp + 1;
 
@@ -248,7 +238,6 @@ class CornerTable {
 
   }
 
-  // Sets the opposite corner mapping between two corners.
   setOppositeCorner(cornerId, oppCornerId) {
 
     this.opposite_corners_[cornerId] = oppCornerId;
@@ -298,13 +287,11 @@ class CornerTable {
 
     }
 
-    // Storage for half-edges on each vertex.
     const vertexEdges = new Array(nc);
     for (let i = 0; i < nc; ++i) {
       vertexEdges[i] = { sinkVert: kInvalidVertexIndex, edgeCorner: kInvalidCornerIndex };
     }
 
-    // Compute offsets for each vertex.
     const vertexOffset = new Array(numCornersOnVertices.length);
     let offset = 0;
     for (let i = 0; i < numCornersOnVertices.length; ++i) {
@@ -314,7 +301,6 @@ class CornerTable {
 
     }
 
-    // Process all half-edges.
     for (let c = 0; c < nc; ++c) {
 
       const tipV = this.vertex(c);
@@ -324,12 +310,11 @@ class CornerTable {
       const faceIndex = this.face(c);
       if (c === this.firstCorner(faceIndex)) {
 
-        // Check for degenerated face.
         const v0 = this.vertex(c);
         if (v0 === sourceV || v0 === sinkV || sourceV === sinkV) {
 
           ++this.num_degenerated_faces_;
-          c += 2; // Skip remaining corners of this face.
+          c += 2; // skip the other two corners of this degenerate face
           continue;
 
         }
@@ -355,7 +340,7 @@ class CornerTable {
 
           oppositeC = vertexEdges[offset].edgeCorner;
 
-          // Remove the half-edge from sink vertex by shifting.
+          // Remove the matched half-edge by shifting the rest down.
           for (let j = i + 1; j < numCornersOnVert; ++j, ++offset) {
 
             vertexEdges[offset] = vertexEdges[offset + 1];
@@ -423,7 +408,6 @@ class CornerTable {
 
         sinkVertices.length = 0;
 
-        // Swing left to find the left-most corner.
         let firstC = c;
         let currentC = c;
         let nextC;
@@ -441,7 +425,6 @@ class CornerTable {
 
         firstC = currentC;
 
-        // Swing right from the first corner and check uniqueness.
         let breakOuter = false;
         do {
 
@@ -491,7 +474,6 @@ class CornerTable {
 
           }
 
-          // Insert new sink vertex info.
           const prevV = this.corner_to_vertex_map_[this.previous(currentC)];
           sinkVertices.push([prevV, sinkC]);
 
@@ -547,7 +529,6 @@ class CornerTable {
 
         visitedVertices[v] = 1;
 
-        // Swing left to mark all corners.
         let actC = c;
         while (actC !== kInvalidCornerIndex) {
 
@@ -566,7 +547,7 @@ class CornerTable {
 
         if (actC === kInvalidCornerIndex) {
 
-          // Open boundary: swing right from the initial corner.
+          // Hit an open boundary; finish the ring by swinging the other way.
           actC = this.swingRight(c);
           while (actC !== kInvalidCornerIndex) {
 
@@ -585,7 +566,6 @@ class CornerTable {
 
     }
 
-    // Count isolated vertices.
     this.num_isolated_vertices_ = 0;
     for (let i = 0; i < visitedVertices.length; ++i) {
 
@@ -599,7 +579,6 @@ class CornerTable {
 
   }
 
-  // Helper to grow a Uint8Array while preserving existing data.
   _growUint8Array(arr, newSize) {
 
     if (newSize <= arr.length) return arr;

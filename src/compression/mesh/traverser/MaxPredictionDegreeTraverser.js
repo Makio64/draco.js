@@ -61,7 +61,6 @@ class MaxPredictionDegreeTraverser {
   }
 
   onTraversalStart() {
-    // prediction_degree_.resize(num_vertices, 0)
     this._predictionDegree = new Int32Array(this._cornerTable.numVertices());
   }
 
@@ -117,13 +116,10 @@ class MaxPredictionDegreeTraverser {
     const isVertexVisited = this._isVertexVisited;
     const observer = this._observer;
 
-    // Traversal starts from |cornerId|; it follows the right or left
-    // neighboring faces based on their prediction degree.
     this._traversalStacks[0].push(cornerId);
     this._bestPriority = 0;
 
-    // For the first face, check the remaining corners as they may not be
-    // processed yet.
+    // For the first face the other two corners may not be processed yet.
     const firstNext = this._next(cornerId);
     const firstPrev = this._previous(cornerId);
     const nextVert = cornerToVertex[firstNext];
@@ -142,10 +138,8 @@ class MaxPredictionDegreeTraverser {
       observer.onNewVertexVisited(tipVertex, cornerId);
     }
 
-    // Start the actual traversal.
     while ((cornerId = this._popNextCornerToTraverse()) !== kInvalidCornerIndex) {
       let faceId = (cornerId / 3) | 0;
-      // Make sure the face hasn't been visited yet.
       if (isFaceVisited[faceId]) {
         continue;
       }
@@ -155,15 +149,13 @@ class MaxPredictionDegreeTraverser {
         isFaceVisited[faceId] = 1;
         this._numVisitedFaces++;
 
-        // If the newly reached vertex hasn't been visited, mark and notify.
         const vertId = cornerToVertex[cornerId];
         if (!isVertexVisited[vertId]) {
           isVertexVisited[vertId] = 1;
           observer.onNewVertexVisited(vertId, cornerId);
         }
 
-        // GetRightCorner = opposite(next(corner)); GetLeftCorner =
-        // opposite(previous(corner)).
+        // right = opposite(next(corner)); left = opposite(previous(corner)).
         const rightCornerId = oppositeCorners[this._next(cornerId)];
         const leftCornerId = oppositeCorners[this._previous(cornerId)];
         const rightFaceId = rightCornerId === kInvalidCornerIndex
@@ -176,11 +168,10 @@ class MaxPredictionDegreeTraverser {
           isFaceVisited[leftFaceId] !== 0;
 
         if (!isLeftFaceVisited) {
-          // We can go to the left face.
           const priority = this._computePriority(leftCornerId);
           if (isRightFaceVisited && priority <= this._bestPriority) {
-            // Right face already visited and priority is best — the left face
-            // is traversed next, no need to push it onto the stack.
+            // Best priority and nothing else pending: traverse left without
+            // a stack round-trip.
             cornerId = leftCornerId;
             continue;
           } else {
@@ -188,10 +179,9 @@ class MaxPredictionDegreeTraverser {
           }
         }
         if (!isRightFaceVisited) {
-          // Go to the right face.
           const priority = this._computePriority(rightCornerId);
           if (priority <= this._bestPriority) {
-            // The right face is traversed next — no need to push it.
+            // Best priority: traverse right without a stack round-trip.
             cornerId = rightCornerId;
             continue;
           } else {

@@ -3,17 +3,12 @@
 import { RAnsSymbolDecoder } from './RAnsSymbolDecoder.js';
 import { SymbolCodingMethod } from '../config/CompressionShared.js';
 
-// Decodes an array of symbols that was previously encoded with an entropy code.
-// Returns false on error.
-// |numValues| - number of values to decode
-// |numComponents| - number of components (used for tagged coding)
-// |srcBuffer| - DecoderBuffer to read from
-// |outValues| - Uint32Array to write decoded symbols into
+// Decodes numValues entropy-coded symbols into outValues (Uint32Array).
+// numComponents is used for tagged coding. Returns false on error.
 export function decodeSymbols(numValues, numComponents, srcBuffer, outValues) {
   if (numValues === 0) {
     return true;
   }
-  // Decode which scheme to use.
   const scheme = srcBuffer.decodeUint8();
   if (scheme === undefined) {
     return false;
@@ -27,7 +22,6 @@ export function decodeSymbols(numValues, numComponents, srcBuffer, outValues) {
 }
 
 function decodeTaggedSymbols(numValues, numComponents, srcBuffer, outValues) {
-  // Decode the encoded data using a tag decoder with 5 precision bits.
   const tagDecoder = new RAnsSymbolDecoder(5);
   if (!tagDecoder.create(srcBuffer)) {
     return false;
@@ -38,25 +32,18 @@ function decodeTaggedSymbols(numValues, numComponents, srcBuffer, outValues) {
   }
 
   if (numValues > 0 && tagDecoder.numSymbols === 0) {
-    return false; // Wrong number of symbols.
+    return false;
   }
 
-  // srcBuffer now points behind the encoded tag data (to the place where the
-  // values are encoded).
   srcBuffer.startBitDecoding(false);
-  // Hoist the bit decoder out of the hot loop. After startBitDecoding(false)
-  // the buffer is guaranteed to be in bit mode, so decodeLeastSignificantBits32
-  // would always delegate straight to this._bitDecoder.getBits — call getBits
-  // directly to remove a layer of method dispatch per component.
+  // After startBitDecoding(false) the buffer is in bit mode, so getBits can be
+  // called directly, skipping decodeLeastSignificantBits32's per-component dispatch.
   const bd = srcBuffer._bitDecoder;
-  // Hoist the rANS decoder for the tag; tagDecoder.decodeSymbol() is exactly
-  // a delegation to this.ans_.ransRead().
+  // tagDecoder.decodeSymbol() is just a delegation to ans_.ransRead(); hoist it.
   const tagAns = tagDecoder.ans_;
   let valueId = 0;
   for (let i = 0; i < numValues; i += numComponents) {
-    // Decode the tag.
     const bitLength = tagAns.ransRead();
-    // Decode the actual value.
     for (let j = 0; j < numComponents; ++j) {
       const val = bd.getBits(bitLength);
       if (val === undefined) {
@@ -77,7 +64,7 @@ function decodeRawSymbolsInternal(uniqueSymbolsBitLength, numValues, srcBuffer, 
   }
 
   if (numValues > 0 && decoder.numSymbols === 0) {
-    return false; // Wrong number of symbols.
+    return false;
   }
 
   if (!decoder.startDecoding(srcBuffer)) {

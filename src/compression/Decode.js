@@ -14,17 +14,15 @@ import { MeshSequentialDecoder } from './mesh/MeshSequentialDecoder.js';
 import { MeshEdgebreakerDecoder } from './mesh/MeshEdgebreakerDecoder.js';
 import { PointCloudDecoder } from './point_cloud/PointCloudDecoder.js';
 
-// Reads the Draco header from a read-only copy of inBuffer (without advancing
-// the original), so the geometry type can be checked before picking a decoder.
-// Reuses PointCloudDecoder.decodeHeader and adapts its Status to a plain object.
+// Reads the Draco header from a copy of inBuffer without advancing the original,
+// so the geometry type can be checked before picking a decoder.
 // Returns { ok, header, message }.
 function peekHeader(inBuffer) {
 
   const tempBuffer = new DecoderBuffer();
   tempBuffer.init(inBuffer.data, inBuffer.data.length);
   tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-  // Restore position to match the original buffer's current position.
-  tempBuffer.advance(inBuffer.decodedSize);
+  tempBuffer.advance(inBuffer.decodedSize); // match the original's position
 
   const header = new DracoHeader();
   const status = PointCloudDecoder.decodeHeader(tempBuffer, header);
@@ -32,7 +30,6 @@ function peekHeader(inBuffer) {
 
 }
 
-// Creates a mesh decoder based on the encoding method.
 function createMeshDecoder(method) {
 
   if (method === MeshEncoderMethod.MESH_SEQUENTIAL_ENCODING) {
@@ -49,8 +46,7 @@ function createMeshDecoder(method) {
 
 }
 
-// Class responsible for decoding meshes and point clouds that were
-// compressed by a Draco encoder.
+// Decodes Draco-compressed meshes and point clouds.
 class Decoder {
 
   constructor() {
@@ -59,9 +55,7 @@ class Decoder {
 
   }
 
-  // Returns the geometry type encoded in the input buffer.
-  // The return value is one of EncodedGeometryType values:
-  // POINT_CLOUD, TRIANGULAR_MESH, or INVALID_GEOMETRY_TYPE on error.
+  // Returns an EncodedGeometryType value, or INVALID_GEOMETRY_TYPE on error.
   static getEncodedGeometryType(inBuffer) {
 
     const result = peekHeader(inBuffer);
@@ -77,8 +71,7 @@ class Decoder {
 
   }
 
-  // Decodes point cloud from the provided buffer. If the input contains a
-  // mesh, the returned instance will be a Mesh (which extends PointCloud).
+  // If the input is a mesh, pointCloud is a Mesh (which extends PointCloud).
   // Returns { pointCloud, ok, message }.
   decodePointCloudFromBuffer(inBuffer) {
 
@@ -110,7 +103,6 @@ class Decoder {
 
   }
 
-  // Decodes a triangular mesh from the provided buffer.
   // Returns { mesh, ok, message }.
   decodeMeshFromBuffer(inBuffer) {
 
@@ -124,17 +116,14 @@ class Decoder {
 
   }
 
-  // Point-cloud geometry decoding is not implemented (only triangle meshes are
-  // supported). The point-cloud-specific decoders are intentionally absent; the
-  // shared PointCloudDecoder base only backs the mesh decoders.
-  // Returns { ok, message }.
+  // Point-cloud decoding is intentionally unimplemented: only triangle meshes
+  // are supported, and PointCloudDecoder exists only as the mesh decoders' base.
   decodeBufferToPointCloud() {
 
     return { ok: false, message: 'Point cloud decoding is not supported.' };
 
   }
 
-  // Decodes the buffer into a provided Mesh geometry.
   // Returns { ok, message }.
   decodeBufferToMesh(inBuffer, outGeometry) {
 
@@ -152,7 +141,6 @@ class Decoder {
 
   }
 
-  // Returns the options instance used by the decoder.
   options() {
 
     return this.options_;

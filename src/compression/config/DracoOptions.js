@@ -1,22 +1,13 @@
 // compression/config/DracoOptions.js - ported from compression/config/draco_options.h
 
-// Base option class used to control encoding and decoding. The geometry coding
-// can be controlled through the following options:
-//   1. Global options - Options specific to overall geometry or options common
-//                       for all attributes
-//   2. Per attribute options - Options specific to a given attribute.
-//                              Each attribute is identified by a key (e.g.
-//                              attribute type or attribute id).
+// Base option class with global options and per-attribute options keyed by
+// attribute key (e.g. attribute type or id).
 export class DracoOptions {
 
   constructor() {
-    // Global options stored as a Map of string -> value
-    this._globalOptions = new Map();
-    // Per-attribute options stored as a Map of attributeKey -> Map(string -> value)
-    this._attributeOptions = new Map();
+    this._globalOptions = new Map(); // name -> value
+    this._attributeOptions = new Map(); // attributeKey -> Map(name -> value)
   }
-
-  // --- Global option accessors ---
 
   getGlobalBool(name, defaultVal) {
     if (this._globalOptions.has(name)) {
@@ -24,8 +15,6 @@ export class DracoOptions {
     }
     return defaultVal;
   }
-
-  // --- Attribute-specific option accessors ---
 
   findAttributeOptions(attKey) {
     if (this._attributeOptions.has(attKey)) {

@@ -20,7 +20,6 @@ class MeshTraversalSequencer {
     this._traverser = traverser;
   }
 
-  // Called by SequentialAttributeDecodersController.
   generateSequence(/* outPointIds */) {
     // A traversal's output (point order + encoding maps) depends only on the
     // corner table's connectivity AND the traversal method, not on the
@@ -105,7 +104,6 @@ class MeshTraversalSequencer {
   }
 
   _generateSequenceInternal() {
-    // Preallocate.
     this._numOutPoints = 0;
     this._outPointIds = new Int32Array(this._mesh.numPoints());
 

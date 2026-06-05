@@ -11,21 +11,10 @@ import { MeshPredictionSchemeTexCoordsPortableDecoder } from './MeshPredictionSc
 import { MeshPredictionSchemeGeometricNormalDecoder } from './MeshPredictionSchemeGeometricNormalDecoder.js';
 import { MeshPredictionSchemeData } from './MeshPredictionSchemeData.js';
 
-/**
- * Creates a mesh prediction scheme decoder based on the prediction method.
- *
- * @param {number} method - PredictionSchemeMethod enum value
- * @param {object} attribute - PointAttribute
- * @param {object} transform - A decoding transform instance
- * @param {object} meshData - MeshPredictionSchemeData instance
- * @param {number} bitstreamVersion
- * @param {number} transformType - PredictionSchemeTransformType
- * @returns {object|null} Prediction scheme decoder or null
- */
 function createMeshPredictionSchemeDecoder(method, attribute, transform,
   meshData, bitstreamVersion, transformType) {
 
-  // For normal octahedron transforms, only geometric normal is supported.
+  // Normal octahedron transforms only support geometric normal prediction.
   if (transformType === PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON_CANONICALIZED ||
       transformType === PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON) {
     if (method === PredictionSchemeMethod.MESH_PREDICTION_GEOMETRIC_NORMAL) {
@@ -36,7 +25,7 @@ function createMeshPredictionSchemeDecoder(method, attribute, transform,
     return null;
   }
 
-  // For wrap and delta transforms, any mesh prediction scheme is valid.
+  // Wrap and delta transforms accept any mesh prediction scheme.
   switch (method) {
     case PredictionSchemeMethod.MESH_PREDICTION_PARALLELOGRAM:
       return new MeshPredictionSchemeParallelogramDecoder(
@@ -74,16 +63,9 @@ function createMeshPredictionSchemeDecoder(method, attribute, transform,
 }
 
 /**
- * Creates a prediction scheme for a given decoder and given prediction method.
- * If the method specifies a mesh-based prediction and mesh data is available,
- * the appropriate mesh prediction scheme is created. Otherwise, a delta
- * decoder is returned as fallback.
- *
- * @param {number} method - PredictionSchemeMethod
- * @param {number} attId - attribute id
- * @param {object} decoder - PointCloudDecoder or MeshDecoder
- * @param {object} transform - A decoding transform instance
- * @returns {object|null} Prediction scheme decoder or null
+ * Creates a prediction scheme for a decoder and method. If the method is
+ * mesh-based and mesh data is available, builds the matching mesh scheme;
+ * otherwise falls back to a delta decoder.
  */
 function createPredictionSchemeForDecoder(method, attId, decoder, transform) {
   if (method === PredictionSchemeMethod.PREDICTION_NONE) {
@@ -126,7 +108,6 @@ function createPredictionSchemeForDecoder(method, attId, decoder, transform) {
     }
   }
 
-  // Fallback: delta decoder.
   return new PredictionSchemeDeltaDecoder(att, transform);
 }
 

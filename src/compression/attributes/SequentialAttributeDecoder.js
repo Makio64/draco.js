@@ -10,7 +10,7 @@ class SequentialAttributeDecoder {
     this._decoder = null;
     this._attribute = null;
     this._attributeId = -1;
-    // Storage for decoded portable attribute (after lossless decoding).
+    // Decoded portable attribute (after lossless decoding).
     this._portableAttribute = null;
   }
 
@@ -21,7 +21,6 @@ class SequentialAttributeDecoder {
     return true;
   }
 
-  // Performs lossless decoding of the portable attribute data.
   decodePortableAttribute(pointIds, buffer) {
     if (this._attribute.numComponents <= 0) {
       return false;
@@ -32,22 +31,19 @@ class SequentialAttributeDecoder {
     return this.decodeValues(pointIds, buffer);
   }
 
-  // Decodes any data needed to revert portable transform of the decoded attribute.
+  // No-op by default; subclasses with a transform override this.
   decodeDataNeededByPortableTransform(pointIds, buffer) {
-    // Default implementation does not apply any transform.
     return true;
   }
 
-  // Reverts transformation performed by encoder.
+  // No-op by default; subclasses with a transform override this.
   transformAttributeToOriginalFormat(pointIds) {
-    // Default implementation does not apply any transform.
     return true;
   }
 
   getPortableAttribute() {
-    // If needed, copy point to attribute value index mapping from the final
-    // attribute to the portable attribute. Both maps are Uint32Array (the
-    // source is explicit here), so copy in one shot instead of per-entry
+    // Copy point->value index mapping from the final attribute to the portable
+    // one. Both maps are Uint32Array, so copy in one shot instead of per-entry
     // mappedIndex()/setPointMapEntry() calls.
     if (!this._attribute.isMappingIdentity && this._portableAttribute &&
         this._portableAttribute.isMappingIdentity) {
@@ -76,7 +72,6 @@ class SequentialAttributeDecoder {
     return this._decoder;
   }
 
-  // Should be used to initialize newly created prediction scheme.
   initPredictionScheme(ps) {
     for (let i = 0; i < ps.getNumParentAttributes(); i++) {
       const attId = this._decoder.pointCloud().getNamedAttributeId(
@@ -99,12 +94,11 @@ class SequentialAttributeDecoder {
     return true;
   }
 
-  // The actual implementation of the attribute decoding.
+  // Decodes raw attribute values in their original format.
   decodeValues(pointIds, buffer) {
     const numValues = pointIds.length;
     const entrySize = this._attribute.byteStride;
     let outBytePos = 0;
-    // Decode raw attribute values in their original format.
     for (let i = 0; i < numValues; i++) {
       const valueData = buffer.decodeBytes(entrySize);
       if (valueData === undefined) {

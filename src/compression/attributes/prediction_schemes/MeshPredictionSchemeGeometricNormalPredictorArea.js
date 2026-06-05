@@ -13,47 +13,32 @@ const UPPER_BOUND = 1 << 29;
  */
 class MeshPredictionSchemeGeometricNormalPredictorArea {
 
-  /**
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(meshData) {
     this._posAttribute = null;
     this._entryToPointIdMap = null;
     this._meshData = meshData;
     this._normalPredictionMode = NormalPredictionMode.TRIANGLE_AREA;
     this._tempPos = new Array(3);
-    // Flat Int32 position cache indexed by data id (built once per decode).
-    // The predictor reads the position of a corner's vertex O(valence) times
-    // per ring; caching turns O(corners*valence) convertValue calls into one
-    // per data entry.
+    // Flat Int32 position cache indexed by data id; turns O(corners*valence)
+    // convertValue calls (the ring is read once per vertex corner) into one per
+    // data entry.
     this._posCache = null;
     this._cornerToVertex = null;
     this._oppositeCorners = null;
   }
 
-  /**
-   * @param {object} positionAttribute - PointAttribute for positions
-   */
   setPositionAttribute(positionAttribute) {
     this._posAttribute = positionAttribute;
   }
 
-  /**
-   * @param {Array} map
-   */
   setEntryToPointIdMap(map) {
     this._entryToPointIdMap = map;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._posAttribute !== null && this._entryToPointIdMap !== null;
   }
 
-  /**
-   * @param {number} mode
-   * @returns {boolean}
-   */
   setNormalPredictionMode(mode) {
     if (mode === NormalPredictionMode.ONE_TRIANGLE ||
         mode === NormalPredictionMode.TRIANGLE_AREA) {
@@ -63,12 +48,6 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     return false;
   }
 
-  /**
-   * Precomputes the integer position of every data entry once, so the hot
-   * per-corner ring traversal reads from a flat Int32Array instead of going
-   * through mappedIndex + convertValue on every fetch.
-   * @param {number} numEntries
-   */
   buildPositionCache(numEntries) {
     this._posCache = buildInt32PositionCache(
       this._posAttribute, this._entryToPointIdMap, numEntries, this._tempPos);
@@ -77,11 +56,7 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._oppositeCorners = table.oppositeCornerArray();
   }
 
-  /**
-   * Computes predicted normal for a given corner.
-   * @param {number} cornerId
-   * @param {Int32Array} prediction - output [x, y, z]
-   */
+  /** Computes predicted normal for a corner; writes [x, y, z] into prediction. */
   computePredictedValue(cornerId, prediction) {
     const cornerToVertex = this._cornerToVertex;
     const oppositeCorners = this._oppositeCorners;
@@ -95,9 +70,7 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
 
     let normalX = 0, normalY = 0, normalZ = 0;
 
-    // Iterate over vertex corners.
     if (this._normalPredictionMode === NormalPredictionMode.ONE_TRIANGLE) {
-      // Only use the single triangle at cornerId.
       const rem = cornerId - ((cornerId / 3) | 0) * 3;
       const cNext = rem === 2 ? cornerId - 2 : cornerId + 1;
       const cPrev = rem === 0 ? cornerId + 2 : cornerId - 1;
@@ -117,18 +90,15 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       const dPrevY = prevY - centY;
       const dPrevZ = prevZ - centZ;
 
-      // Cross product.
       normalX = dNextY * dPrevZ - dNextZ * dPrevY;
       normalY = dNextZ * dPrevX - dNextX * dPrevZ;
       normalZ = dNextX * dPrevY - dNextY * dPrevX;
     } else {
-      // TRIANGLE_AREA: iterate over all corners around the vertex exactly like
-      // C++ VertexCornersIterator(corner_table, corner_id): swing LEFT from the
-      // start corner until a boundary or a full loop, then (only if an open
-      // boundary was reached) swing RIGHT from the start corner to cover the
-      // other side. Only swinging right (as before) silently dropped every
-      // triangle to the left of the start corner for boundary vertices, which
-      // corrupted the predicted normal on any mesh with open edges.
+      // TRIANGLE_AREA: iterate every corner around the vertex exactly like C++
+      // VertexCornersIterator: swing LEFT until a boundary or full loop, then
+      // (only if an open boundary was hit) swing RIGHT to cover the other side.
+      // Swinging right only would drop every triangle left of the start corner
+      // for boundary vertices, corrupting the normal on meshes with open edges.
       let currentCorner = cornerId;
       let leftTraversal = true;
 
@@ -152,7 +122,6 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
         const dPrevY = prevY - centY;
         const dPrevZ = prevZ - centZ;
 
-        // Cross product.
         normalX += dNextY * dPrevZ - dNextZ * dPrevY;
         normalY += dNextZ * dPrevX - dNextX * dPrevZ;
         normalZ += dNextX * dPrevY - dNextY * dPrevX;
@@ -194,11 +163,9 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       }
     }
 
-    // Convert to int32, making sure entries are not too large. This mirrors the
-    // C++ which does the clamp with int64 INTEGER division: the quotient is
-    // floored and each component is divided with truncation toward zero. A naive
-    // float division diverges whenever UPPER_BOUND < absSum < 2 * UPPER_BOUND,
-    // where the C++ quotient is exactly 1 and the normal is left unchanged.
+    // Clamp to int32 with int64 INTEGER division like C++: quotient floored,
+    // each component truncated toward zero. Naive float division diverges for
+    // UPPER_BOUND < absSum < 2*UPPER_BOUND, where C++ quotient is 1 (no change).
     let absSum;
     if (this._normalPredictionMode === NormalPredictionMode.ONE_TRIANGLE) {
       // C++ casts AbsSum() to int32_t before the comparison in this branch.

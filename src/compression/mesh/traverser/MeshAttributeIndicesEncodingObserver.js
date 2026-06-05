@@ -17,15 +17,11 @@ class MeshAttributeIndicesEncodingObserver {
 
   onNewVertexVisited(vertex, corner) {
     const pointId = this._faces[corner];
-    // Append the visited attribute to the encoding order.
     this._sequencer.addPointId(pointId);
 
-    // Keep track of visited corners.
     const numValues = this._encodingData.numValues;
     this._encodedToCornerMap[numValues] = corner;
-
     this._vertexToEncodedMap[vertex] = numValues;
-
     this._encodingData.numValues++;
   }
 

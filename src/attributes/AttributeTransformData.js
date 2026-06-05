@@ -18,8 +18,7 @@ class AttributeTransformData {
     this._transformType = type;
   }
 
-  // Reads a parameter value at the given byte offset.
-  // |type| is a string: 'int32', 'uint32', 'float32', 'uint8', etc.
+  // |type| is a string tag: 'int32', 'uint32', 'float32', 'uint8', etc.
   getParameterValue(byteOffset, type) {
     const data = this._buffer.data;
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -36,8 +35,6 @@ class AttributeTransformData {
     }
   }
 
-  // Writes a parameter value at the given byte offset.
-  // |type| is a string: 'int32', 'uint32', 'float32', 'uint8', etc.
   setParameterValue(byteOffset, value, type) {
     const sizeNeeded = byteOffset + this._typeSize(type);
     if (sizeNeeded > this._buffer.dataSize) {
@@ -58,7 +55,6 @@ class AttributeTransformData {
     }
   }
 
-  // Appends a parameter value at the end of the buffer.
   appendParameterValue(value, type) {
     this.setParameterValue(this._buffer.dataSize, value, type);
   }

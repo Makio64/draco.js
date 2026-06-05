@@ -10,18 +10,10 @@ import { PredictionSchemeNormalOctahedronTransformBase } from './PredictionSchem
  */
 class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends PredictionSchemeNormalOctahedronTransformBase {
 
-  /**
-   * @returns {number}
-   */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_NORMAL_OCTAHEDRON_CANONICALIZED;
   }
 
-  /**
-   * Decodes the transform data from the buffer.
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
   decodeTransformData(buffer) {
     const maxQuantizedValue = buffer.decodeInt32();
     if (maxQuantizedValue === undefined) return false;
@@ -37,15 +29,6 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends Pre
     return true;
   }
 
-  /**
-   * Computes the original value from predicted and correction values.
-   * @param {Int32Array|TypedArray} predVals
-   * @param {number} predOffset
-   * @param {Int32Array|TypedArray} corrVals
-   * @param {number} corrOffset
-   * @param {Int32Array|TypedArray} outOrigVals
-   * @param {number} outOffset
-   */
   computeOriginalValue(predVals, predOffset, corrVals, corrOffset,
     outOrigVals, outOffset) {
     const toolBox = this._octahedronToolBox;
@@ -95,7 +78,7 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends Pre
     } else if (predS > 0) {
       if (predT >= 0) rotationCount = 2;
       else rotationCount = 1;
-    } else { // predS < 0
+    } else {
       if (predT > 0) rotationCount = 3;
     }
 

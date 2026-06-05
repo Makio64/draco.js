@@ -1,15 +1,13 @@
 // src/compression/attributes/prediction_schemes/PredictionSchemePositionCache.js
 //
-// Shared helper for the mesh predictors that need integer positions in their
-// hot loop. Precomputes the integer position of every data entry once into a
-// flat Int32Array (3 components per entry), so the per-corner prediction loops
-// can do plain array reads instead of per-fetch attribute dispatch.
+// Precomputes the integer position of every data entry into a flat Int32Array
+// (3 components per entry) so the per-corner prediction loops do plain array
+// reads instead of per-fetch attribute dispatch.
 
 import { DataType } from '../../../core/DracoTypes.js';
 
-// Returns an Int32Array of length numEntries*3. att is the position
-// PointAttribute, map is the entry->point-id map, tempPos is a reusable
-// 3-element scratch buffer for the non-INT32 fallback path.
+// Returns an Int32Array of length numEntries*3. tempPos is a reusable 3-element
+// scratch buffer used only on the non-INT32 fallback path.
 function buildInt32PositionCache(att, map, numEntries, tempPos) {
   const cache = new Int32Array(numEntries * 3);
   const bufData = att.buffer && att.buffer.data;

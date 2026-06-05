@@ -7,7 +7,6 @@ import { decodeSymbols } from '../entropy/SymbolDecoding.js';
 import { SequentialAttributeDecodersController } from '../attributes/SequentialAttributeDecodersController.js';
 import { LinearSequencer } from '../attributes/LinearSequencer.js';
 
-// Class for decoding data encoded by MeshSequentialEncoder.
 class MeshSequentialDecoder extends MeshDecoder {
 
   constructor() {
@@ -30,13 +29,11 @@ class MeshSequentialDecoder extends MeshDecoder {
       if (numPoints === undefined) return false;
     }
 
-    // Check that numFaces is a valid value.
     // Compressed sequential encoding can only handle (2^32 - 1) / 3 indices.
     if (numFaces > 0xFFFFFFFF / 3) {
       return false;
     }
     if (numFaces > this.buffer().remainingSize / 3) {
-      // The number of faces is unreasonably high.
       return false;
     }
 
@@ -51,7 +48,6 @@ class MeshSequentialDecoder extends MeshDecoder {
       }
     } else {
       if (numPoints < 256) {
-        // Decode indices as uint8.
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -62,7 +58,6 @@ class MeshSequentialDecoder extends MeshDecoder {
           this.mesh().addFace(face);
         }
       } else if (numPoints < (1 << 16)) {
-        // Decode indices as uint16.
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -74,7 +69,6 @@ class MeshSequentialDecoder extends MeshDecoder {
         }
       } else if (numPoints < (1 << 21) &&
                  this.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 2)) {
-        // Decode indices as varint.
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -85,7 +79,6 @@ class MeshSequentialDecoder extends MeshDecoder {
           this.mesh().addFace(face);
         }
       } else {
-        // Decode faces as uint32 (default).
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -103,9 +96,8 @@ class MeshSequentialDecoder extends MeshDecoder {
   }
 
   createAttributesDecoder(attDecoderId) {
-    // Always create the basic attribute decoder. Sequential meshes store
-    // attribute values directly in point order, so a LinearSequencer drives the
-    // SequentialAttributeDecodersController.
+    // Sequential meshes store attribute values directly in point order, so a
+    // LinearSequencer drives the SequentialAttributeDecodersController.
     return this.setAttributesDecoder(
       attDecoderId,
       new SequentialAttributeDecodersController(
@@ -114,9 +106,7 @@ class MeshSequentialDecoder extends MeshDecoder {
     );
   }
 
-  // Decodes face indices that were compressed with an entropy code.
   _decodeAndDecompressIndices(numFaces) {
-    // Get decoded indices differences that were encoded with an entropy code.
     const indicesBuffer = new Uint32Array(numFaces * 3);
     if (!decodeSymbols(numFaces * 3, 1, this.buffer(), indicesBuffer)) {
       return false;

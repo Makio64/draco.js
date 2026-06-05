@@ -2,7 +2,6 @@
 
 import { PointCloud } from '../point_cloud/PointCloud.js';
 
-// Mesh attribute element types.
 export const MeshAttributeElementType = {
   MESH_VERTEX_ATTRIBUTE: 0,
   MESH_CORNER_ATTRIBUTE: 1,
@@ -14,12 +13,11 @@ class Mesh extends PointCloud {
   constructor() {
 
     super();
-    // Faces stored as a flat Int32Array of point indices (3 per face) for cache
-    // locality and to avoid an allocation per face. faces_[3*f + c] is the c-th
-    // corner's point index of face f; corner index ci maps directly to faces_[ci].
+    // Flat Int32Array, 3 point indices per face, for cache locality and to avoid
+    // a per-face allocation. faces_[3*f + c] is corner c of face f; corner index
+    // ci maps directly to faces_[ci].
     this.faces_ = new Int32Array(0);
     this.numFaces_ = 0;
-    // Per-attribute data tracking element type.
     this.attribute_data_ = [];
 
   }
@@ -60,8 +58,7 @@ class Mesh extends PointCloud {
 
   }
 
-  // Returns a fresh [v0, v1, v2] array (public API). Hot internal loops read
-  // faces_ directly to avoid the allocation.
+  // Allocates a fresh [v0, v1, v2]; hot internal loops read faces_ directly.
   face(faceId) {
 
     const o = faceId * 3;

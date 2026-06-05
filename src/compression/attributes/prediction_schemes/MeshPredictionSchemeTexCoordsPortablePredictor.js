@@ -3,16 +3,14 @@
 
 import { buildInt32PositionCache } from './PredictionSchemePositionCache.js';
 
-// Any integer product strictly below this is exactly representable as a JS
-// double; at or above it the double path may lose precision and we switch to
-// the BigInt path. (2^53.)
+// 2^53: integer products below this are exact as a JS double; at or above it
+// the double path may lose precision and we switch to the BigInt path.
 const SAFE_PRODUCT = 9007199254740992;
 
 const MASK64 = (1n << 64n) - 1n;
 const INT64_MAX_BIG = (1n << 63n) - 1n;
 
-// Floor of the integer square root of a non-negative BigInt (matches the C++
-// IntSqrt used by the portable UV predictor).
+// Floor of the integer square root of a non-negative BigInt; matches C++ IntSqrt.
 function bigIntSqrt(value) {
   if (value < 2n) return value;
   let x = value;
@@ -32,9 +30,6 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
 
   static NUM_COMPONENTS = 2;
 
-  /**
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(meshData) {
     this._posAttribute = null;
     this._entryToPointIdMap = null;
@@ -43,70 +38,42 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
     this._numOrientations = 0;
     this._meshData = meshData;
     this._tempPos = new Array(3);
-    // Flat Int32 position cache indexed by data entry id (built once per
-    // decode) so position fetches are array reads, not convertValue calls.
+    // Flat Int32 position cache so fetches are array reads, not convertValue calls.
     this._posCache = null;
     this._cornerToVertex = null;
   }
 
-  /**
-   * @param {object} positionAttribute - PointAttribute for positions
-   */
   setPositionAttribute(positionAttribute) {
     this._posAttribute = positionAttribute;
   }
 
-  /**
-   * @param {Array} map
-   */
   setEntryToPointIdMap(map) {
     this._entryToPointIdMap = map;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._posAttribute !== null;
   }
 
-  /** @returns {Int32Array} */
   get predictedValue() {
     return this._predictedValue;
   }
 
-  /**
-   * @param {number} numOrientations
-   */
   resizeOrientations(numOrientations) {
     this._orientations = new Uint8Array(numOrientations);
     this._numOrientations = numOrientations;
   }
 
-  /**
-   * @param {number} i
-   * @param {boolean} v
-   */
   setOrientation(i, v) {
     this._orientations[i] = v ? 1 : 0;
   }
 
-  /**
-   * Precomputes the integer position of every data entry once so position
-   * fetches in the hot loop are flat-array reads.
-   * @param {number} numEntries
-   */
   buildPositionCache(numEntries) {
     this._posCache = buildInt32PositionCache(
       this._posAttribute, this._entryToPointIdMap, numEntries, this._tempPos);
     this._cornerToVertex = this._meshData.cornerTable.cornerToVertexArray();
   }
 
-  /**
-   * Computes predicted UV coordinates on a given corner (decoder path).
-   * @param {number} cornerId
-   * @param {Int32Array} data
-   * @param {number} dataId
-   * @returns {boolean}
-   */
   computePredictedValue(cornerId, data, dataId) {
     const rem = cornerId - ((cornerId / 3) | 0) * 3;
     const nextCornerId = rem === 2 ? cornerId - 2 : cornerId + 1;
@@ -146,7 +113,6 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
       const prev1 = posCache[posOffset + 1];
       const prev2 = posCache[posOffset + 2];
 
-      // pn = prevPos - nextPos
       const pn0 = prev0 - next0;
       const pn1 = prev1 - next1;
       const pn2 = prev2 - next2;
@@ -172,14 +138,12 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
           return false;
         }
 
-        // The remaining arithmetic is int64 in the C++ reference. For meshes
-        // with small quantized positions every intermediate stays within JS's
-        // exact-integer range (2^53), so double math is bit-exact; for high
-        // position quantization (e.g. cl10's 20-bit) the products exceed 2^53
-        // and we fall back to a BigInt path mirroring the C++ int64/uint64
-        // semantics. The products that can grow past 2^53 are nUV*pnNorm2,
-        // cnDotPn*pnUV, cnDotPn*pn, and cxNorm2*pnNorm2 — the last bounded by
-        // cnNorm2*pnNorm2 (the perpendicular cx is never longer than cn).
+        // Remaining arithmetic is int64 in C++. With small quantized positions
+        // every intermediate fits 2^53 so double math is bit-exact; high
+        // quantization (e.g. cl10's 20-bit) overflows 2^53 and we drop to the
+        // BigInt path mirroring C++ int64/uint64. Products that can exceed 2^53:
+        // nUV*pnNorm2, cnDotPn*pnUV, cnDotPn*pn, and cxNorm2*pnNorm2 (the last
+        // bounded by cnNorm2*pnNorm2, since cx is never longer than cn).
         const cnNorm2 = cn0 * cn0 + cn1 * cn1 + cn2 * cn2;
         const pnAbsMaxG = Math.max(Math.abs(pn0), Math.abs(pn1), Math.abs(pn2));
         const cnDotPnAbs = Math.abs(cnDotPn);
@@ -252,12 +216,11 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
     return true;
   }
 
-  // 64-bit-exact version of the projection prediction, used when the double
-  // path would lose precision (high position quantization). Mirrors the C++
-  // VectorD<int64_t>/VectorD<uint64_t> arithmetic, including the uint64
-  // wraparound in the IntSqrt(cxNorm2*pnNorm2) term and the unsigned add/sub
-  // used to form the final UV. Returns false in the same overflow cases as the
-  // double path so the encoder and decoder agree on when to fall back to delta.
+  // 64-bit-exact projection prediction, used when the double path would lose
+  // precision (high position quantization). Mirrors C++ VectorD<int64_t>/
+  // <uint64_t>, including the uint64 wraparound in IntSqrt(cxNorm2*pnNorm2) and
+  // the unsigned add/sub forming the final UV. Returns false in the same
+  // overflow cases as the double path so encoder and decoder agree on fallback.
   _computePredictedValueBig(tip0, tip1, tip2, next0, next1, next2,
     pn0, pn1, pn2, nUV0, nUV1, pUV0, pUV1, pnNorm2SquaredNum) {
     const B = BigInt;

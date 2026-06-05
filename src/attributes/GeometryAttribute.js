@@ -36,19 +36,17 @@ class GeometryAttribute {
     this._attributeType = attributeType;
   }
 
-  // Returns a Uint8Array subarray pointing to the attribute entry in the buffer.
+  // Returns a Uint8Array view of the buffer starting at the attribute entry.
   getAddress(attIndex) {
     const bytePos = this._byteOffset + this._byteStride * attIndex;
     return this._buffer.data.subarray(bytePos);
   }
 
-  // Sets a value of an attribute entry. value should be a Uint8Array or typed array.
   setAttributeValue(entryIndex, value) {
     const bytePos = entryIndex * this._byteStride;
     this._buffer.write(bytePos, value, this._byteStride);
   }
 
-  // Copies data from the source attribute to this attribute.
   copyFrom(srcAtt) {
     this._numComponents = srcAtt._numComponents;
     this._dataType = srcAtt._dataType;
@@ -69,7 +67,6 @@ class GeometryAttribute {
     return true;
   }
 
-  // Sets a new internal storage for the attribute.
   resetBuffer(buffer, byteStride, byteOffset) {
     this._buffer = buffer;
     this._byteStride = byteStride;

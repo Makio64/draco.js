@@ -3,8 +3,6 @@
 import { PointCloudDecoder } from '../point_cloud/PointCloudDecoder.js';
 import { EncodedGeometryType } from '../config/CompressionShared.js';
 
-// Class that reconstructs a 3D mesh from input data that was encoded by
-// MeshEncoder.
 class MeshDecoder extends PointCloudDecoder {
 
   constructor() {
@@ -16,24 +14,19 @@ class MeshDecoder extends PointCloudDecoder {
     return EncodedGeometryType.TRIANGULAR_MESH;
   }
 
-  // The main entry point for mesh decoding.
   decodeMesh(options, inBuffer, outMesh) {
     this._mesh = outMesh;
     return this.decode(options, inBuffer, outMesh);
   }
 
-  // Returns the base connectivity of the decoded mesh (or null if not initialized).
   getCornerTable() {
     return null;
   }
 
-  // Returns the attribute connectivity data or null if it does not exist.
   getAttributeCornerTable(/* attId */) {
     return null;
   }
 
-  // Returns the decoding data for a given attribute or null when the data
-  // does not exist.
   getAttributeEncodingData(/* attId */) {
     return null;
   }
@@ -52,7 +45,7 @@ class MeshDecoder extends PointCloudDecoder {
     return super.decodeGeometryData();
   }
 
-  // Must be implemented by derived classes.
+  // Overridden by derived classes.
   decodeConnectivity() {
     return false;
   }

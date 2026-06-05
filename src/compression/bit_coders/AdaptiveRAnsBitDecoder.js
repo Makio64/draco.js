@@ -2,7 +2,7 @@
 
 import { AnsDecoder, ansReadInit, ansReadEnd, rabsRead } from '../entropy/ANSCoding.js';
 
-// Clamp the probability p to a uint8 in the range [1, 255].
+// Clamp probability p to a uint8 in [1, 255].
 function clampProbability(p) {
   let pInt = Math.trunc(p * 256 + 0.5);
   if (pInt === 256) pInt = 255;
@@ -10,7 +10,6 @@ function clampProbability(p) {
   return pInt;
 }
 
-// Update the probability according to new incoming bit.
 function updateProbability(oldP, bit) {
   const w = 128.0;
   const w0 = (w - 1.0) / w;
@@ -18,8 +17,7 @@ function updateProbability(oldP, bit) {
   return oldP * w0 + (bit ? 0 : 1) * w1;
 }
 
-// Class for decoding a sequence of bits that were encoded with
-// AdaptiveRAnsBitEncoder.
+// Decodes bits encoded with AdaptiveRAnsBitEncoder.
 export class AdaptiveRAnsBitDecoder {
 
   constructor() {
@@ -27,7 +25,6 @@ export class AdaptiveRAnsBitDecoder {
     this.p0F_ = 0.5;
   }
 
-  // Sets |sourceBuffer| as the buffer to decode bits from.
   startDecoding(sourceBuffer) {
     this.clear();
 
@@ -47,7 +44,6 @@ export class AdaptiveRAnsBitDecoder {
     return true;
   }
 
-  // Decode one bit. Returns true if the bit is a 1, otherwise false.
   decodeNextBit() {
     const p0 = clampProbability(this.p0F_);
     const bit = rabsRead(this.ansDecoder_, p0) > 0;
@@ -55,8 +51,7 @@ export class AdaptiveRAnsBitDecoder {
     return bit;
   }
 
-  // Decode the next |nbits| and return the sequence as uint32.
-  // |nbits| must be > 0 and <= 32.
+  // nbits must be > 0 and <= 32.
   decodeLeastSignificantBits32(nbits) {
     let result = 0;
     for (let i = 0; i < nbits; i++) {

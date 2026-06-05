@@ -3,7 +3,7 @@
 import { AnsDecoder, ansReadInit, ansReadEnd, ANS_L_BASE, ANS_IO_BASE, ANS_P8_PRECISION } from '../entropy/ANSCoding.js';
 import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
-// Class for decoding a sequence of bits that were encoded with RAnsBitEncoder.
+// Decodes bits encoded with RAnsBitEncoder.
 export class RAnsBitDecoder {
 
   constructor() {
@@ -12,7 +12,6 @@ export class RAnsBitDecoder {
     this.p_ = 0; // ANS_P8_PRECISION - probZero, precomputed
   }
 
-  // Sets |sourceBuffer| as the buffer to decode bits from.
   // Returns false when the data is invalid.
   startDecoding(sourceBuffer) {
     this.clear();
@@ -45,7 +44,6 @@ export class RAnsBitDecoder {
     return true;
   }
 
-  // Decode one bit. Returns true if the bit is a 1, otherwise false.
   decodeNextBit() {
     const ans = this.ansDecoder_;
     const p = this.p_;

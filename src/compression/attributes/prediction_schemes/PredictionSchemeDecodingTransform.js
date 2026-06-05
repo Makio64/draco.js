@@ -4,9 +4,8 @@
 import { PredictionSchemeTransformType } from '../../config/CompressionShared.js';
 
 /**
- * PredictionSchemeDecodingTransform transforms predicted values and correction
- * values into the final original attribute values.
- * The default implementation is: original = predicted + correction.
+ * Transforms predicted + correction values into the original attribute values.
+ * Default: original = predicted + correction.
  */
 class PredictionSchemeDecodingTransform {
 
@@ -14,32 +13,14 @@ class PredictionSchemeDecodingTransform {
     this._numComponents = 0;
   }
 
-  /**
-   * Initializes the transform with the number of components per entry.
-   * @param {number} numComponents
-   */
   init(numComponents) {
     this._numComponents = numComponents;
   }
 
-  /**
-   * Returns the transform type.
-   * @returns {number}
-   */
   getType() {
     return PredictionSchemeTransformType.PREDICTION_TRANSFORM_DELTA;
   }
 
-  /**
-   * Computes the original value from predicted and correction values.
-   * Default: original[i] = predicted[i] + correction[i].
-   * @param {Int32Array|TypedArray} predictedVals
-   * @param {number} predictedOffset
-   * @param {Int32Array|TypedArray} corrVals
-   * @param {number} corrOffset
-   * @param {Int32Array|TypedArray} outOriginalVals
-   * @param {number} outOffset
-   */
   computeOriginalValue(predictedVals, predictedOffset, corrVals, corrOffset,
     outOriginalVals, outOffset) {
     for (let i = 0; i < this._numComponents; ++i) {
@@ -48,35 +29,20 @@ class PredictionSchemeDecodingTransform {
     }
   }
 
-  /**
-   * Decodes transform-specific data from the buffer. Called before init().
-   * @param {DecoderBuffer} buffer
-   * @returns {boolean}
-   */
+  /** Called before init(). */
   decodeTransformData(buffer) {
     return true;
   }
 
-  /**
-   * Returns true if all corrected values are guaranteed to be positive.
-   * @returns {boolean}
-   */
   areCorrectionsPositive() {
     return false;
   }
 
-  /**
-   * Returns the number of components.
-   * @returns {number}
-   */
   numComponents() {
     return this._numComponents;
   }
 
-  /**
-   * Quantization bits (dummy for interface compatibility).
-   * @returns {number}
-   */
+  /** Dummy for interface compatibility; real transforms override. */
   quantizationBits() {
     return -1;
   }

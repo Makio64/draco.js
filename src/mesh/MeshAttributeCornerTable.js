@@ -23,15 +23,14 @@ class MeshAttributeCornerTable {
       return false;
     }
 
-    // Typed arrays keep the hot accessors (isEdgeOnSeam/vertex/opposite, called
-    // per corner during attribute connectivity recompute) monomorphic. Uint8Array
-    // defaults to 0 (== false); corner_to_vertex_map_ uses signed -1 sentinel.
+    // Typed arrays keep the per-corner hot accessors monomorphic. Uint8Array
+    // defaults to 0 (== false); corner_to_vertex_map_ uses a signed -1 sentinel.
     this.is_edge_on_seam_ = new Uint8Array(table.numCorners());
     this.is_vertex_on_seam_ = new Uint8Array(table.numVertices());
     this.corner_to_vertex_map_ = new Int32Array(table.numCorners()).fill(kInvalidVertexIndex);
     this.vertex_to_attribute_entry_id_map_ = [];
     this.vertex_to_left_most_corner_map_ = [];
-    // Lazily built seam-aware opposite array (see oppositeCornerArray).
+    // Lazily built; see oppositeCornerArray.
     this._effectiveOpposite = null;
     this.corner_table_ = table;
     this.no_interior_seams_ = true;
@@ -71,25 +70,23 @@ class MeshAttributeCornerTable {
 
   }
 
-  // The decoder always recomputes the attribute-vertex maps from connectivity
-  // alone (no source mesh/attribute), so this is the single path the C++
-  // RecomputeVertices(nullptr, nullptr) overload takes.
+  // Only the C++ RecomputeVertices(nullptr, nullptr) path: the decoder always
+  // rebuilds the attribute-vertex maps from connectivity alone.
   _recomputeVerticesInternal() {
 
     const ct = this.corner_table_;
     const numCorners = ct.numCorners();
     const numBaseVertices = ct.numVertices();
-    // Each corner maps to exactly one attribute entry, so the number of new
-    // (attribute) vertices is bounded by the corner count. Preallocate the two
-    // maps as Int32Arrays indexed by new-vertex id (the push order equals the
-    // numNewVertices counter), avoiding per-entry Array.push() growth + GC.
+    // New-vertex count is bounded by numCorners, so preallocate Int32Arrays
+    // indexed by new-vertex id (push order == numNewVertices) instead of growing
+    // Arrays with push().
     const attEntryMap = new Int32Array(numCorners);
     const leftMostMap = new Int32Array(numCorners);
     const cornerToVertex = this.corner_to_vertex_map_;
     const isVertexOnSeam = this.is_vertex_on_seam_;
     const isEdgeOnSeam = this.is_edge_on_seam_;
-    // Flat connectivity arrays so the per-corner swing operations are inlined
-    // typed-array arithmetic instead of polymorphic method dispatch.
+    // Flat connectivity arrays so the per-corner swings inline to typed-array
+    // arithmetic instead of polymorphic dispatch.
     //   - seamOpp: seam-aware opposite (== this.opposite), used by swingLeft.
     //   - baseOpp: raw opposite of the underlying table, used by swingRight
     //     (matches corner_table_.swingRight, which is NOT seam-aware here).
@@ -157,8 +154,7 @@ class MeshAttributeCornerTable {
       }
     }
 
-    // Expose exact-length views (no copy) so numVertices() and the per-vertex
-    // accessors see the right length.
+    // subarray, not copy: exact-length views so numVertices()/accessors see the right length.
     this.vertex_to_attribute_entry_id_map_ = attEntryMap.subarray(0, numNewVertices);
     this.vertex_to_left_most_corner_map_ = leftMostMap.subarray(0, numNewVertices);
 
@@ -261,16 +257,14 @@ class MeshAttributeCornerTable {
 
   }
 
-  // --- Flat-array accessors used by DepthFirstTraverser to avoid polymorphic
-  // per-corner method dispatch in the traversal hot loop. ---
+  // --- Flat-array accessors: let DepthFirstTraverser avoid per-corner dispatch. ---
 
   cornerToVertexArray() {
     return this.corner_to_vertex_map_;
   }
 
-  // Returns an Int32Array of seam-aware opposite corners (seam edges map to -1),
-  // matching opposite(). Built once on first use; the seam data and underlying
-  // connectivity are finalized before traversal, so the result is stable.
+  // Seam-aware opposite corners (seam edges -> -1), matching opposite(). Cached on
+  // first use; seams and connectivity are finalized before traversal, so it's stable.
   oppositeCornerArray() {
     if (this._effectiveOpposite === null) {
       const nc = this.corner_table_.numCorners();
@@ -289,8 +283,7 @@ class MeshAttributeCornerTable {
     return this.vertex_to_left_most_corner_map_;
   }
 
-  // Per-(base-)vertex seam flag (Uint8Array). isCornerOnSeam(c) reads this at
-  // the corner's base vertex; exposed so hot dedup loops can inline that.
+  // Per-base-vertex seam flag (Uint8Array); exposed so hot dedup loops inline the lookup.
   vertexOnSeamArray() {
     return this.is_vertex_on_seam_;
   }

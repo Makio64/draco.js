@@ -1,6 +1,6 @@
 // compression/config/CompressionShared.js - ported from compression/config/compression_shared.h
 
-// Latest Draco bit-stream version.
+// Latest Draco bit-stream versions.
 export const kDracoPointCloudBitstreamVersionMajor = 2;
 export const kDracoPointCloudBitstreamVersionMinor = 3;
 export const kDracoMeshBitstreamVersionMajor = 2;
@@ -10,7 +10,6 @@ export function DRACO_BITSTREAM_VERSION(major, minor) {
   return (major << 8) | minor;
 }
 
-// Concatenated latest bit-stream version.
 export const kDracoPointCloudBitstreamVersion = DRACO_BITSTREAM_VERSION(
   kDracoPointCloudBitstreamVersionMajor,
   kDracoPointCloudBitstreamVersionMinor
@@ -21,7 +20,6 @@ export const kDracoMeshBitstreamVersion = DRACO_BITSTREAM_VERSION(
   kDracoMeshBitstreamVersionMinor
 );
 
-// Currently, we support point cloud and triangular mesh encoding.
 export const EncodedGeometryType = {
   INVALID_GEOMETRY_TYPE: -1,
   POINT_CLOUD: 0,
@@ -29,20 +27,17 @@ export const EncodedGeometryType = {
   NUM_ENCODED_GEOMETRY_TYPES: 2
 };
 
-// List of encoding methods for meshes.
 export const MeshEncoderMethod = {
   MESH_SEQUENTIAL_ENCODING: 0,
   MESH_EDGEBREAKER_ENCODING: 1
 };
 
-// List of various attribute encoders supported by our framework.
 export const AttributeEncoderType = {
   BASIC_ATTRIBUTE_ENCODER: 0,
   MESH_TRAVERSAL_ATTRIBUTE_ENCODER: 1,
   KD_TREE_ATTRIBUTE_ENCODER: 2
 };
 
-// List of various sequential attribute encoder/decoders.
 export const SequentialAttributeEncoderType = {
   SEQUENTIAL_ATTRIBUTE_ENCODER_GENERIC: 0,
   SEQUENTIAL_ATTRIBUTE_ENCODER_INTEGER: 1,
@@ -50,7 +45,6 @@ export const SequentialAttributeEncoderType = {
   SEQUENTIAL_ATTRIBUTE_ENCODER_NORMALS: 3
 };
 
-// List of all prediction methods currently supported by our framework.
 export const PredictionSchemeMethod = {
   PREDICTION_NONE: -2,
   PREDICTION_UNDEFINED: -1,
@@ -64,7 +58,6 @@ export const PredictionSchemeMethod = {
   NUM_PREDICTION_SCHEMES: 7
 };
 
-// List of all prediction scheme transforms used by our framework.
 export const PredictionSchemeTransformType = {
   PREDICTION_TRANSFORM_NONE: -1,
   PREDICTION_TRANSFORM_DELTA: 0,
@@ -74,14 +67,12 @@ export const PredictionSchemeTransformType = {
   NUM_PREDICTION_SCHEME_TRANSFORM_TYPES: 4
 };
 
-// List of all mesh traversal methods supported by Draco framework.
 export const MeshTraversalMethod = {
   MESH_TRAVERSAL_DEPTH_FIRST: 0,
   MESH_TRAVERSAL_PREDICTION_DEGREE: 1,
   NUM_TRAVERSAL_METHODS: 2
 };
 
-// List of all variants of the edgebreaker method.
 export const MeshEdgebreakerConnectivityEncodingMethod = {
   MESH_EDGEBREAKER_STANDARD_ENCODING: 0,
   MESH_EDGEBREAKER_PREDICTIVE_ENCODING: 1, // Deprecated.
@@ -107,7 +98,6 @@ export const NormalPredictionMode = {
   TRIANGLE_AREA: 1
 };
 
-// Different methods used for symbol entropy encoding.
 export const SymbolCodingMethod = {
   SYMBOL_CODING_TAGGED: 0,
   SYMBOL_CODING_RAW: 1,
