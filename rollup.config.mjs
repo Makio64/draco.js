@@ -22,7 +22,17 @@ export default [
     external: ['three'],
     output: [
       { file: 'build/DRACOLoader.js', format: 'es', banner },
-      { file: 'build/DRACOLoader.min.js', format: 'es', banner, plugins: [terser()] },
+      {
+        file: 'build/DRACOLoader.min.js', format: 'es', banner,
+        plugins: [terser({
+          module: true,                 // ESM: also mangle top-level names
+          compress: { passes: 2 },
+          // Mangle private members. Convention: every internal property/method
+          // is `_`-prefixed; the public DRACOLoader API and three.js interop are
+          // not, so they're untouched. keep_quoted guards any string access.
+          mangle: { properties: { regex: /^_/, keep_quoted: true } },
+        })],
+      },
     ],
   },
 ];
