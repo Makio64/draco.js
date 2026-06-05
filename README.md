@@ -10,8 +10,8 @@ JavaScript.
 
 Why a JS port instead of the official WASM build?
 
-- **Small** — ~24 KB gzipped (90 KB minified), vs ~104 KB for the `draco3d` WASM
-  decoder + glue (~4.3× smaller).
+- **Small** — ~26 KB gzipped (98 KB minified), vs ~100 KB gzipped for the
+  `draco3d` WASM decoder + glue (~3.9× smaller).
 - **Simple to ship** — one ES module. No `.wasm` fetch, no worker/glue setup,
   no cross-origin or CSP headaches.
 - **Fast** — on substantial meshes it's within ~1.0–1.4× of the WASM decoder,
@@ -71,7 +71,7 @@ external. Prebuilt copies are checked in.
 Output is **byte-for-byte identical** to Google's reference `draco3d` WASM
 decoder. `npm run verify` decodes every sample with both and compares
 element-by-element — face indices and every per-point attribute value match
-exactly (`eps 0`) across all 250 test primitives. `npm run bench` separately
+exactly (`eps 0`) across all 260 test primitives. `npm run bench` separately
 times decoding and guards against output regressions via a sha256 of the
 decoded geometry.
 
