@@ -121,16 +121,6 @@ export class RAnsSymbolDecoder {
     return true;
   }
 
-  decodeSymbol() {
-    return this.ans_.ransRead();
-  }
-
-  // Decodes |count| symbols directly into out[0..count). See
-  // RAnsDecoder.decodeSymbols.
-  decodeSymbols(out, count) {
-    this.ans_.decodeSymbols(out, count);
-  }
-
   endDecoding() {
     this.ans_.readEnd();
   }

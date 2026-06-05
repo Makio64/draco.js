@@ -78,17 +78,6 @@ class Mesh extends PointCloud {
 
   }
 
-  // Returns the point id for a corner index (plain integer). With the flat face
-  // layout the corner index is a direct index into faces_.
-  cornerToPointId(ci) {
-
-    if (ci < 0) {
-      return -1;
-    }
-    return this.faces_[ci];
-
-  }
-
 }
 
 export { Mesh };

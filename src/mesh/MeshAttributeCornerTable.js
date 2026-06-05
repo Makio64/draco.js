@@ -194,11 +194,6 @@ class MeshAttributeCornerTable {
 
   }
 
-  isCornerOnSeam(corner) {
-
-    return this.is_vertex_on_seam_[this.corner_table_.vertex(corner)];
-
-  }
 
   swingRight(corner) {
 
@@ -322,18 +317,6 @@ class MeshAttributeCornerTable {
   isDegenerated(faceIndex) {
 
     return this.corner_table_.isDegenerated(faceIndex);
-
-  }
-
-  noInteriorSeams() {
-
-    return this.no_interior_seams_;
-
-  }
-
-  cornerTable() {
-
-    return this.corner_table_;
 
   }
 

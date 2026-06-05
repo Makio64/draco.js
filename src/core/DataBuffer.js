@@ -4,7 +4,6 @@ export class DataBuffer {
 
   constructor() {
     this._data = new Uint8Array(0);
-    this._updateCount = 0;
   }
 
   update(data, size, offset = 0) {
@@ -19,13 +18,11 @@ export class DataBuffer {
       const src = new Uint8Array(data.buffer || data, data.byteOffset || 0, size);
       this._data.set(src, offset);
     }
-    this._updateCount++;
     return true;
   }
 
   resize(newSize) {
     this._resize(newSize);
-    this._updateCount++;
   }
 
   write(bytePos, inArray, dataSize) {
@@ -43,7 +40,6 @@ export class DataBuffer {
 
   get data() { return this._data; }
   get dataSize() { return this._data.length; }
-  get updateCount() { return this._updateCount; }
 
   _resize(newSize) {
     if (newSize === this._data.length) return;

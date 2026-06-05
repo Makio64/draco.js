@@ -50,12 +50,6 @@ class PointAttribute extends GeometryAttribute {
     return true;
   }
 
-  // Resizes the attribute storage.
-  resize(newNumUniqueEntries) {
-    this._numUniqueEntries = newNumUniqueEntries;
-    this._attributeBuffer.resize(newNumUniqueEntries * this.byteStride);
-  }
-
   get size() {
     return this._numUniqueEntries;
   }
@@ -102,18 +96,9 @@ class PointAttribute extends GeometryAttribute {
     this._indicesMap.fill(kInvalidAttributeValueIndex);
   }
 
-  // Sets an explicit map entry for a specific point index.
-  setPointMapEntry(pointIndex, entryIndex) {
-    this._indicesMap[pointIndex] = entryIndex;
-  }
-
   // Set attribute transform data for the attribute.
   setAttributeTransformData(transformData) {
     this._attributeTransformData = transformData;
-  }
-
-  getAttributeTransformData() {
-    return this._attributeTransformData;
   }
 
   // Converts the attribute value at the given index into the output array.

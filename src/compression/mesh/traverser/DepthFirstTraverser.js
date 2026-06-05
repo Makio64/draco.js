@@ -46,31 +46,6 @@ class DepthFirstTraverser {
     return this._cornerTable;
   }
 
-  // Connectivity accessors operating on the extracted flat arrays. They mirror
-  // the corner table's methods exactly but are monomorphic (the receiver is
-  // always this traverser and the arrays are always typed), so the JIT inlines
-  // them. next/previous are only ever called with a valid (>= 0) corner here.
-  _next(c) {
-    return (c % 3) === 2 ? c - 2 : c + 1;
-  }
-  _previous(c) {
-    return (c % 3) === 0 ? c + 2 : c - 1;
-  }
-  _vertex(c) {
-    return this._cornerToVertex[c];
-  }
-  _getRightCorner(c) {
-    return this._oppositeCorners[this._next(c)];
-  }
-  _getLeftCorner(c) {
-    return this._oppositeCorners[this._previous(c)];
-  }
-  _isOnBoundary(v) {
-    const lc = this._vertexLeftmost[v];
-    if (lc === undefined || lc < 0) return true;
-    return this._oppositeCorners[this._next(lc)] < 0;
-  }
-
   onTraversalStart() {}
   onTraversalEnd() {}
 

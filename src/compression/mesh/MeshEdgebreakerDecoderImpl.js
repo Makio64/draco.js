@@ -452,17 +452,6 @@ class MeshEdgebreakerDecoderImpl {
     return true;
   }
 
-  _setOppositeCorners(corner0, corner1) {
-    this._cornerTable.setOppositeCorner(corner0, corner1);
-    this._cornerTable.setOppositeCorner(corner1, corner0);
-  }
-
-  _isFaceVisited(cornerId) {
-    if (cornerId < 0) {
-      return true; // Invalid corner signalizes that the face does not exist.
-    }
-    return this._visitedFaces[this._cornerTable.face(cornerId)];
-  }
 
   _decodeConnectivity(numSymbols) {
     // Algorithm does the reverse decoding of the symbols encoded with the
@@ -1344,11 +1333,6 @@ class CornerTable {
     return rem === 0 ? corner + 2 : corner - 1;
   }
 
-  face(corner) {
-    if (corner < 0) return -1;
-    return (corner / 3) | 0;
-  }
-
   // Get the vertex at a corner.
   vertex(corner) {
     if (corner < 0 || corner >= this._numCorners) return -1;
@@ -1361,12 +1345,6 @@ class CornerTable {
     return this._oppositeCorners[corner];
   }
 
-  // Get the left-most corner of a vertex.
-  leftMostCorner(vertex) {
-    if (vertex < 0 || vertex >= this._numVertices) return -1;
-    return this._vertexCorners[vertex];
-  }
-
   // --- Flat-array accessors used by DepthFirstTraverser to avoid polymorphic
   // per-corner method dispatch in the traversal hot loop. ---
   cornerToVertexArray() {
@@ -1377,23 +1355,6 @@ class CornerTable {
   }
   vertexLeftmostCornerArray() {
     return this._vertexCorners;
-  }
-
-  // Map a corner to a vertex.
-  mapCornerToVertex(corner, vertex) {
-    this._cornerToVertex[corner] = vertex;
-  }
-
-  // Set the opposite corner.
-  setOppositeCorner(corner, opposite) {
-    this._oppositeCorners[corner] = opposite;
-  }
-
-  // Set the left-most corner of a vertex.
-  setLeftMostCorner(vertex, corner) {
-    if (vertex >= 0 && vertex < this._numVertices) {
-      this._vertexCorners[vertex] = corner;
-    }
   }
 
   // Add a new vertex. Mirrors C++ CornerTable::AddNewVertex() which does
@@ -1411,31 +1372,6 @@ class CornerTable {
     }
     this._vertexCorners[newVertex] = -1;
     return newVertex;
-  }
-
-  // Make a vertex isolated (no corners point to it).
-  makeVertexIsolated(vertex) {
-    if (vertex >= 0 && vertex < this._numVertices) {
-      this._vertexCorners[vertex] = -1;
-    }
-  }
-
-  // GetLeftCorner(c) = Opposite(Previous(c))
-  getLeftCorner(corner) {
-    if (corner < 0) return -1;
-    return this.opposite(this.previous(corner));
-  }
-
-  // GetRightCorner(c) = Opposite(Next(c))
-  getRightCorner(corner) {
-    if (corner < 0) return -1;
-    return this.opposite(this.next(corner));
-  }
-
-  isOnBoundary(vert) {
-    const corner = this.leftMostCorner(vert);
-    if (corner < 0) return true;
-    return this.swingLeft(corner) < 0;
   }
 
   // Swing left: go to the next corner around a vertex in the CCW direction.

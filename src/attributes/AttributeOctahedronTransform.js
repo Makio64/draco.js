@@ -85,16 +85,6 @@ class AttributeOctahedronTransform extends AttributeTransform {
     this._quantizationBits = -1;
   }
 
-  // Try to init transform from attribute's existing transform data.
-  initFromAttribute(attribute) {
-    const transformData = attribute.getAttributeTransformData();
-    if (!transformData || transformData.transformType !== AttributeTransformType.OCTAHEDRON_TRANSFORM) {
-      return false;
-    }
-    this._quantizationBits = transformData.getParameterValue(0, 'int32');
-    return true;
-  }
-
   // Copy parameter values into the provided AttributeTransformData instance.
   copyToAttributeTransformData(outData) {
     outData.transformType = AttributeTransformType.OCTAHEDRON_TRANSFORM;

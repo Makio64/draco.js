@@ -36,10 +36,6 @@ class GeometryAttribute {
     this._attributeType = attributeType;
   }
 
-  isValid() {
-    return this._buffer !== null;
-  }
-
   // Returns the byte position of the attribute entry in the data buffer.
   getBytePos(attIndex) {
     return this._byteOffset + this._byteStride * attIndex;
@@ -86,21 +82,16 @@ class GeometryAttribute {
   }
 
   get attributeType() { return this._attributeType; }
-  set attributeType(type) { this._attributeType = type; }
 
   get dataType() { return this._dataType; }
 
   get numComponents() { return this._numComponents; }
-
-  get normalized() { return this._normalized; }
-  set normalized(value) { this._normalized = value; }
 
   get buffer() { return this._buffer; }
 
   get byteStride() { return this._byteStride; }
 
   get byteOffset() { return this._byteOffset; }
-  set byteOffset(value) { this._byteOffset = value; }
 
   get uniqueId() { return this._uniqueId; }
   set uniqueId(id) { this._uniqueId = id; }

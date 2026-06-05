@@ -165,10 +165,6 @@ export class RAnsDecoder {
     return this.state === this.lRansBase;
   }
 
-  readerHasError() {
-    return this.state < this.lRansBase && this.bufOffset === 0;
-  }
-
   ransRead() {
     // Cache state in locals for the renormalization loop; properties are read
     // once and written back once. ransRead runs once per decoded symbol.

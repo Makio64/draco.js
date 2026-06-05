@@ -14,24 +14,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
     this._range = 0;
   }
 
-  // Try to init transform from attribute's existing transform data.
-  initFromAttribute(attribute) {
-    const transformData = attribute.getAttributeTransformData();
-    if (!transformData || transformData.transformType !== AttributeTransformType.QUANTIZATION_TRANSFORM) {
-      return false;
-    }
-    let byteOffset = 0;
-    this._quantizationBits = transformData.getParameterValue(byteOffset, 'int32');
-    byteOffset += 4;
-    this._minValues = new Array(attribute.numComponents);
-    for (let i = 0; i < attribute.numComponents; i++) {
-      this._minValues[i] = transformData.getParameterValue(byteOffset, 'float32');
-      byteOffset += 4;
-    }
-    this._range = transformData.getParameterValue(byteOffset, 'float32');
-    return true;
-  }
-
   // Copy parameter values into the provided AttributeTransformData instance.
   copyToAttributeTransformData(outData) {
     outData.transformType = AttributeTransformType.QUANTIZATION_TRANSFORM;
@@ -113,8 +95,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
 
   get quantizationBits() { return this._quantizationBits; }
   get range() { return this._range; }
-  get minValues() { return this._minValues; }
-  get isInitialized() { return this._quantizationBits !== -1; }
 
   minValue(axis) { return this._minValues[axis]; }
 

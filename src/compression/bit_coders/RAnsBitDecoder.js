@@ -64,31 +64,6 @@ export class RAnsBitDecoder {
     return false;
   }
 
-  // Decode the next |nbits| and return the sequence in a uint32. |nbits| must be
-  // > 0 and <= 32.
-  decodeLeastSignificantBits32(nbits) {
-    const ans = this.ansDecoder_;
-    const p = this.p_;
-    let result = 0;
-    for (let i = 0; i < nbits; i++) {
-      if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-        ans.state = (ans.state << 8) | ans.buf[--ans.bufOffset];
-      }
-      const x = ans.state;
-      const quot = x >>> 8;
-      const rem = x & 0xFF;
-      const xn = quot * p;
-      if (rem < p) {
-        ans.state = xn + rem;
-        result = (result << 1) + 1;
-      } else {
-        ans.state = x - xn - p;
-        result = result << 1;
-      }
-    }
-    return result;
-  }
-
   endDecoding() {}
 
   clear() {

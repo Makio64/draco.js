@@ -4,11 +4,6 @@ import { AttributeTransformData } from './AttributeTransformData.js';
 
 class AttributeTransform {
 
-  // Virtual: try to init transform from attribute.
-  initFromAttribute(/* attribute */) {
-    return false;
-  }
-
   // Virtual: copy parameter values into the provided AttributeTransformData.
   copyToAttributeTransformData(/* outData */) {
     // Must be overridden.

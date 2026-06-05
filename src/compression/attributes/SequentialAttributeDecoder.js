@@ -21,14 +21,6 @@ class SequentialAttributeDecoder {
     return true;
   }
 
-  // Initialization for a specific attribute. This can be used mostly for
-  // standalone decoding of an attribute without a PointCloudDecoder.
-  initializeStandalone(attribute) {
-    this._attribute = attribute;
-    this._attributeId = -1;
-    return true;
-  }
-
   // Performs lossless decoding of the portable attribute data.
   decodePortableAttribute(pointIds, buffer) {
     if (this._attribute.numComponents <= 0) {
