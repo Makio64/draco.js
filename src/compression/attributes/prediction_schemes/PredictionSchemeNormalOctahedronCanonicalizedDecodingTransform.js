@@ -141,10 +141,12 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
 
     if (!predIsInBottomLeft) {
       const s = predS, t = predT;
+      // `(-x) | 0` normalises -0 (from negating 0) to +0 so V8 keeps the Smi
+      // fast path instead of deopting; bit-exact for these int32 values.
       switch (rotationCount) {
-        case 1: predS = t; predT = -s; break;
-        case 2: predS = -s; predT = -t; break;
-        case 3: predS = -t; predT = s; break;
+        case 1: predS = t; predT = (-s) | 0; break;
+        case 2: predS = (-s) | 0; predT = (-t) | 0; break;
+        case 3: predS = (-t) | 0; predT = s; break;
       }
     }
 
@@ -159,9 +161,9 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
     if (!predIsInBottomLeft) {
       const s = origS, t = origT;
       switch ((4 - rotationCount) & 3) {
-        case 1: origS = t; origT = -s; break;
-        case 2: origS = -s; origT = -t; break;
-        case 3: origS = -t; origT = s; break;
+        case 1: origS = t; origT = (-s) | 0; break;
+        case 2: origS = (-s) | 0; origT = (-t) | 0; break;
+        case 3: origS = (-t) | 0; origT = s; break;
       }
     }
 
