@@ -40,6 +40,11 @@
   #legend { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 40px; z-index: 10; pointer-events: none;
     font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; }
+  #drop { position: absolute; inset: 16px; z-index: 30; display: none;
+    align-items: center; justify-content: center; pointer-events: none;
+    background: rgba(17,20,24,0.78); border: 2px dashed #6ee7b7; border-radius: 12px;
+    color: #6ee7b7; font-size: 16px; font-weight: 700; letter-spacing: .04em; }
+  #drop.show { display: flex; }
 </style>
 </head>
 <body>
@@ -84,6 +89,7 @@
     <div id="status"></div>
   </div>
   <div id="legend"><span class="wasm">WASM</span><span class="js">JS</span></div>
+  <div id="drop">Drop a .drc / .glb / .gltf to load it</div>
 </div>
 
 <script type="importmap">
@@ -285,30 +291,56 @@ function decodeOne(loader, buffer, attributeIDs, attributeTypes) {
   });
 }
 
-// Resolve a sample's Draco decode "parts" from its already-fetched bytes. A .drc
-// is one buffer (default attributes); a .glb yields one part per
-// KHR_draco_mesh_compression primitive, decoded by its glTF unique attribute ids.
-function partsFromData(name, data) {
-  if (!name.endsWith('.glb')) return [{ buffer: data, attributeIDs: null, attributeTypes: null }];
-  const u8 = new Uint8Array(data);
-  const dv = new DataView(data);
-  const jsonLen = dv.getUint32(12, true);
-  const json = JSON.parse(new TextDecoder().decode(u8.subarray(20, 20 + jsonLen)));
-  const binOff = 12 + 8 + jsonLen;
-  const bin = u8.subarray(binOff + 8, binOff + 8 + dv.getUint32(binOff, true));
+// Walk a glTF JSON for KHR_draco_mesh_compression primitives and slice each one's
+// compressed buffer out of its bufferView. getBytes(i) returns the bytes of glTF
+// buffer i (the BIN chunk for .glb; a resolved data: URI for .gltf) or null if it
+// isn't available, in which case that primitive is skipped.
+function dracoParts(json, getBytes) {
   const parts = [];
   for (const mesh of json.meshes || []) {
     for (const prim of mesh.primitives) {
       const ext = prim.extensions && prim.extensions.KHR_draco_mesh_compression;
       if (!ext) continue;
       const bv = json.bufferViews[ext.bufferView];
-      const slice = bin.slice(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
+      const bytes = getBytes(bv.buffer || 0);
+      if (!bytes) continue;
+      const slice = bytes.slice(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
       const attributeTypes = {};
       for (const k in ext.attributes) attributeTypes[k] = 'Float32Array';
       parts.push({ buffer: slice.buffer, attributeIDs: ext.attributes, attributeTypes });
     }
   }
   return parts;
+}
+
+// Decode a glTF buffer entry to bytes. Only embedded base64 data: URIs are
+// resolvable from a single dropped .gltf — external .bin files aren't available.
+function decodeGLTFBuffer(b) {
+  if (!b.uri || !b.uri.startsWith('data:')) return null;
+  const bin = atob(b.uri.slice(b.uri.indexOf(',') + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+// Resolve a model's Draco decode "parts" from its already-loaded bytes. A .drc is
+// one buffer (default attributes); a .glb/.gltf yields one part per
+// KHR_draco_mesh_compression primitive, decoded by its glTF unique attribute ids.
+function partsFromData(name, data) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.gltf')) {
+    const json = JSON.parse(new TextDecoder().decode(data));
+    const buffers = (json.buffers || []).map(decodeGLTFBuffer);
+    return dracoParts(json, i => buffers[i]);
+  }
+  if (!lower.endsWith('.glb')) return [{ buffer: data, attributeIDs: null, attributeTypes: null }];
+  const u8 = new Uint8Array(data);
+  const dv = new DataView(data);
+  const jsonLen = dv.getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(u8.subarray(20, 20 + jsonLen)));
+  const binOff = 12 + 8 + jsonLen;
+  const bin = u8.subarray(binOff + 8, binOff + 8 + dv.getUint32(binOff, true));
+  return dracoParts(json, i => i === 0 ? bin : null);
 }
 
 // Decode a whole model (all primitives) once; returns { ms, geometries }.
@@ -385,14 +417,16 @@ async function initLoaders() {
 // Run a model through both loaders
 // ---------------------------------------------------------------------------
 let running = false;
-async function run(name) {
+
+// Decode a model's bytes through both loaders, fill the metrics table, and render
+// it across the split. Shared by the sample dropdown and drag-and-drop, so it
+// works from raw file bytes + a name (the name only selects the .drc/.glb/.gltf
+// code path and labels the status line).
+async function processModel(name, fileData) {
   if (running) return;
   running = true;
   $('model').disabled = true;
-  if (location.hash.slice(1) !== name) location.hash = name;
   try {
-    status(`fetching ${name}…`);
-    const fileData = await (await fetch('./samples/' + name)).arrayBuffer();
     const parts = partsFromData(name, fileData);
     if (parts.length === 0) { status(`no Draco data in ${name}`); return; }
 
@@ -414,14 +448,17 @@ async function run(name) {
     setRatio('parse-ratio', js.ms, wasm.ms, 'js-parse', 'wasm-parse');
     setRatio('total-ratio', jsTotal, wasmTotal, 'js-total', 'wasm-total');
 
-    // --- Visual: render the model with its real materials/textures. .glb goes
-    // through GLTFLoader (Draco geometry decoded by each side's loader); raw
-    // .drc has no materials, so show its geometry under a neutral material. ---
-    if (name.endsWith('.glb')) {
+    // --- Visual: render the model with its real materials/textures. glTF goes
+    // through GLTFLoader (Draco geometry decoded by each side's loader); raw .drc
+    // has no materials, so show its geometry under a neutral material. A .glb is
+    // parsed from its bytes, a .gltf from its JSON text (embedded buffers only). ---
+    const lower = name.toLowerCase();
+    if (lower.endsWith('.glb') || lower.endsWith('.gltf')) {
+      const gltfArg = lower.endsWith('.gltf') ? new TextDecoder().decode(fileData) : fileData;
       status('building scene (WASM)…');
-      placeObject((await parseGLTF(gltfLoaderWASM, fileData.slice(0))).scene, 'wasm');
+      placeObject((await parseGLTF(gltfLoaderWASM, gltfArg.slice(0))).scene, 'wasm');
       status('building scene (JS)…');
-      placeObject((await parseGLTF(gltfLoaderJS, fileData.slice(0))).scene, 'js');
+      placeObject((await parseGLTF(gltfLoaderJS, gltfArg.slice(0))).scene, 'js');
     } else {
       placeObject(drcGroup(wasm.geometries), 'wasm');
       placeObject(drcGroup(js.geometries), 'js');
@@ -437,6 +474,40 @@ async function run(name) {
     $('model').disabled = false;
   }
 }
+
+// Load one of the bundled samples by name (mirrored in the URL hash), then decode.
+async function run(name) {
+  if (running) return;
+  if (location.hash.slice(1) !== name) location.hash = name;
+  try {
+    status(`fetching ${name}…`);
+    const fileData = await (await fetch('./samples/' + name)).arrayBuffer();
+    await processModel(name, fileData);
+  } catch (e) {
+    status('error: ' + e.message);
+    console.error(e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Drag and drop — load a .drc / .glb / .gltf straight from the local machine
+// ---------------------------------------------------------------------------
+let dragDepth = 0; // dragenter/leave fire per child element; count to avoid flicker
+addEventListener('dragenter', e => { e.preventDefault(); if (dragDepth++ === 0) $('drop').classList.add('show'); });
+addEventListener('dragover', e => e.preventDefault()); // required to allow a drop
+addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; $('drop').classList.remove('show'); } });
+addEventListener('drop', async e => {
+  e.preventDefault();
+  dragDepth = 0;
+  $('drop').classList.remove('show');
+  const file = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  if (!/\.(drc|glb|gltf)$/i.test(file.name)) { status(`unsupported file: ${file.name}`); return; }
+  if (running) return;
+  status(`reading ${file.name}…`);
+  // A dropped file isn't a dropdown sample, so leave the URL hash untouched.
+  await processModel(file.name, await file.arrayBuffer());
+});
 
 // ---------------------------------------------------------------------------
 // Boot
