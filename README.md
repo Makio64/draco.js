@@ -10,8 +10,8 @@ JavaScript.
 
 Why a JS port instead of the official WASM build?
 
-- **Small** — ~24 KB gzipped (87 KB minified), vs ~100 KB gzipped for the
-  `draco3d` WASM decoder + glue (~4.2× smaller).
+- **Small** — ~22 KB gzipped (69 KB minified), vs ~100 KB gzipped for the
+  `draco3d` WASM decoder + glue (~4.6× smaller).
 - **Simple to ship** — one ES module. No `.wasm` fetch, no worker/glue setup,
   no cross-origin or CSP headaches.
 - **Fast** — on substantial meshes it's within ~1.0–1.4× of the WASM decoder,
