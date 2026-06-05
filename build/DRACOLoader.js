@@ -1933,9 +1933,7 @@ class PointAttribute extends GeometryAttribute {
         }
       }
 
-      // isIdentity is loop-invariant; branch once. The explicit-mapping gather
-      // is the hot post-decode path (positions/texcoords use an explicit
-      // point->value map). Specialize nc=2/3 to unroll the per-component copy.
+      // Branch the loop-invariant isIdentity once; unroll the nc=2/3 gather.
       if (isIdentity) {
         let dst = 0;
         for (let i = 0; i < numPoints; i++) {
@@ -4933,11 +4931,8 @@ class AttributeQuantizationTransform extends AttributeTransform {
     // The Float32Array store performs the final round of the addition.
     const fround = Math.fround;
 
-    // Specialize the two component counts that account for every quantized
-    // attribute in practice (positions=3, texcoords=2). minValues is a boxed
-    // double Array; hoisting its entries into locals removes a per-component
-    // bounds-checked load from the innermost loop. Same operands and order, so
-    // the float32 result is bit-identical to the generic path below.
+    // Specialize nc=3/2 (positions/texcoords) with minValues hoisted to locals;
+    // same operands/order as the generic path below, so bit-identical.
     if (numComponents === 3) {
       const m0 = minValues[0], m1 = minValues[1], m2 = minValues[2];
       for (let o = 0; o < total; o += 3) {
@@ -6415,8 +6410,7 @@ class MeshAttributeCornerTable {
     const ct = this.corner_table_;
     const numCorners = ct.numCorners();
     const numBaseVertices = ct.numVertices();
-    // New-vertex count is bounded by numCorners, so preallocate leftMostMap
-    // indexed by new-vertex id (push order == numNewVertices) instead of push().
+    // Preallocate leftMostMap by new-vertex id (new-vertex count <= numCorners).
     const leftMostMap = new Int32Array(numCorners);
     const cornerToVertex = this.corner_to_vertex_map_;
     const isVertexOnSeam = this.is_vertex_on_seam_;
