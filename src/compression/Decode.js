@@ -2,7 +2,6 @@
 
 import {
   EncodedGeometryType,
-  PointCloudEncodingMethod,
   MeshEncoderMethod,
   DracoHeader
 } from './config/CompressionShared.js';
@@ -11,8 +10,6 @@ import { DecoderBuffer } from '../core/DecoderBuffer.js';
 import { PointCloud } from '../point_cloud/PointCloud.js';
 import { Mesh } from '../mesh/Mesh.js';
 
-import { PointCloudSequentialDecoder } from './point_cloud/PointCloudSequentialDecoder.js';
-import { PointCloudKdTreeDecoder } from './point_cloud/PointCloudKdTreeDecoder.js';
 import { MeshSequentialDecoder } from './mesh/MeshSequentialDecoder.js';
 import { MeshEdgebreakerDecoder } from './mesh/MeshEdgebreakerDecoder.js';
 import { PointCloudDecoder } from './point_cloud/PointCloudDecoder.js';
@@ -32,23 +29,6 @@ function peekHeader(inBuffer) {
   const header = new DracoHeader();
   const status = PointCloudDecoder.decodeHeader(tempBuffer, header);
   return { ok: status.ok(), header, message: status.errorMsg };
-
-}
-
-// Creates a point cloud decoder based on the encoding method.
-function createPointCloudDecoder(method) {
-
-  if (method === PointCloudEncodingMethod.POINT_CLOUD_SEQUENTIAL_ENCODING) {
-
-    return new PointCloudSequentialDecoder();
-
-  } else if (method === PointCloudEncodingMethod.POINT_CLOUD_KD_TREE_ENCODING) {
-
-    return new PointCloudKdTreeDecoder();
-
-  }
-
-  throw new Error('Unsupported point cloud encoding method.');
 
 }
 
@@ -144,21 +124,13 @@ class Decoder {
 
   }
 
-  // Decodes the buffer into a provided PointCloud geometry.
+  // Point-cloud geometry decoding is not implemented (only triangle meshes are
+  // supported). The point-cloud-specific decoders are intentionally absent; the
+  // shared PointCloudDecoder base only backs the mesh decoders.
   // Returns { ok, message }.
-  decodeBufferToPointCloud(inBuffer, outGeometry) {
+  decodeBufferToPointCloud() {
 
-    const result = peekHeader(inBuffer);
-    if (!result.ok) {
-      return { ok: false, message: result.message };
-    }
-
-    if (result.header.encoderType !== EncodedGeometryType.POINT_CLOUD) {
-      return { ok: false, message: 'Input is not a point cloud.' };
-    }
-
-    const decoder = createPointCloudDecoder(result.header.encoderMethod);
-    return decoder.decode(this.options_, inBuffer, outGeometry);
+    return { ok: false, message: 'Point cloud decoding is not supported.' };
 
   }
 
