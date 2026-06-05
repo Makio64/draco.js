@@ -2,30 +2,33 @@
 
 A pure-JavaScript [Draco](https://github.com/google/draco) mesh **loader** for
 three.js. It's a drop-in `DRACOLoader` that decodes Draco-compressed triangle
-meshes (the EdgeBreaker connectivity used by glTF's `KHR_draco_mesh_compression`)
-directly in JavaScript.
+meshes — both the EdgeBreaker connectivity used by glTF's
+`KHR_draco_mesh_compression` and Draco's sequential connectivity — directly in
+JavaScript.
 
 **[Live demo →](https://mrdoob.github.io/draco.js/)**
 
 Why a JS port instead of the official WASM build?
 
-- **Small** — ~24 KB gzipped, vs ~104 KB for the `draco3d` WASM decoder + glue
-  (~4.3× smaller).
+- **Small** — ~24 KB gzipped (90 KB minified), vs ~104 KB for the `draco3d` WASM
+  decoder + glue (~4.3× smaller).
 - **Simple to ship** — one ES module. No `.wasm` fetch, no worker/glue setup,
   no cross-origin or CSP headaches.
-- **Fast** — within ~1.4–1.6× of the WASM decoder on substantial meshes (it
-  decodes byte-for-byte identical output; see [Correctness](#correctness)).
+- **Fast** — on substantial meshes it's within ~1.0–1.4× of the WASM decoder,
+  and effectively at parity on the largest ones, with byte-for-byte identical
+  output (see [Correctness](#correctness)).
 
-WASM is still faster in absolute terms — this trades a modest amount of decode
-speed for a much smaller, simpler-to-deploy loader.
+On the largest meshes (e.g. a 358k-face glTF) the two are about even; WASM keeps
+a lead of up to ~1.35× on smaller and mid-size meshes. You trade, at most, a
+modest amount of decode speed for a much smaller, simpler-to-deploy loader.
 
 ## Status
 
-The EdgeBreaker triangle-mesh path is complete and is what glTF/Draco content
-uses in practice (positions, normals, colors, texture coords, generic
-attributes; quantization, octahedral-normal, and parallelogram/multi-parallelogram
-prediction). Point-cloud, KD-tree, and the sequential connectivity paths, plus
-metadata decoding, are not implemented yet.
+Both triangle-mesh connectivity paths are implemented — EdgeBreaker (what
+glTF/Draco content uses in practice) and sequential — covering positions,
+normals, colors, texture coords, and generic attributes with quantization,
+octahedral-normal, and parallelogram/multi-parallelogram prediction. Point-cloud
+decoding (sequential and KD-tree) and metadata decoding are not implemented yet.
 
 ## Usage
 
@@ -57,16 +60,19 @@ external. Prebuilt copies are checked in.
 
 ## Correctness
 
-Output is validated against Google's reference `draco3d` WASM decoder: every
-sample is decoded by both and compared element-by-element — face indices must
-match exactly and per-point attribute values within a small epsilon. All
-samples match.
+Output is **byte-for-byte identical** to Google's reference `draco3d` WASM
+decoder. `npm run verify` decodes every sample with both and compares
+element-by-element — face indices and every per-point attribute value match
+exactly (`eps 0`) across all 250 test primitives. `npm run bench` separately
+times decoding and guards against output regressions via a sha256 of the
+decoded geometry.
 
 ## Project layout
 
 ```
 src/          decoder source, mirroring draco/src/draco/ file-for-file
 build/        bundled output (build/DRACOLoader.js + .min.js)
+tools/        bench.mjs (timing + regression) and verify-wasm.mjs (WASM parity)
 libs/         three.js's WASM Draco loader, vendored for the comparison
 samples/      .drc and Draco-compressed .glb test models
 index.html    JS-vs-WASM comparison viewer
