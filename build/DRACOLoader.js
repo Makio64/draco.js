@@ -32,12 +32,6 @@ const EncodedGeometryType = {
   NUM_ENCODED_GEOMETRY_TYPES: 2
 };
 
-// List of encoding methods for point clouds.
-const PointCloudEncodingMethod = {
-  POINT_CLOUD_SEQUENTIAL_ENCODING: 0,
-  POINT_CLOUD_KD_TREE_ENCODING: 1
-};
-
 // List of encoding methods for meshes.
 const MeshEncoderMethod = {
   MESH_SEQUENTIAL_ENCODING: 0,
@@ -1072,76 +1066,6 @@ class PointCloudDecoder {
       return new Status(StatusCode.DRACO_ERROR, 'Failed to decode metadata.');
     }
     return okStatus();
-  }
-
-}
-
-// compression/point_cloud/PointCloudSequentialDecoder.js - ported from point_cloud/point_cloud_sequential_decoder.h/cc
-
-
-// Point cloud decoder for data encoded by the PointCloudSequentialEncoder.
-// All attribute values are decoded using an identity mapping between point ids
-// and attribute value ids.
-class PointCloudSequentialDecoder extends PointCloudDecoder {
-
-  decodeGeometryData() {
-    const numPoints = this.buffer().decodeInt32();
-    if (numPoints === undefined) {
-      return false;
-    }
-    this.pointCloud().setNumPoints(numPoints);
-    return true;
-  }
-
-  createAttributesDecoder(attDecoderId) {
-    // Always create the basic attribute decoder.
-    // The SequentialAttributeDecodersController with a LinearSequencer
-    // would be instantiated here. This is a placeholder that matches
-    // the C++ structure - actual implementation depends on the
-    // SequentialAttributeDecodersController and LinearSequencer modules.
-    //
-    // return this.setAttributesDecoder(
-    //   attDecoderId,
-    //   new SequentialAttributeDecodersController(
-    //     new LinearSequencer(this.pointCloud().numPoints())
-    //   )
-    // );
-    //
-    // For now, return false to indicate the dependent modules are needed.
-    return false;
-  }
-
-}
-
-// compression/point_cloud/PointCloudKdTreeDecoder.js - ported from point_cloud/point_cloud_kd_tree_decoder.h/cc
-
-
-// Decodes PointCloud encoded with the PointCloudKdTreeEncoder.
-class PointCloudKdTreeDecoder extends PointCloudDecoder {
-
-  decodeGeometryData() {
-    const numPoints = this.buffer().decodeInt32();
-    if (numPoints === undefined) {
-      return false;
-    }
-    if (numPoints < 0) {
-      return false;
-    }
-    this.pointCloud().setNumPoints(numPoints);
-    return true;
-  }
-
-  createAttributesDecoder(attDecoderId) {
-    // Always create the basic attribute decoder using a KdTreeAttributesDecoder.
-    // The actual KdTreeAttributesDecoder module would be needed here.
-    //
-    // return this.setAttributesDecoder(
-    //   attDecoderId,
-    //   new KdTreeAttributesDecoder()
-    // );
-    //
-    // For now, return false to indicate the dependent module is needed.
-    return false;
   }
 
 }
@@ -9348,23 +9272,6 @@ function peekHeader(inBuffer) {
 
 }
 
-// Creates a point cloud decoder based on the encoding method.
-function createPointCloudDecoder(method) {
-
-  if (method === PointCloudEncodingMethod.POINT_CLOUD_SEQUENTIAL_ENCODING) {
-
-    return new PointCloudSequentialDecoder();
-
-  } else if (method === PointCloudEncodingMethod.POINT_CLOUD_KD_TREE_ENCODING) {
-
-    return new PointCloudKdTreeDecoder();
-
-  }
-
-  throw new Error('Unsupported point cloud encoding method.');
-
-}
-
 // Creates a mesh decoder based on the encoding method.
 function createMeshDecoder(method) {
 
@@ -9457,21 +9364,13 @@ class Decoder {
 
   }
 
-  // Decodes the buffer into a provided PointCloud geometry.
+  // Point-cloud geometry decoding is not implemented (only triangle meshes are
+  // supported). The point-cloud-specific decoders are intentionally absent; the
+  // shared PointCloudDecoder base only backs the mesh decoders.
   // Returns { ok, message }.
-  decodeBufferToPointCloud(inBuffer, outGeometry) {
+  decodeBufferToPointCloud() {
 
-    const result = peekHeader(inBuffer);
-    if (!result.ok) {
-      return { ok: false, message: result.message };
-    }
-
-    if (result.header.encoderType !== EncodedGeometryType.POINT_CLOUD) {
-      return { ok: false, message: 'Input is not a point cloud.' };
-    }
-
-    const decoder = createPointCloudDecoder(result.header.encoderMethod);
-    return decoder.decode(this.options_, inBuffer, outGeometry);
+    return { ok: false, message: 'Point cloud decoding is not supported.' };
 
   }
 
