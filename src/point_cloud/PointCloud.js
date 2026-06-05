@@ -1,7 +1,5 @@
 // point_cloud/PointCloud.js - ported from point_cloud/point_cloud.h/cc
 
-import { GeometryMetadata } from '../metadata/GeometryMetadata.js';
-
 // Mirrors GeometryAttribute::Type enum values used for named attribute indexing.
 // These must match the C++ GeometryAttribute::Type enum.
 const NAMED_ATTRIBUTES_COUNT = 8;
@@ -12,7 +10,6 @@ class PointCloud {
 
     this.num_points_ = 0;
     this.attributes_ = [];
-    this.metadata_ = null;
 
     // Array of arrays: named_attribute_index_[type] = [att_id, ...]
     this.named_attribute_index_ = [];
@@ -57,22 +54,6 @@ class PointCloud {
     }
 
     return this.attributes_[attId];
-
-  }
-
-  // Returns the named attribute with a given unique id.
-  getNamedAttributeByUniqueId(type, uniqueId) {
-
-    const namedIndex = this.named_attribute_index_[type];
-    for (let i = 0; i < namedIndex.length; ++i) {
-
-      if (this.attributes_[namedIndex[i]].uniqueId === uniqueId) {
-        return this.attributes_[namedIndex[i]];
-      }
-
-    }
-
-    return null;
 
   }
 
@@ -145,46 +126,6 @@ class PointCloud {
 
   }
 
-  deleteAttribute(attId) {
-
-    if (attId < 0 || attId >= this.attributes_.length) {
-      return;
-    }
-
-    const attType = this.attributes_[attId].attributeType();
-    const uniqueId = this.attributes_[attId].uniqueId;
-    this.attributes_.splice(attId, 1);
-
-    // Remove metadata if applicable.
-    if (this.metadata_) {
-      this.metadata_.deleteAttributeMetadataByUniqueId(uniqueId);
-    }
-
-    // Remove from named attribute list.
-    if (attType < NAMED_ATTRIBUTES_COUNT) {
-
-      const idx = this.named_attribute_index_[attType].indexOf(attId);
-      if (idx !== -1) {
-        this.named_attribute_index_[attType].splice(idx, 1);
-      }
-
-    }
-
-    // Update ids of all subsequent named attributes.
-    for (let i = 0; i < NAMED_ATTRIBUTES_COUNT; ++i) {
-
-      for (let j = 0; j < this.named_attribute_index_[i].length; ++j) {
-
-        if (this.named_attribute_index_[i][j] > attId) {
-          this.named_attribute_index_[i][j]--;
-        }
-
-      }
-
-    }
-
-  }
-
   numPoints() {
 
     return this.num_points_;
@@ -194,18 +135,6 @@ class PointCloud {
   setNumPoints(num) {
 
     this.num_points_ = num;
-
-  }
-
-  setMetadata(metadata) {
-
-    this.metadata_ = metadata;
-
-  }
-
-  getMetadata() {
-
-    return this.metadata_;
 
   }
 

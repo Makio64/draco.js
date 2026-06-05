@@ -3,6 +3,9 @@
 import { MeshDecoder } from './MeshDecoder.js';
 import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 import { decodeVarint } from '../../core/VarintDecoding.js';
+import { decodeSymbols } from '../entropy/SymbolDecoding.js';
+import { SequentialAttributeDecodersController } from '../attributes/SequentialAttributeDecodersController.js';
+import { LinearSequencer } from '../attributes/LinearSequencer.js';
 
 // Class for decoding data encoded by MeshSequentialEncoder.
 class MeshSequentialDecoder extends MeshDecoder {
@@ -100,52 +103,52 @@ class MeshSequentialDecoder extends MeshDecoder {
   }
 
   createAttributesDecoder(attDecoderId) {
-    // Always create the basic attribute decoder.
-    // The SequentialAttributeDecodersController with a LinearSequencer
-    // would be instantiated here. Dependent on those modules being ported.
-    //
-    // return this.setAttributesDecoder(
-    //   attDecoderId,
-    //   new SequentialAttributeDecodersController(
-    //     new LinearSequencer(this.pointCloud().numPoints())
-    //   )
-    // );
-    return false;
+    // Always create the basic attribute decoder. Sequential meshes store
+    // attribute values directly in point order, so a LinearSequencer drives the
+    // SequentialAttributeDecodersController.
+    return this.setAttributesDecoder(
+      attDecoderId,
+      new SequentialAttributeDecodersController(
+        new LinearSequencer(this.pointCloud().numPoints())
+      )
+    );
   }
 
   // Decodes face indices that were compressed with an entropy code.
   _decodeAndDecompressIndices(numFaces) {
     // Get decoded indices differences that were encoded with an entropy code.
-    // This requires the DecodeSymbols function from the entropy module.
-    // For now this is a placeholder that mirrors the C++ logic.
-    //
-    // const indicesBuffer = new Uint32Array(numFaces * 3);
-    // if (!decodeSymbols(numFaces * 3, 1, this.buffer(), indicesBuffer)) {
-    //   return false;
-    // }
-    //
+    const indicesBuffer = new Uint32Array(numFaces * 3);
+    if (!decodeSymbols(numFaces * 3, 1, this.buffer(), indicesBuffer)) {
+      return false;
+    }
     // Reconstruct the indices from the differences.
-    // let lastIndexValue = 0;
-    // let vertexIndex = 0;
-    // for (let i = 0; i < numFaces; ++i) {
-    //   const face = [0, 0, 0];
-    //   for (let j = 0; j < 3; ++j) {
-    //     const encodedVal = indicesBuffer[vertexIndex++];
-    //     let indexDiff = (encodedVal >> 1);
-    //     if (encodedVal & 1) {
-    //       if (indexDiff > lastIndexValue) return false;
-    //       indexDiff = -indexDiff;
-    //     } else {
-    //       if (indexDiff > (0x7FFFFFFF - lastIndexValue)) return false;
-    //     }
-    //     const indexValue = indexDiff + lastIndexValue;
-    //     face[j] = indexValue;
-    //     lastIndexValue = indexValue;
-    //   }
-    //   this.mesh().addFace(face);
-    // }
-    // return true;
-    return false;
+    // See MeshSequentialEncoder::CompressAndEncodeIndices() for more details.
+    let lastIndexValue = 0; // This will always be >= 0.
+    let vertexIndex = 0;
+    for (let i = 0; i < numFaces; ++i) {
+      const face = [0, 0, 0];
+      for (let j = 0; j < 3; ++j) {
+        const encodedVal = indicesBuffer[vertexIndex++];
+        let indexDiff = (encodedVal >>> 1);
+        if (encodedVal & 1) {
+          if (indexDiff > lastIndexValue) {
+            // Subtracting indexDiff would result in a negative index.
+            return false;
+          }
+          indexDiff = -indexDiff;
+        } else {
+          if (indexDiff > (0x7FFFFFFF - lastIndexValue)) {
+            // Adding indexDiff to lastIndexValue would overflow.
+            return false;
+          }
+        }
+        const indexValue = (indexDiff + lastIndexValue) | 0;
+        face[j] = indexValue;
+        lastIndexValue = indexValue;
+      }
+      this.mesh().addFace(face);
+    }
+    return true;
   }
 
 }

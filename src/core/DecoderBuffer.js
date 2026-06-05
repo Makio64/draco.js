@@ -21,33 +21,47 @@ class BitDecoder {
     return this._bitOffset;
   }
 
-  availBits() {
-    return (this._byteLength * 8) - this._bitOffset;
-  }
-
   getBits(nbits) {
     if (nbits > 32) return undefined;
     const buf = this._bitBuffer;
     let off = this._bitOffset;
+    const byteOffset = off >> 3;
+    const bitShift = off & 7;
+
+    // Fast path: if we have enough bytes left in the buffer to read 32 bits safely.
+    if (byteOffset + 4 < this._byteLength) {
+      const val = (buf[byteOffset] | (buf[byteOffset + 1] << 8) | (buf[byteOffset + 2] << 16) | (buf[byteOffset + 3] << 24)) >>> 0;
+      let result;
+      if (nbits > 32 - bitShift) {
+        const val2 = buf[byteOffset + 4];
+        const low = val >>> bitShift;
+        const high = val2 << (32 - bitShift);
+        result = (low | high) >>> 0;
+      } else {
+        result = val >>> bitShift;
+      }
+
+      this._bitOffset = off + nbits;
+      return nbits === 32 ? result : (result & ((1 << nbits) - 1));
+    }
+
+    // Safe/fallback path for the end of the buffer
     let value = 0;
     let bitsRead = 0;
-
-    // Read bits in bulk from byte-aligned chunks.
+    let currOff = off;
     while (bitsRead < nbits) {
-      const byteOffset = off >> 3;
-      if (byteOffset >= this._byteLength) break;
-      const bitShift = off & 7;
-      // Number of bits available in this byte.
-      const bitsAvail = 8 - bitShift;
+      const bOff = currOff >> 3;
+      if (bOff >= this._byteLength) break;
+      const bShift = currOff & 7;
+      const bitsAvail = 8 - bShift;
       const bitsNeeded = nbits - bitsRead;
       const bitsToRead = bitsAvail < bitsNeeded ? bitsAvail : bitsNeeded;
       const mask = (1 << bitsToRead) - 1;
-      value |= ((buf[byteOffset] >> bitShift) & mask) << bitsRead;
+      value |= ((buf[bOff] >> bShift) & mask) << bitsRead;
       bitsRead += bitsToRead;
-      off += bitsToRead;
+      currOff += bitsToRead;
     }
-
-    this._bitOffset = off;
+    this._bitOffset = currOff;
     return value;
   }
 
@@ -103,13 +117,6 @@ export class DecoderBuffer {
     return val;
   }
 
-  decodeInt16() {
-    if (this._pos + 2 > this._dataSize) return undefined;
-    const val = this._dataView.getInt16(this._pos, true);
-    this._pos += 2;
-    return val;
-  }
-
   decodeUint32() {
     if (this._pos + 4 > this._dataSize) return undefined;
     const val = this._dataView.getUint32(this._pos, true);
@@ -131,13 +138,6 @@ export class DecoderBuffer {
     return val;
   }
 
-  decodeFloat64() {
-    if (this._pos + 8 > this._dataSize) return undefined;
-    const val = this._dataView.getFloat64(this._pos, true);
-    this._pos += 8;
-    return val;
-  }
-
   decodeUint64() {
     if (this._pos + 8 > this._dataSize) return undefined;
     const lo = this._dataView.getUint32(this._pos, true);
@@ -153,12 +153,6 @@ export class DecoderBuffer {
     const result = this._data.slice(this._pos, this._pos + size);
     this._pos += size;
     return result;
-  }
-
-  // Peek without advancing
-  peekUint8() {
-    if (this._pos + 1 > this._dataSize) return undefined;
-    return this._data[this._pos];
   }
 
   // Bit decoding
@@ -205,10 +199,6 @@ export class DecoderBuffer {
 
   advance(bytes) {
     this._pos += bytes;
-  }
-
-  startDecodingFrom(offset) {
-    this._pos = offset;
   }
 
   get bitstreamVersion() { return this._bitstreamVersion; }

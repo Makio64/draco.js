@@ -290,7 +290,10 @@ class MeshEdgebreakerDecoderImpl {
 
     this._attributeData = [];
     for (let i = 0; i < numAttributeData; ++i) {
-      this._attributeData.push(new AttributeData());
+      const ad = new AttributeData();
+      ad.attributeSeamCorners = new Int32Array(numFaces * 3);
+      ad.numSeamCorners = 0;
+      this._attributeData.push(ad);
     }
 
     if (!this._cornerTable.reset(
@@ -384,18 +387,23 @@ class MeshEdgebreakerDecoderImpl {
     this._traversalDecoder.done();
 
     // Decode attribute connectivity.
+    let previousConnectivityData = null;
     for (let i = 0; i < this._attributeData.length; ++i) {
       const connectivityData = this._attributeData[i].connectivityData;
       connectivityData.initEmpty(this._cornerTable);
       // Add all seams (indexed loop — avoids a for..of iterator per seam).
       const seamCorners = this._attributeData[i].attributeSeamCorners;
-      for (let s = 0; s < seamCorners.length; ++s) {
+      const seamCount = this._attributeData[i].numSeamCorners;
+      for (let s = 0; s < seamCount; ++s) {
         connectivityData.addSeamEdge(seamCorners[s]);
       }
       // Recompute vertices from the newly added seam edges.
-      if (!connectivityData.recomputeVertices(null, null)) {
+      if (connectivityData.hasSameSeams(previousConnectivityData)) {
+        connectivityData.adoptVertexRecompute(previousConnectivityData);
+      } else if (!connectivityData.recomputeVertices(null, null)) {
         return false;
       }
+      previousConnectivityData = connectivityData;
     }
 
     this._posEncodingData.init(this._cornerTable.numVertices());
@@ -455,7 +463,9 @@ class MeshEdgebreakerDecoderImpl {
   _decodeConnectivity(numSymbols) {
     // Algorithm does the reverse decoding of the symbols encoded with the
     // edgebreaker method.
-    const activeCornerStack = [];
+    const activeCornerStack =
+      new Int32Array(numSymbols + this._topologySplitData.length + 16);
+    let activeCornerStackSize = 0;
     const topologySplitActiveCorners = new Map();
     const invalidVertices = [];
     const removeInvalidVertices = this._attributeData.length === 0;
@@ -470,7 +480,37 @@ class MeshEdgebreakerDecoderImpl {
     // corners written below are freshly constructed (>= 0), so no guard needed.
     const cornerToVertex = this._cornerTable._cornerToVertex;
     const oppositeCorners = this._cornerTable._oppositeCorners;
+    const numCorners = this._cornerTable.numCorners();
 
+    // Safe, inlinable arrow functions for CornerTable accessors that correctly
+    // handle negative indices and avoid polymorphic method dispatch.
+    const next = (c) => c < 0 ? -1 : ((c % 3 === 2) ? c - 2 : c + 1);
+    const prev = (c) => c < 0 ? -1 : ((c % 3 === 0) ? c + 2 : c - 1);
+    const vertex = (c) => (c < 0 || c >= numCorners) ? -1 : cornerToVertex[c];
+    const opposite = (c) => (c < 0 || c >= numCorners) ? -1 : oppositeCorners[c];
+    const leftMostCorner = (v) => (v < 0 || v >= this._cornerTable._vertexCorners.length) ? -1 : this._cornerTable._vertexCorners[v];
+
+    const swingLeft = (c) => {
+      const n = next(c);
+      const o = opposite(n);
+      return o < 0 ? -1 : next(o);
+    };
+    const swingRight = (c) => {
+      const p = prev(c);
+      const o = opposite(p);
+      return o < 0 ? -1 : prev(o);
+    };
+
+    // Hot loop: the CornerTable accessors are inlined directly as flat-array
+    // reads + corner-triple arithmetic rather than calling the next/prev/vertex/
+    // opposite/leftMostCorner helpers above. _decodeConnectivity is far larger
+    // than V8's inlining budget, so those helpers stayed real (monomorphic)
+    // calls and cost ~15% of total decode in profiles. All corners reached here
+    // during a well-formed stream are valid (>= 0, < numCorners) and the flat
+    // arrays are -1-initialized, so the helpers' negative/bounds guards are not
+    // needed -- except the swing-left boundary terminator, kept below. The
+    // helpers remain defined for the (cold) post-loop cleanup code.
+    const vc = this._cornerTable; // _vertexCorners is re-read (addNewVertex may realloc).
     for (let symbolId = 0; symbolId < numSymbols; ++symbolId) {
       const faceIndex = numFacesDecoded++;
       let checkTopologySplit = false;
@@ -478,17 +518,17 @@ class MeshEdgebreakerDecoderImpl {
 
       if (symbol === TOPOLOGY_C) {
         // Create a new face between two edges on the open boundary.
-        if (activeCornerStack.length === 0) return -1;
+        if (activeCornerStackSize === 0) return -1;
 
-        const cornerA = activeCornerStack[activeCornerStack.length - 1];
-        const vertexX = this._cornerTable.vertex(
-          this._cornerTable.next(cornerA));
-        const cornerB = this._cornerTable.next(
-          this._cornerTable.leftMostCorner(vertexX));
+        const cornerA = activeCornerStack[activeCornerStackSize - 1];
+        const nA = cornerA % 3 === 2 ? cornerA - 2 : cornerA + 1; // next(cornerA)
+        const vertexX = cornerToVertex[nA];
+        const lmcX = vc._vertexCorners[vertexX];                  // leftMostCorner(vertexX)
+        const cornerB = lmcX % 3 === 2 ? lmcX - 2 : lmcX + 1;     // next(lmcX)
 
         if (cornerA === cornerB) return -1;
-        if (this._cornerTable.opposite(cornerA) !== kInvalidCornerIndex ||
-            this._cornerTable.opposite(cornerB) !== kInvalidCornerIndex) {
+        if (oppositeCorners[cornerA] !== kInvalidCornerIndex ||
+            oppositeCorners[cornerB] !== kInvalidCornerIndex) {
           return -1;
         }
 
@@ -498,27 +538,27 @@ class MeshEdgebreakerDecoderImpl {
         oppositeCorners[cornerB] = corner + 2;
         oppositeCorners[corner + 2] = cornerB;
 
-        const vertAPrev = this._cornerTable.vertex(
-          this._cornerTable.previous(cornerA));
-        const vertBNext = this._cornerTable.vertex(
-          this._cornerTable.next(cornerB));
+        const pA = cornerA % 3 === 0 ? cornerA + 2 : cornerA - 1; // prev(cornerA)
+        const nB = cornerB % 3 === 2 ? cornerB - 2 : cornerB + 1; // next(cornerB)
+        const vertAPrev = cornerToVertex[pA];
+        const vertBNext = cornerToVertex[nB];
 
         if (vertexX === vertAPrev || vertexX === vertBNext) return -1;
 
         cornerToVertex[corner] = vertexX;
         cornerToVertex[corner + 1] = vertBNext;
         cornerToVertex[corner + 2] = vertAPrev;
-        this._cornerTable.setLeftMostCorner(vertAPrev, corner + 2);
+        vc._vertexCorners[vertAPrev] = corner + 2;
         // Mark the vertex x as interior.
         this._isVertHole[vertexX] = 0;
-        activeCornerStack[activeCornerStack.length - 1] = corner;
+        activeCornerStack[activeCornerStackSize - 1] = corner;
 
       } else if (symbol === TOPOLOGY_R || symbol === TOPOLOGY_L) {
         // Create a new face extending from the open boundary edge.
-        if (activeCornerStack.length === 0) return -1;
+        if (activeCornerStackSize === 0) return -1;
 
-        const cornerA = activeCornerStack[activeCornerStack.length - 1];
-        if (this._cornerTable.opposite(cornerA) !== kInvalidCornerIndex) {
+        const cornerA = activeCornerStack[activeCornerStackSize - 1];
+        if (oppositeCorners[cornerA] !== kInvalidCornerIndex) {
           return -1;
         }
 
@@ -540,39 +580,39 @@ class MeshEdgebreakerDecoderImpl {
         if (this._cornerTable.numVertices() > maxNumVertices) return -1;
 
         cornerToVertex[oppCorner] = newVertIndex;
-        this._cornerTable.setLeftMostCorner(newVertIndex, oppCorner);
+        vc._vertexCorners[newVertIndex] = oppCorner;
 
-        const vertexR = this._cornerTable.vertex(
-          this._cornerTable.previous(cornerA));
+        const pA = cornerA % 3 === 0 ? cornerA + 2 : cornerA - 1; // prev(cornerA)
+        const vertexR = cornerToVertex[pA];
         cornerToVertex[cornerR] = vertexR;
-        this._cornerTable.setLeftMostCorner(vertexR, cornerR);
+        vc._vertexCorners[vertexR] = cornerR;
 
-        cornerToVertex[cornerL] =
-          this._cornerTable.vertex(this._cornerTable.next(cornerA));
+        const nA = cornerA % 3 === 2 ? cornerA - 2 : cornerA + 1; // next(cornerA)
+        cornerToVertex[cornerL] = cornerToVertex[nA];
 
-        activeCornerStack[activeCornerStack.length - 1] = corner;
+        activeCornerStack[activeCornerStackSize - 1] = corner;
         checkTopologySplit = true;
 
       } else if (symbol === TOPOLOGY_S) {
         // Create a new face that merges two last active edges from the active
         // stack.
-        if (activeCornerStack.length === 0) return -1;
+        if (activeCornerStackSize === 0) return -1;
 
-        const cornerB = activeCornerStack[activeCornerStack.length - 1];
-        activeCornerStack.pop();
+        const cornerB = activeCornerStack[activeCornerStackSize - 1];
+        activeCornerStackSize--;
 
         // Corner "a" can correspond to a normal active edge, or to an edge
         // created from the topology split event.
         const splitCorner = topologySplitActiveCorners.get(symbolId);
         if (splitCorner !== undefined) {
-          activeCornerStack.push(splitCorner);
+          activeCornerStack[activeCornerStackSize++] = splitCorner;
         }
-        if (activeCornerStack.length === 0) return -1;
+        if (activeCornerStackSize === 0) return -1;
 
-        const cornerA = activeCornerStack[activeCornerStack.length - 1];
+        const cornerA = activeCornerStack[activeCornerStackSize - 1];
         if (cornerA === cornerB) return -1;
-        if (this._cornerTable.opposite(cornerA) !== kInvalidCornerIndex ||
-            this._cornerTable.opposite(cornerB) !== kInvalidCornerIndex) {
+        if (oppositeCorners[cornerA] !== kInvalidCornerIndex ||
+            oppositeCorners[cornerB] !== kInvalidCornerIndex) {
           return -1;
         }
 
@@ -582,30 +622,31 @@ class MeshEdgebreakerDecoderImpl {
         oppositeCorners[cornerB] = corner + 1;
         oppositeCorners[corner + 1] = cornerB;
 
-        const vertexP = this._cornerTable.vertex(
-          this._cornerTable.previous(cornerA));
+        const pA = cornerA % 3 === 0 ? cornerA + 2 : cornerA - 1; // prev(cornerA)
+        const vertexP = cornerToVertex[pA];
         cornerToVertex[corner] = vertexP;
-        cornerToVertex[corner + 1] =
-          this._cornerTable.vertex(this._cornerTable.next(cornerA));
+        const nA = cornerA % 3 === 2 ? cornerA - 2 : cornerA + 1; // next(cornerA)
+        cornerToVertex[corner + 1] = cornerToVertex[nA];
 
-        const vertBPrev = this._cornerTable.vertex(
-          this._cornerTable.previous(cornerB));
+        const pB = cornerB % 3 === 0 ? cornerB + 2 : cornerB - 1; // prev(cornerB)
+        const vertBPrev = cornerToVertex[pB];
         cornerToVertex[corner + 2] = vertBPrev;
-        this._cornerTable.setLeftMostCorner(vertBPrev, corner + 2);
+        vc._vertexCorners[vertBPrev] = corner + 2;
 
-        let cornerN = this._cornerTable.next(cornerB);
-        const vertexN = this._cornerTable.vertex(cornerN);
+        let cornerN = cornerB % 3 === 2 ? cornerB - 2 : cornerB + 1; // next(cornerB)
+        const vertexN = cornerToVertex[cornerN];
         this._traversalDecoder.mergeVertices(vertexP, vertexN);
         // Update the left most corner on the newly merged vertex.
-        this._cornerTable.setLeftMostCorner(
-          vertexP, this._cornerTable.leftMostCorner(vertexN));
+        vc._vertexCorners[vertexP] = vc._vertexCorners[vertexN]; // leftMostCorner(vertexN)
 
         // Update vertex id at corner "n" and all corners connected to it
-        // in the CCW direction.
+        // in the CCW direction. swingLeft(c) = next(opposite(next(c))).
         const firstCorner = cornerN;
         while (cornerN !== kInvalidCornerIndex) {
           cornerToVertex[cornerN] = vertexP;
-          cornerN = this._cornerTable.swingLeft(cornerN);
+          const sn = cornerN % 3 === 2 ? cornerN - 2 : cornerN + 1; // next(cornerN)
+          const so = oppositeCorners[sn];                           // opposite(sn)
+          cornerN = so < 0 ? -1 : (so % 3 === 2 ? so - 2 : so + 1); // next(so) or boundary
           if (cornerN === firstCorner) {
             // We reached the start again which should not happen for split
             // symbols.
@@ -613,27 +654,30 @@ class MeshEdgebreakerDecoderImpl {
           }
         }
         // Make the old vertex n isolated.
-        this._cornerTable.makeVertexIsolated(vertexN);
+        vc._vertexCorners[vertexN] = -1;
         if (removeInvalidVertices) {
           invalidVertices.push(vertexN);
         }
-        activeCornerStack[activeCornerStack.length - 1] = corner;
+        activeCornerStack[activeCornerStackSize - 1] = corner;
 
       } else if (symbol === TOPOLOGY_E) {
         const corner = 3 * faceIndex;
         const firstVertIndex = this._cornerTable.addNewVertex();
         // Create three new vertices at the corners of the new face.
-        cornerToVertex[corner] = firstVertIndex;
-        cornerToVertex[corner + 1] = this._cornerTable.addNewVertex();
-        cornerToVertex[corner + 2] = this._cornerTable.addNewVertex();
+        this._cornerTable.addNewVertex();
+        this._cornerTable.addNewVertex();
 
         if (this._cornerTable.numVertices() > maxNumVertices) return -1;
 
-        this._cornerTable.setLeftMostCorner(firstVertIndex, corner);
-        this._cornerTable.setLeftMostCorner(firstVertIndex + 1, corner + 1);
-        this._cornerTable.setLeftMostCorner(firstVertIndex + 2, corner + 2);
+        cornerToVertex[corner] = firstVertIndex;
+        cornerToVertex[corner + 1] = firstVertIndex + 1;
+        cornerToVertex[corner + 2] = firstVertIndex + 2;
+
+        vc._vertexCorners[firstVertIndex] = corner;
+        vc._vertexCorners[firstVertIndex + 1] = corner + 1;
+        vc._vertexCorners[firstVertIndex + 2] = corner + 2;
         // Add the tip corner to the active stack.
-        activeCornerStack.push(corner);
+        activeCornerStack[activeCornerStackSize++] = corner;
         checkTopologySplit = true;
 
       } else {
@@ -643,7 +687,7 @@ class MeshEdgebreakerDecoderImpl {
 
       // Inform the traversal decoder that a new corner has been reached.
       this._traversalDecoder.newActiveCornerReached(
-        activeCornerStack[activeCornerStack.length - 1]);
+        activeCornerStack[activeCornerStackSize - 1]);
 
       if (checkTopologySplit) {
         // Check for topology splits.
@@ -652,12 +696,14 @@ class MeshEdgebreakerDecoderImpl {
         while (this._isTopologySplit(encoderSymbolId, splitResult)) {
           if (splitResult.encoderSplitSymbolId < 0) return -1;
 
-          const actTopCorner = activeCornerStack[activeCornerStack.length - 1];
+          const actTopCorner = activeCornerStack[activeCornerStackSize - 1];
           let newActiveCorner;
           if (splitResult.faceEdge === RIGHT_FACE_EDGE) {
-            newActiveCorner = this._cornerTable.next(actTopCorner);
+            // next(actTopCorner)
+            newActiveCorner = actTopCorner % 3 === 2 ? actTopCorner - 2 : actTopCorner + 1;
           } else {
-            newActiveCorner = this._cornerTable.previous(actTopCorner);
+            // prev(actTopCorner)
+            newActiveCorner = actTopCorner % 3 === 0 ? actTopCorner + 2 : actTopCorner - 1;
           }
           // Convert the encoder split symbol id to decoder symbol id.
           const decoderSplitSymbolId =
@@ -672,9 +718,9 @@ class MeshEdgebreakerDecoderImpl {
     }
 
     // Decode start faces and connect them to the faces from the active stack.
-    while (activeCornerStack.length > 0) {
-      const corner = activeCornerStack[activeCornerStack.length - 1];
-      activeCornerStack.pop();
+    while (activeCornerStackSize > 0) {
+      const corner = activeCornerStack[activeCornerStackSize - 1];
+      activeCornerStackSize--;
 
       const interiorFace =
         this._traversalDecoder.decodeStartFaceConfiguration();
@@ -685,27 +731,22 @@ class MeshEdgebreakerDecoderImpl {
         }
 
         const cornerA = corner;
-        const vertN = this._cornerTable.vertex(
-          this._cornerTable.next(cornerA));
-        const cornerB = this._cornerTable.next(
-          this._cornerTable.leftMostCorner(vertN));
+        const vertN = vertex(next(cornerA));
+        const cornerB = next(leftMostCorner(vertN));
 
-        const vertX = this._cornerTable.vertex(
-          this._cornerTable.next(cornerB));
-        const cornerC = this._cornerTable.next(
-          this._cornerTable.leftMostCorner(vertX));
+        const vertX = vertex(next(cornerB));
+        const cornerC = next(leftMostCorner(vertX));
 
         if (corner === cornerB || corner === cornerC || cornerB === cornerC) {
           return -1;
         }
-        if (this._cornerTable.opposite(corner) !== kInvalidCornerIndex ||
-            this._cornerTable.opposite(cornerB) !== kInvalidCornerIndex ||
-            this._cornerTable.opposite(cornerC) !== kInvalidCornerIndex) {
+        if (opposite(corner) !== kInvalidCornerIndex ||
+            opposite(cornerB) !== kInvalidCornerIndex ||
+            opposite(cornerC) !== kInvalidCornerIndex) {
           return -1;
         }
 
-        const vertP = this._cornerTable.vertex(
-          this._cornerTable.next(cornerC));
+        const vertP = vertex(next(cornerC));
 
         const faceIndex = numFacesDecoded++;
         const newCorner = 3 * faceIndex;
@@ -721,10 +762,9 @@ class MeshEdgebreakerDecoderImpl {
         cornerToVertex[newCorner + 2] = vertN;
 
         // Mark all three vertices as interior.
-        for (let ci = 0; ci < 3; ++ci) {
-          this._isVertHole[
-            this._cornerTable.vertex(newCorner + ci)] = 0;
-        }
+        this._isVertHole[vertX] = 0;
+        this._isVertHole[vertP] = 0;
+        this._isVertHole[vertN] = 0;
 
         this._initFaceConfigurations.push(true);
         this._initCorners.push(newCorner);
@@ -747,7 +787,7 @@ class MeshEdgebreakerDecoderImpl {
       const invalidVert = invalidVertices[ivIdx];
       // Find the last valid vertex.
       let srcVert = numVertices - 1;
-      while (this._cornerTable.leftMostCorner(srcVert) === kInvalidCornerIndex) {
+      while (leftMostCorner(srcVert) === kInvalidCornerIndex) {
         srcVert = --numVertices - 1;
       }
       if (srcVert < invalidVert) continue;
@@ -755,35 +795,34 @@ class MeshEdgebreakerDecoderImpl {
       // Remap all corners mapped to srcVert to invalidVert.
       // Use VertexCornersIterator logic: swing left first, then swing right
       // on boundary to cover all corners around the vertex.
-      const startCid = this._cornerTable.leftMostCorner(srcVert);
+      const startCid = leftMostCorner(srcVert);
       let cid = startCid;
       let leftTraversal = true;
       while (cid !== kInvalidCornerIndex) {
-        if (this._cornerTable.vertex(cid) !== srcVert) {
+        if (vertex(cid) !== srcVert) {
           return -1;
         }
         cornerToVertex[cid] = invalidVert;
         // Advance to the next corner around the vertex.
         if (leftTraversal) {
-          const nextCid = this._cornerTable.swingLeft(cid);
-          if (nextCid === kInvalidCornerIndex) {
+          const nextC = swingLeft(cid);
+          if (nextC === kInvalidCornerIndex) {
             // Open boundary reached, switch to right traversal from start.
             leftTraversal = false;
-            cid = this._cornerTable.swingRight(startCid);
-          } else if (nextCid === startCid) {
+            cid = swingRight(startCid);
+          } else if (nextC === startCid) {
             // Closed fan, we're done.
             break;
           } else {
-            cid = nextCid;
+            cid = nextC;
           }
         } else {
-          cid = this._cornerTable.swingRight(cid);
+          cid = swingRight(cid);
         }
       }
 
-      this._cornerTable.setLeftMostCorner(
-        invalidVert, this._cornerTable.leftMostCorner(srcVert));
-      this._cornerTable.makeVertexIsolated(srcVert);
+      this._cornerTable._vertexCorners[invalidVert] = leftMostCorner(srcVert);
+      this._cornerTable._vertexCorners[srcVert] = -1;
       this._isVertHole[invalidVert] = this._isVertHole[srcVert];
       this._isVertHole[srcVert] = 0;
       numVertices--;
@@ -889,14 +928,16 @@ class MeshEdgebreakerDecoderImpl {
       if (oppCorner === kInvalidCornerIndex) {
         // Boundary edge is automatically an attribute seam.
         for (let i = 0; i < this._attributeData.length; ++i) {
-          this._attributeData[i].attributeSeamCorners.push(corners[c]);
+          const ad = this._attributeData[i];
+          ad.attributeSeamCorners[ad.numSeamCorners++] = corners[c];
         }
         continue;
       }
       for (let i = 0; i < this._attributeData.length; ++i) {
         const isSeam = this._traversalDecoder.decodeAttributeSeam(i);
         if (isSeam) {
-          this._attributeData[i].attributeSeamCorners.push(corners[c]);
+          const ad = this._attributeData[i];
+          ad.attributeSeamCorners[ad.numSeamCorners++] = corners[c];
         }
       }
     }
@@ -920,28 +961,74 @@ class MeshEdgebreakerDecoderImpl {
     const nextCorner = rem === 2 ? corner - 2 : corner + 1;
     const prevCorner = rem === 0 ? corner + 2 : corner - 1;
 
-    for (let c = 0; c < 3; ++c) {
-      const cc = c === 0 ? corner : (c === 1 ? nextCorner : prevCorner);
+    const connectivityDecoders = this._traversalDecoder._attributeConnectivityDecoders;
+
+    // --- cc = corner ---
+    {
+      const cc = corner;
       const oppCorner = oppositeCorners[cc];
       if (oppCorner === kInvalidCornerIndex) {
-        // Boundary edge is automatically an attribute seam.
         for (let i = 0; i < numAttrData; ++i) {
-          attributeData[i].attributeSeamCorners.push(cc);
+          const ad = attributeData[i];
+          ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
         }
-        continue;
-      }
-      const oppFaceId = (oppCorner / 3) | 0;
-      // Don't decode edges when the opposite face has been already processed.
-      if (oppFaceId < srcFaceId) {
-        continue;
-      }
-      for (let i = 0; i < numAttrData; ++i) {
-        const isSeam = this._traversalDecoder.decodeAttributeSeam(i);
-        if (isSeam) {
-          attributeData[i].attributeSeamCorners.push(cc);
+      } else {
+        const oppFaceId = (oppCorner / 3) | 0;
+        if (oppFaceId >= srcFaceId) {
+          for (let i = 0; i < numAttrData; ++i) {
+            if (connectivityDecoders[i].decodeNextBit()) {
+              const ad = attributeData[i];
+              ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
+            }
+          }
         }
       }
     }
+
+    // --- cc = nextCorner ---
+    {
+      const cc = nextCorner;
+      const oppCorner = oppositeCorners[cc];
+      if (oppCorner === kInvalidCornerIndex) {
+        for (let i = 0; i < numAttrData; ++i) {
+          const ad = attributeData[i];
+          ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
+        }
+      } else {
+        const oppFaceId = (oppCorner / 3) | 0;
+        if (oppFaceId >= srcFaceId) {
+          for (let i = 0; i < numAttrData; ++i) {
+            if (connectivityDecoders[i].decodeNextBit()) {
+              const ad = attributeData[i];
+              ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
+            }
+          }
+        }
+      }
+    }
+
+    // --- cc = prevCorner ---
+    {
+      const cc = prevCorner;
+      const oppCorner = oppositeCorners[cc];
+      if (oppCorner === kInvalidCornerIndex) {
+        for (let i = 0; i < numAttrData; ++i) {
+          const ad = attributeData[i];
+          ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
+        }
+      } else {
+        const oppFaceId = (oppCorner / 3) | 0;
+        if (oppFaceId >= srcFaceId) {
+          for (let i = 0; i < numAttrData; ++i) {
+            if (connectivityDecoders[i].decodeNextBit()) {
+              const ad = attributeData[i];
+              ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
+            }
+          }
+        }
+      }
+    }
+
     return true;
   }
 
@@ -956,12 +1043,13 @@ class MeshEdgebreakerDecoderImpl {
       // We have connectivity for position only. In this case all vertex indices
       // are equal to point indices.
       const numFaces = mesh.numFaces();
+      const faces = mesh.faces_;
+      const baseCornerToVertex = ct.cornerToVertexArray();
       for (let f = 0; f < numFaces; ++f) {
         const startCorner = 3 * f;
-        mesh.setFaceVertices(f,
-          ct.vertex(startCorner),
-          ct.vertex(startCorner + 1),
-          ct.vertex(startCorner + 2));
+        faces[startCorner] = baseCornerToVertex[startCorner];
+        faces[startCorner + 1] = baseCornerToVertex[startCorner + 1];
+        faces[startCorner + 2] = baseCornerToVertex[startCorner + 2];
       }
       this._decoder.pointCloud().setNumPoints(numConnectivityVerts);
       return true;
@@ -990,88 +1078,149 @@ class MeshEdgebreakerDecoderImpl {
       attCornerToVertex[i] = attributeData[i].connectivityData.cornerToVertexArray();
       attVertexOnSeam[i] = attributeData[i].connectivityData.vertexOnSeamArray();
     }
+    const singleAttC2V = numAttrData === 1 ? attCornerToVertex[0] : null;
+
+    // Precalculate a unified anyAttVertexOnSeam flag for each vertex.
+    let anyAttVertexOnSeam;
+    if (numAttrData === 1) {
+      anyAttVertexOnSeam = attVertexOnSeam[0];
+    } else {
+      anyAttVertexOnSeam = new Uint8Array(numVertices);
+      for (let i = 0; i < numAttrData; ++i) {
+        const attSeam = attVertexOnSeam[i];
+        for (let v = 0; v < numVertices; ++v) {
+          if (attSeam[v]) {
+            anyAttVertexOnSeam[v] = 1;
+          }
+        }
+      }
+    }
 
     for (let v = 0; v < numVertices; ++v) {
       let c = vertexLeftmost[v];
       if (c === kInvalidCornerIndex) continue; // Isolated vertex.
 
-      let deduplicationFirstCorner = c;
-      let rem, pv, opp;
-      if (isVertHole[v]) {
-        deduplicationFirstCorner = c;
-      } else {
-        // Find the first seam (of any attribute).
-        for (let i = 0; i < numAttrData; ++i) {
-          const attC2V = attCornerToVertex[i];
-          // isCornerOnSeam(c) == is_vertex_on_seam_[baseVertex(c)].
-          if (!attVertexOnSeam[i][baseCornerToVertex[c]]) {
-            continue;
-          }
-          const vertId = attC2V[c];
-          rem = c - ((c / 3) | 0) * 3;
+      const isSeamVertex = isVertHole[v] || anyAttVertexOnSeam[v];
+
+      if (!isSeamVertex) {
+        // Fast path for non-seam vertices: all corners in this ring get the same point ID
+        const initialC = c;
+        const pointId = numPoints++;
+        cornerToPointMap[initialC] = pointId;
+        // swingRight (c = prev(baseOpp[prev(c)]))
+        let rem = initialC % 3;
+        let pv = rem === 0 ? initialC + 2 : initialC - 1;
+        let opp = baseOpp[pv];
+        c = opp < 0 ? kInvalidCornerIndex : ((opp % 3) === 0 ? opp + 2 : opp - 1);
+        while (c !== kInvalidCornerIndex && c !== initialC) {
+          cornerToPointMap[c] = pointId;
+          rem = c % 3;
           pv = rem === 0 ? c + 2 : c - 1;
           opp = baseOpp[pv];
-          let actC = opp < 0 ? kInvalidCornerIndex
-            : ((opp - ((opp / 3) | 0) * 3) === 0 ? opp + 2 : opp - 1);
-          let seamFound = false;
-          while (actC !== c) {
-            if (actC === kInvalidCornerIndex) return false;
-            if (attC2V[actC] !== vertId) {
-              deduplicationFirstCorner = actC;
-              seamFound = true;
-              break;
-            }
-            rem = actC - ((actC / 3) | 0) * 3;
-            pv = rem === 0 ? actC + 2 : actC - 1;
+          c = opp < 0 ? kInvalidCornerIndex : ((opp % 3) === 0 ? opp + 2 : opp - 1);
+        }
+      } else {
+        let deduplicationFirstCorner = c;
+        let rem, pv, opp;
+        if (!isVertHole[v]) {
+          // Find the first seam (of any attribute).
+          if (numAttrData === 1) {
+            const vertId = singleAttC2V[c];
+            rem = c % 3;
+            pv = rem === 0 ? c + 2 : c - 1;
             opp = baseOpp[pv];
-            actC = opp < 0 ? kInvalidCornerIndex
-              : ((opp - ((opp / 3) | 0) * 3) === 0 ? opp + 2 : opp - 1);
+            let actC = opp < 0 ? kInvalidCornerIndex
+              : ((opp % 3) === 0 ? opp + 2 : opp - 1);
+            while (actC !== c) {
+              if (actC === kInvalidCornerIndex) return false;
+              if (singleAttC2V[actC] !== vertId) {
+                deduplicationFirstCorner = actC;
+                break;
+              }
+              rem = actC % 3;
+              pv = rem === 0 ? actC + 2 : actC - 1;
+              opp = baseOpp[pv];
+              actC = opp < 0 ? kInvalidCornerIndex
+                : ((opp % 3) === 0 ? opp + 2 : opp - 1);
+            }
+          } else {
+            for (let i = 0; i < numAttrData; ++i) {
+              if (!attVertexOnSeam[i][v]) {
+                continue;
+              }
+              const attC2V = attCornerToVertex[i];
+              const vertId = attC2V[c];
+              rem = c % 3;
+              pv = rem === 0 ? c + 2 : c - 1;
+              opp = baseOpp[pv];
+              let actC = opp < 0 ? kInvalidCornerIndex
+                : ((opp % 3) === 0 ? opp + 2 : opp - 1);
+              let seamFound = false;
+              while (actC !== c) {
+                if (actC === kInvalidCornerIndex) return false;
+                if (attC2V[actC] !== vertId) {
+                  deduplicationFirstCorner = actC;
+                  seamFound = true;
+                  break;
+                }
+                rem = actC % 3;
+                pv = rem === 0 ? actC + 2 : actC - 1;
+                opp = baseOpp[pv];
+                actC = opp < 0 ? kInvalidCornerIndex
+                  : ((opp % 3) === 0 ? opp + 2 : opp - 1);
+              }
+              if (seamFound) break;
+            }
           }
-          if (seamFound) break;
         }
-      }
 
-      // Deduplication pass over corners on the processed vertex.
-      c = deduplicationFirstCorner;
-      cornerToPointMap[c] = numPoints++;
-      // Traverse in CW direction (swingRight inlined).
-      let prevC = c;
-      rem = c - ((c / 3) | 0) * 3;
-      pv = rem === 0 ? c + 2 : c - 1;
-      opp = baseOpp[pv];
-      c = opp < 0 ? kInvalidCornerIndex
-        : ((opp - ((opp / 3) | 0) * 3) === 0 ? opp + 2 : opp - 1);
-      while (c !== kInvalidCornerIndex && c !== deduplicationFirstCorner) {
-        let attributeSeam = false;
-        for (let i = 0; i < numAttrData; ++i) {
-          const attC2V = attCornerToVertex[i];
-          if (attC2V[c] !== attC2V[prevC]) {
-            attributeSeam = true;
-            break;
-          }
-        }
-        if (attributeSeam) {
-          cornerToPointMap[c] = numPoints++;
-        } else {
-          cornerToPointMap[c] = cornerToPointMap[prevC];
-        }
-        prevC = c;
-        rem = c - ((c / 3) | 0) * 3;
+        // Deduplication pass over corners on the processed vertex.
+        c = deduplicationFirstCorner;
+        cornerToPointMap[c] = numPoints++;
+        // Traverse in CW direction (swingRight inlined).
+        let prevC = c;
+        rem = c % 3;
         pv = rem === 0 ? c + 2 : c - 1;
         opp = baseOpp[pv];
         c = opp < 0 ? kInvalidCornerIndex
-          : ((opp - ((opp / 3) | 0) * 3) === 0 ? opp + 2 : opp - 1);
+          : ((opp % 3) === 0 ? opp + 2 : opp - 1);
+        while (c !== kInvalidCornerIndex && c !== deduplicationFirstCorner) {
+          let attributeSeam;
+          if (numAttrData === 1) {
+            attributeSeam = singleAttC2V[c] !== singleAttC2V[prevC];
+          } else {
+            attributeSeam = false;
+            for (let i = 0; i < numAttrData; ++i) {
+              const attC2V = attCornerToVertex[i];
+              if (attC2V[c] !== attC2V[prevC]) {
+                attributeSeam = true;
+                break;
+              }
+            }
+          }
+          if (attributeSeam) {
+            cornerToPointMap[c] = numPoints++;
+          } else {
+            cornerToPointMap[c] = cornerToPointMap[prevC];
+          }
+          prevC = c;
+          rem = c % 3;
+          pv = rem === 0 ? c + 2 : c - 1;
+          opp = baseOpp[pv];
+          c = opp < 0 ? kInvalidCornerIndex
+            : ((opp % 3) === 0 ? opp + 2 : opp - 1);
+        }
       }
     }
 
     // Add faces.
     const numFaces = mesh.numFaces();
+    const faces = mesh.faces_;
     for (let f = 0; f < numFaces; ++f) {
       const o = 3 * f;
-      mesh.setFaceVertices(f,
-        cornerToPointMap[o],
-        cornerToPointMap[o + 1],
-        cornerToPointMap[o + 2]);
+      faces[o] = cornerToPointMap[o];
+      faces[o + 1] = cornerToPointMap[o + 1];
+      faces[o + 2] = cornerToPointMap[o + 2];
     }
     this._decoder.pointCloud().setNumPoints(numPoints);
     return true;
@@ -1083,8 +1232,8 @@ class MeshEdgebreakerDecoderImpl {
 class MeshAttributeIndicesEncodingData {
 
   constructor() {
-    this._vertexToEncodedAttributeValueIndexMap = [];
-    this._encodedAttributeValueIndexToCornerMap = [];
+    this._vertexToEncodedAttributeValueIndexMap = new Int32Array(0);
+    this._encodedAttributeValueIndexToCornerMap = new Int32Array(0);
     this._numValues = 0;
   }
 
@@ -1093,7 +1242,7 @@ class MeshAttributeIndicesEncodingData {
     // parallelogram/texcoord/normal prediction lookup; values are non-negative
     // data indices, so keeping it typed keeps those hot reads monomorphic.
     this._vertexToEncodedAttributeValueIndexMap = new Int32Array(numVertices);
-    this._encodedAttributeValueIndexToCornerMap = [];
+    this._encodedAttributeValueIndexToCornerMap = new Int32Array(numVertices);
     this._numValues = 0;
   }
 
@@ -1132,7 +1281,8 @@ class AttributeData {
     this.connectivityData = new MeshAttributeCornerTable();
     this.isConnectivityUsed = true;
     this.encodingData = new MeshAttributeIndicesEncodingData();
-    this.attributeSeamCorners = [];
+    this.attributeSeamCorners = new Int32Array(0);
+    this.numSeamCorners = 0;
   }
 
 }

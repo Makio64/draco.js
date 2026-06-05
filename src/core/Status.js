@@ -10,16 +10,6 @@ export const StatusCode = {
   UNSUPPORTED_FEATURE: -6
 };
 
-const CODE_STRINGS = {
-  [StatusCode.OK]: 'OK',
-  [StatusCode.DRACO_ERROR]: 'DRACO_ERROR',
-  [StatusCode.IO_ERROR]: 'IO_ERROR',
-  [StatusCode.INVALID_PARAMETER]: 'INVALID_PARAMETER',
-  [StatusCode.UNSUPPORTED_VERSION]: 'UNSUPPORTED_VERSION',
-  [StatusCode.UNKNOWN_VERSION]: 'UNKNOWN_VERSION',
-  [StatusCode.UNSUPPORTED_FEATURE]: 'UNSUPPORTED_FEATURE'
-};
-
 export class Status {
 
   constructor(code = StatusCode.OK, errorMsg = '') {
@@ -29,17 +19,6 @@ export class Status {
 
   ok() {
     return this.code === StatusCode.OK;
-  }
-
-  codeString() {
-    return CODE_STRINGS[this.code] || 'UNKNOWN_STATUS_VALUE';
-  }
-
-  toString() {
-    if (this.errorMsg) {
-      return this.codeString() + ': ' + this.errorMsg;
-    }
-    return this.codeString();
   }
 
 }

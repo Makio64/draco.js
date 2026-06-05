@@ -47,34 +47,6 @@ class Mesh extends PointCloud {
 
   }
 
-  setFace(faceId, face) {
-
-    if (faceId >= this.numFaces_) {
-      this._ensureFaceCapacity(faceId + 1);
-      this.numFaces_ = faceId + 1;
-    }
-    const o = faceId * 3;
-    this.faces_[o] = face[0];
-    this.faces_[o + 1] = face[1];
-    this.faces_[o + 2] = face[2];
-
-  }
-
-  // Like setFace() but takes the three corner point indices directly, avoiding
-  // a temporary [v0, v1, v2] array allocation per face in the hot decode path.
-  setFaceVertices(faceId, v0, v1, v2) {
-
-    if (faceId >= this.numFaces_) {
-      this._ensureFaceCapacity(faceId + 1);
-      this.numFaces_ = faceId + 1;
-    }
-    const o = faceId * 3;
-    this.faces_[o] = v0;
-    this.faces_[o + 1] = v1;
-    this.faces_[o + 2] = v2;
-
-  }
-
   setNumFaces(numFaces) {
 
     this._ensureFaceCapacity(numFaces);
@@ -88,19 +60,12 @@ class Mesh extends PointCloud {
 
   }
 
-  // Returns a fresh [v0, v1, v2] array (public API). Hot internal loops should
-  // use faceVertex() to avoid the allocation.
+  // Returns a fresh [v0, v1, v2] array (public API). Hot internal loops read
+  // faces_ directly to avoid the allocation.
   face(faceId) {
 
     const o = faceId * 3;
     return [this.faces_[o], this.faces_[o + 1], this.faces_[o + 2]];
-
-  }
-
-  // Returns a single corner's point index without allocating.
-  faceVertex(faceId, corner) {
-
-    return this.faces_[faceId * 3 + corner];
 
   }
 
@@ -110,27 +75,6 @@ class Mesh extends PointCloud {
     while (this.attribute_data_.length <= attId) {
       this.attribute_data_.push({ elementType: MeshAttributeElementType.MESH_CORNER_ATTRIBUTE });
     }
-
-  }
-
-  deleteAttribute(attId) {
-
-    super.deleteAttribute(attId);
-    if (attId >= 0 && attId < this.attribute_data_.length) {
-      this.attribute_data_.splice(attId, 1);
-    }
-
-  }
-
-  getAttributeElementType(attId) {
-
-    return this.attribute_data_[attId].elementType;
-
-  }
-
-  setAttributeElementType(attId, et) {
-
-    this.attribute_data_[attId].elementType = et;
 
   }
 

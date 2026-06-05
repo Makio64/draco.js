@@ -51,12 +51,6 @@ class GeometryAttribute {
     return this._buffer.data.subarray(bytePos);
   }
 
-  // Fills outData (Uint8Array) with the raw value of the requested attribute entry.
-  getValue(attIndex, outData) {
-    const bytePos = this._byteOffset + this._byteStride * attIndex;
-    this._buffer.read(bytePos, outData, this._byteStride);
-  }
-
   // Sets a value of an attribute entry. value should be a Uint8Array or typed array.
   setAttributeValue(entryIndex, value) {
     const bytePos = entryIndex * this._byteStride;

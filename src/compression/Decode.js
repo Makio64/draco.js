@@ -243,15 +243,6 @@ class Decoder {
 
   }
 
-  // When set, the decoder will skip the attribute transform for a given
-  // attribute type. For example, for quantized attributes the decoder would
-  // skip the dequantization step.
-  setSkipAttributeTransform(attType) {
-
-    this.options_.setAttributeBool(attType, 'skip_attribute_transform', true);
-
-  }
-
   // Returns the options instance used by the decoder.
   options() {
 

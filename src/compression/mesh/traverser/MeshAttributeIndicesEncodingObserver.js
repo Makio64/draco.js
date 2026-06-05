@@ -10,22 +10,21 @@ class MeshAttributeIndicesEncodingObserver {
     this._encodingData = encodingData;
     this._mesh = mesh;
     this._sequencer = sequencer;
+    this._vertexToEncodedMap = encodingData.vertexToEncodedAttributeValueIndexMap;
+    this._encodedToCornerMap = encodingData.encodedAttributeValueIndexToCornerMap;
+    this._faces = mesh.faces_;
   }
 
-  onNewFaceVisited(/* face */) {}
-
   onNewVertexVisited(vertex, corner) {
-    const faceIndex = (corner / 3) | 0;
-    const localIndex = corner - faceIndex * 3;
-    const pointId = this._mesh.faceVertex(faceIndex, localIndex);
+    const pointId = this._faces[corner];
     // Append the visited attribute to the encoding order.
     this._sequencer.addPointId(pointId);
 
     // Keep track of visited corners.
-    this._encodingData.encodedAttributeValueIndexToCornerMap.push(corner);
+    const numValues = this._encodingData.numValues;
+    this._encodedToCornerMap[numValues] = corner;
 
-    this._encodingData.vertexToEncodedAttributeValueIndexMap[vertex] =
-      this._encodingData.numValues;
+    this._vertexToEncodedMap[vertex] = numValues;
 
     this._encodingData.numValues++;
   }

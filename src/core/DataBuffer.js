@@ -28,10 +28,6 @@ export class DataBuffer {
     this._updateCount++;
   }
 
-  read(bytePos, outArray, dataSize) {
-    outArray.set(this._data.subarray(bytePos, bytePos + dataSize));
-  }
-
   write(bytePos, inArray, dataSize) {
     // Fast path: the overwhelmingly common caller passes a Uint8Array view of
     // exactly dataSize bytes (one attribute entry). Avoid allocating a wrapper
@@ -43,10 +39,6 @@ export class DataBuffer {
     }
     const src = new Uint8Array(inArray.buffer || inArray, inArray.byteOffset || 0, dataSize);
     this._data.set(src, bytePos);
-  }
-
-  copy(dstOffset, srcBuf, srcOffset, size) {
-    this._data.set(srcBuf._data.subarray(srcOffset, srcOffset + size), dstOffset);
   }
 
   get data() { return this._data; }

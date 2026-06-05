@@ -1,8 +1,5 @@
 // mesh/CornerTable.js - ported from mesh/corner_table.h/cc
 
-import { ValenceCache } from './ValenceCache.js';
-import { VertexRingIterator, VertexCornersIterator } from './CornerTableIterators.js';
-
 const kInvalidCornerIndex = -1;
 const kInvalidVertexIndex = -1;
 const kInvalidFaceIndex = -1;
@@ -18,7 +15,6 @@ class CornerTable {
     this.num_degenerated_faces_ = 0;
     this.num_isolated_vertices_ = 0;
     this.non_manifold_vertex_parents_ = [];
-    this.valence_cache_ = new ValenceCache(this);
 
   }
 
@@ -37,8 +33,6 @@ class CornerTable {
   // Each face is an array of 3 vertex indices.
   init(faces) {
 
-    this.valence_cache_.clearValenceCache();
-    this.valence_cache_.clearValenceCacheInaccurate();
     this.corner_to_vertex_map_ = new Array(faces.length * 3);
 
     for (let fi = 0; fi < faces.length; ++fi) {
@@ -84,8 +78,6 @@ class CornerTable {
     this.opposite_corners_ = new Array(numCorners).fill(kInvalidCornerIndex);
     this.vertex_corners_ = [];
     this.vertex_corners_.length = numVertices;
-    this.valence_cache_.clearValenceCache();
-    this.valence_cache_.clearValenceCacheInaccurate();
     return true;
 
   }
@@ -198,68 +190,9 @@ class CornerTable {
 
   }
 
-  // Returns the parent vertex index of a given corner table vertex.
-  vertexParent(vertex) {
-
-    if (vertex < this.num_original_vertices_) {
-      return vertex;
-    }
-
-    return this.non_manifold_vertex_parents_[vertex - this.num_original_vertices_];
-
-  }
-
   isValid(c) {
 
     return this.vertex(c) !== kInvalidVertexIndex;
-
-  }
-
-  // Returns the valence (degree) of a vertex. Returns -1 if invalid.
-  valence(v) {
-
-    if (v === kInvalidVertexIndex) {
-      return -1;
-    }
-
-    return this.confidentValence(v);
-
-  }
-
-  confidentValence(v) {
-
-    const vi = new VertexRingIterator(this, v);
-    let valence = 0;
-    while (!vi.end()) {
-
-      ++valence;
-      vi.next();
-
-    }
-
-    return valence;
-
-  }
-
-  // Returns the valence of the vertex at the given corner.
-  valenceFromCorner(c) {
-
-    if (c === kInvalidCornerIndex) {
-      return -1;
-    }
-
-    return this.confidentValence(this.confidentVertex(c));
-
-  }
-
-  isOnBoundary(vert) {
-
-    const corner = this.leftMostCorner(vert);
-    if (this.swingLeft(corner) === kInvalidCornerIndex) {
-      return true;
-    }
-
-    return false;
 
   }
 
@@ -295,47 +228,9 @@ class CornerTable {
 
   }
 
-  getLeftCorner(cornerId) {
-
-    if (cornerId === kInvalidCornerIndex) {
-      return kInvalidCornerIndex;
-    }
-
-    return this.opposite(this.previous(cornerId));
-
-  }
-
-  getRightCorner(cornerId) {
-
-    if (cornerId === kInvalidCornerIndex) {
-      return kInvalidCornerIndex;
-    }
-
-    return this.opposite(this.next(cornerId));
-
-  }
-
-  numNewVertices() {
-
-    return this.numVertices() - this.num_original_vertices_;
-
-  }
-
   numOriginalVertices() {
 
     return this.num_original_vertices_;
-
-  }
-
-  numDegeneratedFaces() {
-
-    return this.num_degenerated_faces_;
-
-  }
-
-  numIsolatedVertices() {
-
-    return this.num_isolated_vertices_;
 
   }
 
@@ -372,91 +267,10 @@ class CornerTable {
 
   }
 
-  mapCornerToVertex(cornerId, vertId) {
-
-    this.corner_to_vertex_map_[cornerId] = vertId;
-
-  }
-
   addNewVertex() {
 
     this.vertex_corners_.push(kInvalidCornerIndex);
     return this.vertex_corners_.length - 1;
-
-  }
-
-  addNewFace(vertices) {
-
-    const newFaceIndex = this.numFaces();
-    for (let i = 0; i < 3; ++i) {
-
-      this.corner_to_vertex_map_.push(vertices[i]);
-      this.setLeftMostCorner(vertices[i], this.corner_to_vertex_map_.length - 1);
-
-    }
-
-    while (this.opposite_corners_.length < this.corner_to_vertex_map_.length) {
-      this.opposite_corners_.push(kInvalidCornerIndex);
-    }
-
-    return newFaceIndex;
-
-  }
-
-  setLeftMostCorner(vert, corner) {
-
-    if (vert !== kInvalidVertexIndex) {
-      this.vertex_corners_[vert] = corner;
-    }
-
-  }
-
-  setNumVertices(numVertices) {
-
-    while (this.vertex_corners_.length < numVertices) {
-      this.vertex_corners_.push(kInvalidCornerIndex);
-    }
-
-    this.vertex_corners_.length = numVertices;
-
-  }
-
-  makeVertexIsolated(vert) {
-
-    this.vertex_corners_[vert] = kInvalidCornerIndex;
-
-  }
-
-  makeFaceInvalid(faceIndex) {
-
-    if (faceIndex !== kInvalidFaceIndex) {
-
-      const firstCorner = this.firstCorner(faceIndex);
-      for (let i = 0; i < 3; ++i) {
-
-        this.corner_to_vertex_map_[firstCorner + i] = kInvalidVertexIndex;
-
-      }
-
-    }
-
-  }
-
-  updateFaceToVertexMap(vertex) {
-
-    const it = VertexCornersIterator.fromVertex(this, vertex);
-    while (!it.end()) {
-
-      this.corner_to_vertex_map_[it.corner()] = vertex;
-      it.next();
-
-    }
-
-  }
-
-  getValenceCache() {
-
-    return this.valence_cache_;
 
   }
 

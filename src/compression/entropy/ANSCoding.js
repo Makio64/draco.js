@@ -87,7 +87,7 @@ export function ansReadEnd(ans) {
 export function rabsDescRead(ans, p0) {
   const p = ANS_P8_PRECISION - p0;
   if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-    ans.state = ans.state * ANS_IO_BASE + ans.buf[--ans.bufOffset];
+    ans.state = (ans.state << 8) | ans.buf[--ans.bufOffset];
   }
   const x = ans.state;
   const quot = x >>> 8;  // x / 256 (ANS_P8_PRECISION is always 256)
@@ -177,7 +177,7 @@ export class RAnsDecoder {
     let state = this.state;
     let bufOffset = this.bufOffset;
     while (state < lRansBase && bufOffset > 0) {
-      state = state * ANS_IO_BASE + buf[--bufOffset];
+      state = (state << 8) | buf[--bufOffset];
     }
     const quo = state >>> this.ransPrecisionBits;
     const rem = state & this.ransPrecisionMask;
@@ -204,7 +204,7 @@ export class RAnsDecoder {
     let bufOffset = this.bufOffset;
     for (let i = 0; i < count; ++i) {
       while (state < lRansBase && bufOffset > 0) {
-        state = state * ANS_IO_BASE + buf[--bufOffset];
+        state = (state << 8) | buf[--bufOffset];
       }
       const rem = state & ransPrecisionMask;
       const symbol = lutTable[rem];
@@ -230,9 +230,7 @@ export class RAnsDecoder {
       if (cumProb > this.ransPrecision) {
         return false;
       }
-      for (let j = actProb; j < cumProb; ++j) {
-        this.lutTable[j] = i;
-      }
+      this.lutTable.fill(i, actProb, cumProb);
       actProb = cumProb;
     }
     if (cumProb !== this.ransPrecision) {

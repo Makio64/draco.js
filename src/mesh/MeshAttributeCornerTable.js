@@ -1,8 +1,5 @@
 // mesh/MeshAttributeCornerTable.js - ported from mesh/mesh_attribute_corner_table.h/cc
 
-import { ValenceCache } from './ValenceCache.js';
-import { VertexRingIterator } from './CornerTableIterators.js';
-
 const kInvalidCornerIndex = -1;
 const kInvalidVertexIndex = -1;
 
@@ -17,7 +14,6 @@ class MeshAttributeCornerTable {
     this.vertex_to_left_most_corner_map_ = [];
     this.vertex_to_attribute_entry_id_map_ = [];
     this.corner_table_ = null;
-    this.valence_cache_ = new ValenceCache(this);
 
   }
 
@@ -26,9 +22,6 @@ class MeshAttributeCornerTable {
     if (table === null) {
       return false;
     }
-
-    this.valence_cache_.clearValenceCache();
-    this.valence_cache_.clearValenceCacheInaccurate();
 
     // Typed arrays keep the hot accessors (isEdgeOnSeam/vertex/opposite, called
     // per corner during attribute connectivity recompute) monomorphic. Uint8Array
@@ -42,74 +35,6 @@ class MeshAttributeCornerTable {
     this._effectiveOpposite = null;
     this.corner_table_ = table;
     this.no_interior_seams_ = true;
-    return true;
-
-  }
-
-  initFromAttribute(mesh, table, att) {
-
-    if (!this.initEmpty(table)) {
-      return false;
-    }
-
-    this.valence_cache_.clearValenceCache();
-    this.valence_cache_.clearValenceCacheInaccurate();
-
-    for (let c = 0; c < this.corner_table_.numCorners(); ++c) {
-
-      const f = this.corner_table_.face(c);
-      if (this.corner_table_.isDegenerated(f)) {
-        continue;
-      }
-
-      const oppCorner = this.corner_table_.opposite(c);
-      if (oppCorner === kInvalidCornerIndex) {
-
-        // Boundary. Mark as seam edge.
-        this.is_edge_on_seam_[c] = true;
-        let v;
-        v = this.corner_table_.vertex(this.corner_table_.next(c));
-        this.is_vertex_on_seam_[v] = true;
-        v = this.corner_table_.vertex(this.corner_table_.previous(c));
-        this.is_vertex_on_seam_[v] = true;
-        continue;
-
-      }
-
-      if (oppCorner < c) {
-        continue; // Already processed.
-      }
-
-      let actC = c;
-      let actSiblingC = oppCorner;
-
-      for (let i = 0; i < 2; ++i) {
-
-        actC = this.corner_table_.next(actC);
-        actSiblingC = this.corner_table_.previous(actSiblingC);
-
-        const pointId = mesh.cornerToPointId(actC);
-        const siblingPointId = mesh.cornerToPointId(actSiblingC);
-
-        if (att.mappedIndex(pointId) !== att.mappedIndex(siblingPointId)) {
-
-          this.no_interior_seams_ = false;
-          this.is_edge_on_seam_[c] = true;
-          this.is_edge_on_seam_[oppCorner] = true;
-
-          this.is_vertex_on_seam_[this.corner_table_.vertex(this.corner_table_.next(c))] = true;
-          this.is_vertex_on_seam_[this.corner_table_.vertex(this.corner_table_.previous(c))] = true;
-          this.is_vertex_on_seam_[this.corner_table_.vertex(this.corner_table_.next(oppCorner))] = true;
-          this.is_vertex_on_seam_[this.corner_table_.vertex(this.corner_table_.previous(oppCorner))] = true;
-          break;
-
-        }
-
-      }
-
-    }
-
-    this.recomputeVertices(mesh, att);
     return true;
 
   }
@@ -140,17 +65,16 @@ class MeshAttributeCornerTable {
 
   }
 
-  recomputeVertices(mesh, att) {
+  recomputeVertices() {
 
-    if (mesh !== null && mesh !== undefined && att !== null && att !== undefined) {
-      return this._recomputeVerticesInternal(true, mesh, att);
-    } else {
-      return this._recomputeVerticesInternal(false, null, null);
-    }
+    return this._recomputeVerticesInternal();
 
   }
 
-  _recomputeVerticesInternal(initVertexToAttributeEntryMap, mesh, att) {
+  // The decoder always recomputes the attribute-vertex maps from connectivity
+  // alone (no source mesh/attribute), so this is the single path the C++
+  // RecomputeVertices(nullptr, nullptr) overload takes.
+  _recomputeVerticesInternal() {
 
     const ct = this.corner_table_;
     const numCorners = ct.numCorners();
@@ -176,82 +100,61 @@ class MeshAttributeCornerTable {
     let numNewVertices = 0;
 
     for (let v = 0; v < numBaseVertices; ++v) {
-
       const c = vertexLeftmost[v];
-      if (c === kInvalidCornerIndex) {
-        continue; // Isolated vertex.
-      }
+      if (c === kInvalidCornerIndex) continue;
 
-      let firstVertId = numNewVertices++;
-      if (initVertexToAttributeEntryMap) {
-        attEntryMap[firstVertId] = att.mappedIndex(mesh.cornerToPointId(c));
-      } else {
+      if (!isVertexOnSeam[v]) {
+        const firstVertId = numNewVertices++;
         attEntryMap[firstVertId] = firstVertId;
-      }
+        leftMostMap[firstVertId] = c;
+        cornerToVertex[c] = firstVertId;
 
-      let firstC = c;
-      let actC;
+        let pv = (c % 3 === 0) ? c + 2 : c - 1;
+        let bopp = baseOpp[pv];
+        let actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+        while (actC !== kInvalidCornerIndex && actC !== c) {
+          cornerToVertex[actC] = firstVertId;
+          pv = (actC % 3 === 0) ? actC + 2 : actC - 1;
+          bopp = baseOpp[pv];
+          actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+        }
+      } else {
+        let firstVertId = numNewVertices++;
+        attEntryMap[firstVertId] = firstVertId;
 
-      // If vertex is on seam, swing left to find the first attribute entry.
-      // swingLeft(x) = next(seamOpp[next(x)]).
-      if (isVertexOnSeam[v]) {
+        let firstC = c;
+        let actC;
 
-        let rem = firstC - ((firstC / 3) | 0) * 3;
-        let nx = rem === 2 ? firstC - 2 : firstC + 1;
+        let nx = (firstC % 3 === 2) ? firstC - 2 : firstC + 1;
         let opp = seamOpp[nx];
-        actC = opp < 0 ? kInvalidCornerIndex
-          : ((opp - ((opp / 3) | 0) * 3) === 2 ? opp - 2 : opp + 1);
+        actC = opp < 0 ? kInvalidCornerIndex : ((opp % 3 === 2) ? opp - 2 : opp + 1);
         while (actC !== kInvalidCornerIndex) {
-
           firstC = actC;
-          rem = firstC - ((firstC / 3) | 0) * 3;
-          nx = rem === 2 ? firstC - 2 : firstC + 1;
+          nx = (firstC % 3 === 2) ? firstC - 2 : firstC + 1;
           opp = seamOpp[nx];
-          actC = opp < 0 ? kInvalidCornerIndex
-            : ((opp - ((opp / 3) | 0) * 3) === 2 ? opp - 2 : opp + 1);
-          if (actC === c) {
-            return false;
-          }
-
+          actC = opp < 0 ? kInvalidCornerIndex : ((opp % 3 === 2) ? opp - 2 : opp + 1);
+          if (actC === c) return false;
         }
 
-      }
+        cornerToVertex[firstC] = firstVertId;
+        leftMostMap[firstVertId] = firstC;
 
-      cornerToVertex[firstC] = firstVertId;
-      leftMostMap[firstVertId] = firstC;
-
-      // swingRight(x) = previous(baseOpp[previous(x)]).
-      let prem = firstC - ((firstC / 3) | 0) * 3;
-      let pv = prem === 0 ? firstC + 2 : firstC - 1;
-      let bopp = baseOpp[pv];
-      actC = bopp < 0 ? kInvalidCornerIndex
-        : ((bopp - ((bopp / 3) | 0) * 3) === 0 ? bopp + 2 : bopp - 1);
-      while (actC !== kInvalidCornerIndex && actC !== firstC) {
-
-        // isCornerOppositeToSeamEdge(next(actC)).
-        const arem = actC - ((actC / 3) | 0) * 3;
-        const nAct = arem === 2 ? actC - 2 : actC + 1;
-        if (isEdgeOnSeam[nAct]) {
-
-          firstVertId = numNewVertices++;
-          if (initVertexToAttributeEntryMap) {
-            attEntryMap[firstVertId] = att.mappedIndex(mesh.cornerToPointId(actC));
-          } else {
+        let pv = (firstC % 3 === 0) ? firstC + 2 : firstC - 1;
+        let bopp = baseOpp[pv];
+        actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
+        while (actC !== kInvalidCornerIndex && actC !== firstC) {
+          const nAct = (actC % 3 === 2) ? actC - 2 : actC + 1;
+          if (isEdgeOnSeam[nAct]) {
+            firstVertId = numNewVertices++;
             attEntryMap[firstVertId] = firstVertId;
+            leftMostMap[firstVertId] = actC;
           }
-          leftMostMap[firstVertId] = actC;
-
+          cornerToVertex[actC] = firstVertId;
+          pv = (actC % 3 === 0) ? actC + 2 : actC - 1;
+          bopp = baseOpp[pv];
+          actC = bopp < 0 ? kInvalidCornerIndex : ((bopp % 3 === 0) ? bopp + 2 : bopp - 1);
         }
-
-        cornerToVertex[actC] = firstVertId;
-        prem = actC - ((actC / 3) | 0) * 3;
-        pv = prem === 0 ? actC + 2 : actC - 1;
-        bopp = baseOpp[pv];
-        actC = bopp < 0 ? kInvalidCornerIndex
-          : ((bopp - ((bopp / 3) | 0) * 3) === 0 ? bopp + 2 : bopp - 1);
-
       }
-
     }
 
     // Expose exact-length views (no copy) so numVertices() and the per-vertex
@@ -297,18 +200,6 @@ class MeshAttributeCornerTable {
 
   }
 
-  getLeftCorner(corner) {
-
-    return this.opposite(this.previous(corner));
-
-  }
-
-  getRightCorner(corner) {
-
-    return this.opposite(this.next(corner));
-
-  }
-
   swingRight(corner) {
 
     return this.previous(this.opposite(this.previous(corner)));
@@ -351,13 +242,6 @@ class MeshAttributeCornerTable {
 
   }
 
-  // Returns the attribute entry id associated to the given vertex.
-  vertexParent(vert) {
-
-    return this.vertex_to_attribute_entry_id_map_[vert];
-
-  }
-
   leftMostCorner(v) {
 
     return this.vertex_to_left_most_corner_map_[v];
@@ -379,21 +263,6 @@ class MeshAttributeCornerTable {
   allCorners(faceIndex) {
 
     return this.corner_table_.allCorners(faceIndex);
-
-  }
-
-  isOnBoundary(vert) {
-
-    const corner = this.leftMostCorner(vert);
-    if (corner === kInvalidCornerIndex) {
-      return true;
-    }
-
-    if (this.swingLeft(corner) === kInvalidCornerIndex) {
-      return true;
-    }
-
-    return false;
 
   }
 
@@ -431,6 +300,25 @@ class MeshAttributeCornerTable {
     return this.is_vertex_on_seam_;
   }
 
+  hasSameSeams(other) {
+    if (other === null || other === undefined) return false;
+    const seamA = this.is_edge_on_seam_;
+    const seamB = other.is_edge_on_seam_;
+    if (seamA.length !== seamB.length) return false;
+    for (let i = 0, l = seamA.length; i < l; ++i) {
+      if (seamA[i] !== seamB[i]) return false;
+    }
+    return true;
+  }
+
+  adoptVertexRecompute(other) {
+    this.corner_to_vertex_map_ = other.corner_to_vertex_map_;
+    this.vertex_to_attribute_entry_id_map_ = other.vertex_to_attribute_entry_id_map_;
+    this.vertex_to_left_most_corner_map_ = other.vertex_to_left_most_corner_map_;
+    this.no_interior_seams_ = other.no_interior_seams_;
+    this._effectiveOpposite = other._effectiveOpposite;
+  }
+
   isDegenerated(faceIndex) {
 
     return this.corner_table_.isDegenerated(faceIndex);
@@ -446,47 +334,6 @@ class MeshAttributeCornerTable {
   cornerTable() {
 
     return this.corner_table_;
-
-  }
-
-  valence(v) {
-
-    if (v === kInvalidVertexIndex) {
-      return -1;
-    }
-
-    return this.confidentValenceVertex(v);
-
-  }
-
-  confidentValenceVertex(v) {
-
-    const vi = new VertexRingIterator(this, v);
-    let valence = 0;
-    while (!vi.end()) {
-
-      ++valence;
-      vi.next();
-
-    }
-
-    return valence;
-
-  }
-
-  valenceFromCorner(c) {
-
-    if (c === kInvalidCornerIndex) {
-      return -1;
-    }
-
-    return this.confidentValenceVertex(this.vertex(c));
-
-  }
-
-  getValenceCache() {
-
-    return this.valence_cache_;
 
   }
 

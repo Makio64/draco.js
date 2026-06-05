@@ -23,33 +23,35 @@ class OctahedronToolBox {
     this._quantizationBits = q;
     this._maxQuantizedValue = ((1 << q) >>> 0) - 1;
     this._maxValue = this._maxQuantizedValue - 1;
-    this._dequantizationScale = 2.0 / this._maxValue;
+    // C++ (normal_compression_utils.h): dequantization_scale_ = 2.f / max_value_
+    // evaluated in float32. Keep it float32 so the unit-vector conversion below
+    // is bit-identical to the WASM decoder.
+    this._dequantizationScale = Math.fround(2.0 / Math.fround(this._maxValue));
     this._centerValue = (this._maxValue / 2) | 0;
     return true;
   }
 
-  get isInitialized() { return this._quantizationBits !== -1; }
-  get quantizationBits() { return this._quantizationBits; }
-  get maxQuantizedValue() { return this._maxQuantizedValue; }
-  get maxValue() { return this._maxValue; }
-  get centerValue() { return this._centerValue; }
-
-  // Converts quantized octahedral coordinates to a unit vector.
+  // Converts quantized octahedral coordinates to a unit vector. All arithmetic
+  // is rounded to float32 (Math.fround) to match Draco's WASM decoder exactly:
+  // `in_s * dequantization_scale_ - 1.f` is evaluated in float32 in C++.
   quantizedOctahedralCoordsToUnitVector(inS, inT, outVector) {
+    const fround = Math.fround;
     this._octahedralCoordsToUnitVector(
-      inS * this._dequantizationScale - 1.0,
-      inT * this._dequantizationScale - 1.0,
+      fround(fround(fround(inS) * this._dequantizationScale) - 1.0),
+      fround(fround(fround(inT) * this._dequantizationScale) - 1.0),
       outVector
     );
   }
 
   _octahedralCoordsToUnitVector(inSScaled, inTScaled, outVector) {
+    // float32 throughout (see comment above) so normals are bit-identical to WASM.
+    const fround = Math.fround;
     let y = inSScaled;
     let z = inTScaled;
 
     // Remaining coordinate can be computed by projecting (y, z) onto the
     // surface of the octahedron.
-    const x = 1.0 - Math.abs(y) - Math.abs(z);
+    const x = fround(fround(1.0 - Math.abs(y)) - Math.abs(z));
 
     // x is a signed distance from the diagonal edges of the diamond.
     // Positive => right hemisphere, negative => left hemisphere.
@@ -57,20 +59,20 @@ class OctahedronToolBox {
     if (xOffset < 0) xOffset = 0;
 
     // Mirror (y, z) along nearest diagonal edge for points on left hemisphere.
-    y += y < 0 ? xOffset : -xOffset;
-    z += z < 0 ? xOffset : -xOffset;
+    y = fround(y + (y < 0 ? xOffset : -xOffset));
+    z = fround(z + (z < 0 ? xOffset : -xOffset));
 
     // Normalize the computed vector.
-    const normSquared = x * x + y * y + z * z;
+    const normSquared = fround(fround(fround(x * x) + fround(y * y)) + fround(z * z));
     if (normSquared < 1e-6) {
       outVector[0] = 0;
       outVector[1] = 0;
       outVector[2] = 0;
     } else {
-      const d = 1.0 / Math.sqrt(normSquared);
-      outVector[0] = x * d;
-      outVector[1] = y * d;
-      outVector[2] = z * d;
+      const d = fround(1.0 / fround(Math.sqrt(normSquared)));
+      outVector[0] = fround(x * d);
+      outVector[1] = fround(y * d);
+      outVector[2] = fround(z * d);
     }
   }
 
@@ -81,10 +83,6 @@ class AttributeOctahedronTransform extends AttributeTransform {
   constructor() {
     super();
     this._quantizationBits = -1;
-  }
-
-  type() {
-    return AttributeTransformType.OCTAHEDRON_TRANSFORM;
   }
 
   // Try to init transform from attribute's existing transform data.
@@ -150,17 +148,6 @@ class AttributeOctahedronTransform extends AttributeTransform {
     }
     return true;
   }
-
-  getTransformedDataType(/* attribute */) {
-    return DataType.UINT32;
-  }
-
-  getTransformedNumComponents(/* attribute */) {
-    return 2;
-  }
-
-  get quantizationBits() { return this._quantizationBits; }
-  get isInitialized() { return this._quantizationBits !== -1; }
 
 }
 

@@ -4,8 +4,12 @@
   "homepage": "https://mrdoob.github.io/draco.js/",
   "repository": { "type": "git", "url": "git+https://github.com/mrdoob/draco.js.git" },
   "license": "MIT",
+  "type": "module",
   "scripts": {
-    "build": "rollup -c"
+    "build": "rollup -c",
+    "bench": "node tools/bench.mjs",
+    "verify": "node tools/verify-wasm.mjs",
+    "start": "npx http-server -p 8080 -c-1"
   },
   "dependencies": {
     "draco3d": "^1.5.7",

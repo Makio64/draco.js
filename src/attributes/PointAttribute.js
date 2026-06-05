@@ -194,6 +194,120 @@ class PointAttribute extends GeometryAttribute {
     }
   }
 
+  // High-performance direct extraction of all values to the output typed array.
+  // Replaces the slow point-by-point copy loop that used temporary arrays.
+  extractTo(OutputTypedArray, numPoints) {
+    const numComponents = this._numComponents;
+    const array = new OutputTypedArray(numPoints * numComponents);
+    if (this._buffer == null || this._buffer.data == null || numPoints === 0) {
+      return array;
+    }
+    const bufData = this._buffer.data;
+    const dt = this._dataType;
+    const isIdentity = this._identityMapping;
+    const indicesMap = this._indicesMap;
+    const byteStride = this._byteStride;
+    const byteOffset = this._byteOffset;
+
+    let srcView = null;
+    let shift = 0;
+
+    if (dt === DataType.FLOAT32) {
+      if (this._cachedFloat32View === undefined || this._cachedFloat32Buffer !== bufData.buffer) {
+        this._cachedFloat32Buffer = bufData.buffer;
+        this._cachedFloat32View = new Float32Array(bufData.buffer);
+      }
+      srcView = this._cachedFloat32View;
+      shift = 2;
+    } else if (dt === DataType.INT32) {
+      if (this._cachedInt32View === undefined || this._cachedInt32Buffer !== bufData.buffer) {
+        this._cachedInt32Buffer = bufData.buffer;
+        this._cachedInt32View = new Int32Array(bufData.buffer);
+      }
+      srcView = this._cachedInt32View;
+      shift = 2;
+    } else if (dt === DataType.UINT32) {
+      if (this._cachedUint32View === undefined || this._cachedUint32Buffer !== bufData.buffer) {
+        this._cachedUint32Buffer = bufData.buffer;
+        this._cachedUint32View = new Uint32Array(bufData.buffer);
+      }
+      srcView = this._cachedUint32View;
+      shift = 2;
+    } else if (dt === DataType.UINT16) {
+      if (this._cachedUint16View === undefined || this._cachedUint16Buffer !== bufData.buffer) {
+        this._cachedUint16Buffer = bufData.buffer;
+        this._cachedUint16View = new Uint16Array(bufData.buffer);
+      }
+      srcView = this._cachedUint16View;
+      shift = 1;
+    } else if (dt === DataType.INT16) {
+      if (this._cachedInt16View === undefined || this._cachedInt16Buffer !== bufData.buffer) {
+        this._cachedInt16Buffer = bufData.buffer;
+        this._cachedInt16View = new Int16Array(bufData.buffer);
+      }
+      srcView = this._cachedInt16View;
+      shift = 1;
+    } else if (dt === DataType.UINT8) {
+      if (this._cachedUint8View === undefined || this._cachedUint8Buffer !== bufData.buffer) {
+        this._cachedUint8Buffer = bufData.buffer;
+        this._cachedUint8View = new Uint8Array(bufData.buffer);
+      }
+      srcView = this._cachedUint8View;
+      shift = 0;
+    } else if (dt === DataType.INT8) {
+      if (this._cachedInt8View === undefined || this._cachedInt8Buffer !== bufData.buffer) {
+        this._cachedInt8Buffer = bufData.buffer;
+        this._cachedInt8View = new Int8Array(bufData.buffer);
+      }
+      srcView = this._cachedInt8View;
+      shift = 0;
+    } else if (dt === DataType.FLOAT64) {
+      if (this._cachedFloat64View === undefined || this._cachedFloat64Buffer !== bufData.buffer) {
+        this._cachedFloat64Buffer = bufData.buffer;
+        this._cachedFloat64View = new Float64Array(bufData.buffer);
+      }
+      srcView = this._cachedFloat64View;
+      shift = 3;
+    }
+
+    if (srcView !== null) {
+      const srcStart = (bufData.byteOffset + byteOffset) >> shift;
+      const strideElements = byteStride >> shift;
+
+      // Contiguous fast block copy path.
+      if (isIdentity && strideElements === numComponents) {
+        const srcEnd = srcStart + numPoints * numComponents;
+        if (srcView.constructor === OutputTypedArray) {
+          array.set(srcView.subarray(srcStart, srcEnd));
+          return array;
+        }
+      }
+
+      // Fast assignment loop.
+      for (let i = 0; i < numPoints; i++) {
+        const attIndex = isIdentity ? i : indicesMap[i];
+        const srcOffset = srcStart + attIndex * strideElements;
+        const dstOffset = i * numComponents;
+        for (let j = 0; j < numComponents; j++) {
+          array[dstOffset + j] = srcView[srcOffset + j];
+        }
+      }
+      return array;
+    }
+
+    // Slow/fallback path.
+    const temp = new Array(numComponents);
+    for (let i = 0; i < numPoints; i++) {
+      const attIndex = isIdentity ? i : indicesMap[i];
+      this.convertValue(attIndex, temp);
+      const dstOffset = i * numComponents;
+      for (let j = 0; j < numComponents; j++) {
+        array[dstOffset + j] = temp[j];
+      }
+    }
+    return array;
+  }
+
   // Copies attribute data from the provided source attribute.
   copyFrom(srcAtt) {
     if (this.buffer === null) {

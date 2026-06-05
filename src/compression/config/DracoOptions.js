@@ -18,28 +18,6 @@ export class DracoOptions {
 
   // --- Global option accessors ---
 
-  getGlobalInt(name, defaultVal) {
-    if (this._globalOptions.has(name)) {
-      return this._globalOptions.get(name) | 0;
-    }
-    return defaultVal;
-  }
-
-  setGlobalInt(name, val) {
-    this._globalOptions.set(name, val | 0);
-  }
-
-  getGlobalFloat(name, defaultVal) {
-    if (this._globalOptions.has(name)) {
-      return +this._globalOptions.get(name);
-    }
-    return defaultVal;
-  }
-
-  setGlobalFloat(name, val) {
-    this._globalOptions.set(name, +val);
-  }
-
   getGlobalBool(name, defaultVal) {
     if (this._globalOptions.has(name)) {
       return !!this._globalOptions.get(name);
@@ -47,30 +25,7 @@ export class DracoOptions {
     return defaultVal;
   }
 
-  setGlobalBool(name, val) {
-    this._globalOptions.set(name, val ? 1 : 0);
-  }
-
-  isGlobalOptionSet(name) {
-    return this._globalOptions.has(name);
-  }
-
-  setGlobalOptions(optionsMap) {
-    this._globalOptions = new Map(optionsMap);
-  }
-
-  getGlobalOptions() {
-    return this._globalOptions;
-  }
-
   // --- Attribute-specific option accessors ---
-
-  _getOrCreateAttributeOptions(attKey) {
-    if (!this._attributeOptions.has(attKey)) {
-      this._attributeOptions.set(attKey, new Map());
-    }
-    return this._attributeOptions.get(attKey);
-  }
 
   findAttributeOptions(attKey) {
     if (this._attributeOptions.has(attKey)) {
@@ -79,52 +34,12 @@ export class DracoOptions {
     return null;
   }
 
-  getAttributeInt(attKey, name, defaultVal) {
-    const attOpts = this.findAttributeOptions(attKey);
-    if (attOpts !== null && attOpts.has(name)) {
-      return attOpts.get(name) | 0;
-    }
-    return this.getGlobalInt(name, defaultVal);
-  }
-
-  setAttributeInt(attKey, name, val) {
-    this._getOrCreateAttributeOptions(attKey).set(name, val | 0);
-  }
-
-  getAttributeFloat(attKey, name, defaultVal) {
-    const attOpts = this.findAttributeOptions(attKey);
-    if (attOpts !== null && attOpts.has(name)) {
-      return +attOpts.get(name);
-    }
-    return this.getGlobalFloat(name, defaultVal);
-  }
-
-  setAttributeFloat(attKey, name, val) {
-    this._getOrCreateAttributeOptions(attKey).set(name, +val);
-  }
-
   getAttributeBool(attKey, name, defaultVal) {
     const attOpts = this.findAttributeOptions(attKey);
     if (attOpts !== null && attOpts.has(name)) {
       return !!attOpts.get(name);
     }
     return this.getGlobalBool(name, defaultVal);
-  }
-
-  setAttributeBool(attKey, name, val) {
-    this._getOrCreateAttributeOptions(attKey).set(name, val ? 1 : 0);
-  }
-
-  isAttributeOptionSet(attKey, name) {
-    const attOpts = this.findAttributeOptions(attKey);
-    if (attOpts !== null) {
-      return attOpts.has(name);
-    }
-    return this._globalOptions.has(name);
-  }
-
-  setAttributeOptions(attKey, optionsMap) {
-    this._attributeOptions.set(attKey, new Map(optionsMap));
   }
 
 }

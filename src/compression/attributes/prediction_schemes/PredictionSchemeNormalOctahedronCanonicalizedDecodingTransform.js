@@ -12,8 +12,6 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
 
   constructor() {
     this._octahedronToolBox = new OctahedronToolBox();
-    // Reusable scratch for invertDiamond (per-normal hot path).
-    this._scratch = [0, 0];
   }
 
   /**
@@ -41,20 +39,6 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
    */
   quantizationBits() {
     return this._octahedronToolBox.quantizationBits();
-  }
-
-  /**
-   * @returns {number}
-   */
-  maxQuantizedValue() {
-    return this._octahedronToolBox.maxQuantizedValue();
-  }
-
-  /**
-   * @returns {number}
-   */
-  centerValue() {
-    return this._octahedronToolBox.centerValue();
   }
 
   /**
@@ -88,8 +72,6 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
    */
   computeOriginalValue(predVals, predOffset, corrVals, corrOffset,
     outOrigVals, outOffset) {
-    // Hoist the toolbox bounds into locals and inline isInDiamond / modMax
-    // (both tiny and called per normal) to avoid the per-normal method dispatch.
     const toolBox = this._octahedronToolBox;
     const center = toolBox._centerValue;
     const maxQuantizedValue = toolBox._maxQuantizedValue;
@@ -99,25 +81,56 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
     let predS = predVals[predOffset] - center;
     let predT = predVals[predOffset + 1] - center;
 
-    const scratch = this._scratch;
-    const predIsInDiamond =
-      (Math.abs(predS) + Math.abs(predT)) <= center;
+    const predIsInDiamond = (Math.abs(predS) + Math.abs(predT)) <= center;
     if (!predIsInDiamond) {
-      toolBox.invertDiamond(predS, predT, scratch);
-      predS = scratch[0];
-      predT = scratch[1];
+      let signS = 0;
+      let signT = 0;
+      if (predS >= 0 && predT >= 0) {
+        signS = 1; signT = 1;
+      } else if (predS <= 0 && predT <= 0) {
+        signS = -1; signT = -1;
+      } else {
+        signS = (predS > 0) ? 1 : -1;
+        signT = (predT > 0) ? 1 : -1;
+      }
+      const cornerPointS = signS * center;
+      const cornerPointT = signT * center;
+      let us = (predS * 2 - cornerPointS) | 0;
+      let ut = (predT * 2 - cornerPointT) | 0;
+      if (signS * signT >= 0) {
+        const temp = us;
+        us = -ut;
+        ut = -temp;
+      } else {
+        const temp = us;
+        us = ut;
+        ut = temp;
+      }
+      predS = ((us + cornerPointS) / 2) | 0;
+      predT = ((ut + cornerPointT) / 2) | 0;
     }
 
-    const predIsInBottomLeft = this._isInBottomLeft(predS, predT);
-    const rotationCount = this._getRotationCount(predS, predT);
+    const predIsInBottomLeft = (predS === 0 && predT === 0) || (predS < 0 && predT <= 0);
+
+    let rotationCount = 0;
+    if (predS === 0) {
+      if (predT > 0) rotationCount = 3;
+      else if (predT < 0) rotationCount = 1;
+    } else if (predS > 0) {
+      if (predT >= 0) rotationCount = 2;
+      else rotationCount = 1;
+    } else { // predS < 0
+      if (predT > 0) rotationCount = 3;
+    }
 
     if (!predIsInBottomLeft) {
-      // Inline _rotatePoint to avoid a per-normal array allocation.
       const s = predS, t = predT;
+      // `(-x) | 0` normalises -0 (from negating 0) to +0 so V8 keeps the Smi
+      // fast path instead of deopting; bit-exact for these int32 values.
       switch (rotationCount) {
-        case 1: predS = t; predT = -s; break;
-        case 2: predS = -s; predT = -t; break;
-        case 3: predS = -t; predT = s; break;
+        case 1: predS = t; predT = (-s) | 0; break;
+        case 2: predS = (-s) | 0; predT = (-t) | 0; break;
+        case 3: predS = (-t) | 0; predT = s; break;
       }
     }
 
@@ -131,55 +144,43 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
 
     if (!predIsInBottomLeft) {
       const s = origS, t = origT;
-      switch ((4 - rotationCount) % 4) {
-        case 1: origS = t; origT = -s; break;
-        case 2: origS = -s; origT = -t; break;
-        case 3: origS = -t; origT = s; break;
+      switch ((4 - rotationCount) & 3) {
+        case 1: origS = t; origT = (-s) | 0; break;
+        case 2: origS = (-s) | 0; origT = (-t) | 0; break;
+        case 3: origS = (-t) | 0; origT = s; break;
       }
     }
 
     if (!predIsInDiamond) {
-      this._octahedronToolBox.invertDiamond(origS, origT, scratch);
-      origS = scratch[0];
-      origT = scratch[1];
+      let signS = 0;
+      let signT = 0;
+      if (origS >= 0 && origT >= 0) {
+        signS = 1; signT = 1;
+      } else if (origS <= 0 && origT <= 0) {
+        signS = -1; signT = -1;
+      } else {
+        signS = (origS > 0) ? 1 : -1;
+        signT = (origT > 0) ? 1 : -1;
+      }
+      const cornerPointS = signS * center;
+      const cornerPointT = signT * center;
+      let us = (origS * 2 - cornerPointS) | 0;
+      let ut = (origT * 2 - cornerPointT) | 0;
+      if (signS * signT >= 0) {
+        const temp = us;
+        us = -ut;
+        ut = -temp;
+      } else {
+        const temp = us;
+        us = ut;
+        ut = temp;
+      }
+      origS = ((us + cornerPointS) / 2) | 0;
+      origT = ((ut + cornerPointT) / 2) | 0;
     }
 
     outOrigVals[outOffset] = origS + center;
     outOrigVals[outOffset + 1] = origT + center;
-  }
-
-  /**
-   * Checks if a point is in the bottom-left quadrant.
-   * @private
-   * @param {number} s
-   * @param {number} t
-   * @returns {boolean}
-   */
-  _isInBottomLeft(s, t) {
-    if (s === 0 && t === 0) return true;
-    return (s < 0 && t <= 0);
-  }
-
-  /**
-   * Computes the rotation count for canonicalization.
-   * @private
-   * @param {number} signX
-   * @param {number} signY
-   * @returns {number}
-   */
-  _getRotationCount(signX, signY) {
-    if (signX === 0) {
-      if (signY === 0) return 0;
-      if (signY > 0) return 3;
-      return 1;
-    }
-    if (signX > 0) {
-      if (signY >= 0) return 2;
-      return 1;
-    }
-    // signX < 0
-    if (signY <= 0) return 0;
-    return 3;
   }
 
   /**

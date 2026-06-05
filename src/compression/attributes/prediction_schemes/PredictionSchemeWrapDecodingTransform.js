@@ -22,9 +22,6 @@ class PredictionSchemeWrapDecodingTransform {
     this._minValue = 0;
     this._maxValue = 0;
     this._maxDif = 0;
-    this._maxCorrection = 0;
-    this._minCorrection = 0;
-    this._clampedValue = null;
   }
 
   /**
@@ -39,7 +36,6 @@ class PredictionSchemeWrapDecodingTransform {
    */
   init(numComponents) {
     this._numComponents = numComponents;
-    this._clampedValue = new Int32Array(numComponents);
   }
 
   /**
@@ -64,27 +60,6 @@ class PredictionSchemeWrapDecodingTransform {
   }
 
   /**
-   * Clamps predicted values to the [minValue, maxValue] range.
-   * Returns the clamped array (internal buffer reused).
-   * @param {Int32Array|TypedArray} predictedVal
-   * @param {number} offset
-   * @returns {Int32Array}
-   */
-  clampPredictedValue(predictedVal, offset) {
-    for (let i = 0; i < this._numComponents; ++i) {
-      const v = predictedVal[offset + i];
-      if (v > this._maxValue) {
-        this._clampedValue[i] = this._maxValue;
-      } else if (v < this._minValue) {
-        this._clampedValue[i] = this._minValue;
-      } else {
-        this._clampedValue[i] = v;
-      }
-    }
-    return this._clampedValue;
-  }
-
-  /**
    * Computes the original value from predicted and correction values,
    * unwrapping values that fall outside the [min, max] range.
    * @param {Int32Array|TypedArray} predictedVals
@@ -97,9 +72,8 @@ class PredictionSchemeWrapDecodingTransform {
   computeOriginalValue(predictedVals, predictedOffset, corrVals, corrOffset,
     outOriginalVals, outOffset) {
     // Clamp and wrap fused into a single pass over the components, reading the
-    // bounds from locals — avoids the scratch _clampedValue round-trip and a
-    // second loop. Semantics are identical to clampPredictedValue() followed by
-    // the wrap below.
+    // bounds from locals — clamps each predicted value to [min, max] and then
+    // unwraps it, in one loop with no scratch buffer.
     const nc = this._numComponents;
     const minValue = this._minValue;
     const maxValue = this._maxValue;
@@ -149,11 +123,6 @@ class PredictionSchemeWrapDecodingTransform {
       return false;
     }
     this._maxDif = 1 + dif;
-    this._maxCorrection = (this._maxDif / 2) | 0;
-    this._minCorrection = -this._maxCorrection;
-    if ((this._maxDif & 1) === 0) {
-      this._maxCorrection -= 1;
-    }
     return true;
   }
 
