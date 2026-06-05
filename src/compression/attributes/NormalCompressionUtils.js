@@ -30,7 +30,7 @@ class OctahedronToolBox {
     this._quantizationBits = q;
     this._maxQuantizedValue = (1 << q) - 1;
     this._maxValue = this._maxQuantizedValue - 1;
-    this._dequantizationScale = 2.0 / this._maxValue;
+    this._dequantizationScale = Math.fround(2.0 / Math.fround(this._maxValue));
     this._centerValue = (this._maxValue / 2) | 0;
     return true;
   }
@@ -132,9 +132,12 @@ class OctahedronToolBox {
    * @param {Float32Array|Array} outVector - [x, y, z]
    */
   quantizedOctahedralCoordsToUnitVector(inS, inT, outVector) {
+    // float32 throughout (Math.fround) to stay bit-identical to the WASM
+    // decoder, matching the live copy in AttributeOctahedronTransform.js.
+    const fround = Math.fround;
     this._octahedralCoordsToUnitVector(
-      inS * this._dequantizationScale - 1.0,
-      inT * this._dequantizationScale - 1.0,
+      fround(fround(fround(inS) * this._dequantizationScale) - 1.0),
+      fround(fround(fround(inT) * this._dequantizationScale) - 1.0),
       outVector
     );
   }
@@ -227,26 +230,29 @@ class OctahedronToolBox {
    * @private
    */
   _octahedralCoordsToUnitVector(inSScaled, inTScaled, outVector) {
+    // float32 throughout (see quantizedOctahedralCoordsToUnitVector) so normals
+    // are bit-identical to WASM.
+    const fround = Math.fround;
     let y = inSScaled;
     let z = inTScaled;
-    const x = 1.0 - Math.abs(y) - Math.abs(z);
+    const x = fround(fround(1.0 - Math.abs(y)) - Math.abs(z));
 
     let xOffset = -x;
     if (xOffset < 0) xOffset = 0;
 
-    y += (y < 0) ? xOffset : -xOffset;
-    z += (z < 0) ? xOffset : -xOffset;
+    y = fround(y + (y < 0 ? xOffset : -xOffset));
+    z = fround(z + (z < 0 ? xOffset : -xOffset));
 
-    const normSquared = x * x + y * y + z * z;
+    const normSquared = fround(fround(fround(x * x) + fround(y * y)) + fround(z * z));
     if (normSquared < 1e-6) {
       outVector[0] = 0;
       outVector[1] = 0;
       outVector[2] = 0;
     } else {
-      const d = 1.0 / Math.sqrt(normSquared);
-      outVector[0] = x * d;
-      outVector[1] = y * d;
-      outVector[2] = z * d;
+      const d = fround(1.0 / fround(Math.sqrt(normSquared)));
+      outVector[0] = fround(x * d);
+      outVector[1] = fround(y * d);
+      outVector[2] = fround(z * d);
     }
   }
 
