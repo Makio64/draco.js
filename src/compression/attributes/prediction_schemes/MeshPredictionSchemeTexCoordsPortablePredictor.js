@@ -3,6 +3,27 @@
 
 import { DataType } from '../../../core/DracoTypes.js';
 
+// Any integer product strictly below this is exactly representable as a JS
+// double; at or above it the double path may lose precision and we switch to
+// the BigInt path. (2^53.)
+const SAFE_PRODUCT = 9007199254740992;
+
+const MASK64 = (1n << 64n) - 1n;
+const INT64_MAX_BIG = (1n << 63n) - 1n;
+
+// Floor of the integer square root of a non-negative BigInt (matches the C++
+// IntSqrt used by the portable UV predictor).
+function bigIntSqrt(value) {
+  if (value < 2n) return value;
+  let x = value;
+  let y = (x + 1n) >> 1n;
+  while (y < x) {
+    x = y;
+    y = (x + value / x) >> 1n;
+  }
+  return x;
+}
+
 /**
  * Predictor functionality used for portable UV prediction by both encoder and
  * decoder. This implements only the decoder path (is_encoder_t = false).
@@ -188,6 +209,26 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
           return false;
         }
 
+        // The remaining arithmetic is int64 in the C++ reference. For meshes
+        // with small quantized positions every intermediate stays within JS's
+        // exact-integer range (2^53), so double math is bit-exact; for high
+        // position quantization (e.g. cl10's 20-bit) the products exceed 2^53
+        // and we fall back to a BigInt path mirroring the C++ int64/uint64
+        // semantics. The products that can grow past 2^53 are nUV*pnNorm2,
+        // cnDotPn*pnUV, cnDotPn*pn, and cxNorm2*pnNorm2 — the last bounded by
+        // cnNorm2*pnNorm2 (the perpendicular cx is never longer than cn).
+        const cnNorm2 = cn0 * cn0 + cn1 * cn1 + cn2 * cn2;
+        const pnAbsMaxG = Math.max(Math.abs(pn0), Math.abs(pn1), Math.abs(pn2));
+        const cnDotPnAbs = Math.abs(cnDotPn);
+        if (cnNorm2 > SAFE_PRODUCT / pnNorm2Squared ||
+            nUVAbsMax > SAFE_PRODUCT / pnNorm2Squared ||
+            (pnUVAbsMax > 0 && cnDotPnAbs > SAFE_PRODUCT / pnUVAbsMax) ||
+            (pnAbsMaxG > 0 && cnDotPnAbs > SAFE_PRODUCT / pnAbsMaxG)) {
+          return this._computePredictedValueBig(
+            tip0, tip1, tip2, next0, next1, next2,
+            pn0, pn1, pn2, nUV0, nUV1, pUV0, pUV1, pnNorm2Squared);
+        }
+
         // x_uv = nUV * pnNorm2Squared + cnDotPn * pnUV
         const xUV0 = nUV0 * pnNorm2Squared + cnDotPn * pnUV0;
         const xUV1 = nUV1 * pnNorm2Squared + cnDotPn * pnUV1;
@@ -245,6 +286,77 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
     }
     this._predictedValue[0] = data[dataOffset];
     this._predictedValue[1] = data[dataOffset + 1];
+    return true;
+  }
+
+  // 64-bit-exact version of the projection prediction, used when the double
+  // path would lose precision (high position quantization). Mirrors the C++
+  // VectorD<int64_t>/VectorD<uint64_t> arithmetic, including the uint64
+  // wraparound in the IntSqrt(cxNorm2*pnNorm2) term and the unsigned add/sub
+  // used to form the final UV. Returns false in the same overflow cases as the
+  // double path so the encoder and decoder agree on when to fall back to delta.
+  _computePredictedValueBig(tip0, tip1, tip2, next0, next1, next2,
+    pn0, pn1, pn2, nUV0, nUV1, pUV0, pUV1, pnNorm2SquaredNum) {
+    const B = BigInt;
+    const tip = [B(tip0), B(tip1), B(tip2)];
+    const nxt = [B(next0), B(next1), B(next2)];
+    const pn = [B(pn0), B(pn1), B(pn2)];
+    const nUVb0 = B(nUV0), nUVb1 = B(nUV1);
+    const pnN2 = B(pnNorm2SquaredNum);
+
+    const cn0 = tip[0] - nxt[0];
+    const cn1 = tip[1] - nxt[1];
+    const cn2 = tip[2] - nxt[2];
+    const cnDotPn = pn[0] * cn0 + pn[1] * cn1 + pn[2] * cn2;
+    const pnUV0 = B(pUV0) - nUVb0;
+    const pnUV1 = B(pUV1) - nUVb1;
+
+    const babs = (x) => (x < 0n ? -x : x);
+    const nUVAbsMax = babs(nUVb0) > babs(nUVb1) ? babs(nUVb0) : babs(nUVb1);
+    if (nUVAbsMax > INT64_MAX_BIG / pnN2) return false;
+    let pnUVAbsMax = babs(pnUV0) > babs(pnUV1) ? babs(pnUV0) : babs(pnUV1);
+    if (pnUVAbsMax > 0n && babs(cnDotPn) > INT64_MAX_BIG / pnUVAbsMax) return false;
+
+    // x_uv = nUV * pnNorm2 + cnDotPn * pnUV (int64 vector; wraps on overflow).
+    const xUV0 = B.asIntN(64, nUVb0 * pnN2 + cnDotPn * pnUV0);
+    const xUV1 = B.asIntN(64, nUVb1 * pnN2 + cnDotPn * pnUV1);
+
+    let pnAbsMax = babs(pn[0]);
+    if (babs(pn[1]) > pnAbsMax) pnAbsMax = babs(pn[1]);
+    if (babs(pn[2]) > pnAbsMax) pnAbsMax = babs(pn[2]);
+    if (pnAbsMax > 0n && babs(cnDotPn) > INT64_MAX_BIG / pnAbsMax) return false;
+
+    // x_pos = next + (cnDotPn * pn) / pnNorm2 (signed truncating division).
+    const xPos0 = nxt[0] + (cnDotPn * pn[0]) / pnN2;
+    const xPos1 = nxt[1] + (cnDotPn * pn[1]) / pnN2;
+    const xPos2 = nxt[2] + (cnDotPn * pn[2]) / pnN2;
+    const cx0 = tip[0] - xPos0;
+    const cx1 = tip[1] - xPos1;
+    const cx2 = tip[2] - xPos2;
+    const cxNorm2 = cx0 * cx0 + cx1 * cx1 + cx2 * cx2;
+
+    // norm_squared = IntSqrt(cxNorm2 * pnNorm2), with the multiply in uint64.
+    const normSquared = bigIntSqrt((cxNorm2 * pnN2) & MASK64);
+
+    // cx_uv = Rot(pnUV) * normSquared (int64; wraps on overflow).
+    const cxUV0 = B.asIntN(64, pnUV1 * normSquared);
+    const cxUV1 = B.asIntN(64, (-pnUV0) * normSquared);
+
+    if (this._numOrientations === 0) return false;
+    const orientation = this._orientations[--this._numOrientations];
+
+    // predicted_uv = (uint64(x_uv) +/- uint64(cx_uv)) / pnNorm2, as int64,
+    // then truncated to int32 (static_cast<int>).
+    let s0, s1;
+    if (orientation) {
+      s0 = B.asUintN(64, B.asUintN(64, xUV0) + B.asUintN(64, cxUV0));
+      s1 = B.asUintN(64, B.asUintN(64, xUV1) + B.asUintN(64, cxUV1));
+    } else {
+      s0 = B.asUintN(64, B.asUintN(64, xUV0) - B.asUintN(64, cxUV0));
+      s1 = B.asUintN(64, B.asUintN(64, xUV1) - B.asUintN(64, cxUV1));
+    }
+    this._predictedValue[0] = Number(B.asIntN(32, B.asIntN(64, s0) / pnN2));
+    this._predictedValue[1] = Number(B.asIntN(32, B.asIntN(64, s1) / pnN2));
     return true;
   }
 
