@@ -23,12 +23,16 @@ class MeshTraversalSequencer {
   // Called by SequentialAttributeDecodersController.
   generateSequence(/* outPointIds */) {
     // A traversal's output (point order + encoding maps) depends only on the
-    // corner table's connectivity, not on the attribute being decoded. Meshes
-    // with several vertex-mapped attributes share one corner table, so reuse a
-    // previously computed result instead of repeating the O(faces) traversal.
+    // corner table's connectivity AND the traversal method, not on the
+    // attribute being decoded. Meshes with several vertex-mapped attributes
+    // share one corner table, so reuse a previously computed result instead of
+    // repeating the O(faces) traversal — but only for the same traversal
+    // method, since different methods produce different orders.
     const cornerTable = this._traverser.cornerTable();
+    const methodId = this._traverser._traversalMethodId;
     if (this._traversalCache) {
-      const cached = this._traversalCache.get(cornerTable);
+      const byMethod = this._traversalCache.get(cornerTable);
+      const cached = byMethod && byMethod.get(methodId);
       if (cached !== undefined) {
         this._outPointIds = cached.pointIds;
         this._encodingData.adoptTraversalResult(
@@ -47,7 +51,12 @@ class MeshTraversalSequencer {
     }
 
     if (this._traversalCache) {
-      this._traversalCache.set(cornerTable, {
+      let byMethod = this._traversalCache.get(cornerTable);
+      if (byMethod === undefined) {
+        byMethod = new Map();
+        this._traversalCache.set(cornerTable, byMethod);
+      }
+      byMethod.set(methodId, {
         pointIds: this._outPointIds,
         vertexMap: this._encodingData.vertexToEncodedAttributeValueIndexMap,
         cornerMap: this._encodingData.encodedAttributeValueIndexToCornerMap,

@@ -16,6 +16,9 @@ class DepthFirstTraverser {
     this._isVertexVisited = null;
     this._cornerTraversalStack = [];
     this._numVisitedFaces = 0;
+    // Identifies the traversal order for the shared traversal cache
+    // (MESH_TRAVERSAL_DEPTH_FIRST). See MeshTraversalSequencer.
+    this._traversalMethodId = 0;
   }
 
   init(cornerTable, observer) {

@@ -12,6 +12,7 @@ import {
 } from './MeshEdgebreakerShared.js';
 import { SequentialAttributeDecodersController } from '../attributes/SequentialAttributeDecodersController.js';
 import { DepthFirstTraverser } from './traverser/DepthFirstTraverser.js';
+import { MaxPredictionDegreeTraverser } from './traverser/MaxPredictionDegreeTraverser.js';
 import { MeshTraversalSequencer } from './traverser/MeshTraversalSequencer.js';
 import { MeshAttributeIndicesEncodingObserver } from './traverser/MeshAttributeIndicesEncodingObserver.js';
 import { MeshAttributeCornerTable } from '../../mesh/MeshAttributeCornerTable.js';
@@ -150,7 +151,7 @@ class MeshEdgebreakerDecoderImpl {
 
       // Create vertex traversal sequencer using the main corner table.
       sequencer = this._createVertexTraversalSequencer(
-        encodingData, this._cornerTable, mesh);
+        encodingData, this._cornerTable, mesh, traversalMethod);
     } else {
       // Per-corner attribute decoder.
       if (traversalMethod !== MeshTraversalMethod.MESH_TRAVERSAL_DEPTH_FIRST) {
@@ -164,7 +165,7 @@ class MeshEdgebreakerDecoderImpl {
       const attCornerTable = this._attributeData[attDataId].connectivityData;
 
       sequencer = this._createVertexTraversalSequencer(
-        encodingData, attCornerTable, mesh);
+        encodingData, attCornerTable, mesh, traversalMethod);
     }
 
     if (!sequencer) {
@@ -175,14 +176,17 @@ class MeshEdgebreakerDecoderImpl {
     return this._decoder.setAttributesDecoder(attDecoderId, attController);
   }
 
-  _createVertexTraversalSequencer(encodingData, cornerTable, mesh) {
+  _createVertexTraversalSequencer(encodingData, cornerTable, mesh, traversalMethod) {
     const traversalSequencer = new MeshTraversalSequencer(
       mesh, encodingData, this._vertexTraversalCache);
 
     const observer = new MeshAttributeIndicesEncodingObserver(
       cornerTable, mesh, traversalSequencer, encodingData);
 
-    const traverser = new DepthFirstTraverser();
+    const traverser =
+      traversalMethod === MeshTraversalMethod.MESH_TRAVERSAL_PREDICTION_DEGREE
+        ? new MaxPredictionDegreeTraverser()
+        : new DepthFirstTraverser();
     traverser.init(cornerTable, observer);
 
     traversalSequencer.setTraverser(traverser);

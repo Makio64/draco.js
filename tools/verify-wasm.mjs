@@ -198,7 +198,7 @@ function compare(module, decoder, js, wasm) {
 async function main() {
   const only = process.argv[2];
   const allGlb = fs.readdirSync(SAMPLES_DIR).filter((f) => f.endsWith('.glb')).sort();
-  const allDrc = ['cube.drc', 'cube-edgebreaker.drc', 'duck.drc', 'bunny.drc'];
+  const allDrc = fs.readdirSync(SAMPLES_DIR).filter((f) => f.endsWith('.drc')).sort();
   const sampleNames = only ? [only] : [...allDrc, ...allGlb];
 
   const module = await draco3d.createDecoderModule({});
