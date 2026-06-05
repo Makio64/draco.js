@@ -1,39 +1,24 @@
 // metadata/MetadataDecoder.js - ported from metadata/metadata_decoder.h/cc
+//
+// The decoder does not surface metadata on the output geometry, so this only
+// parses the metadata structure far enough to consume the exact bytes it
+// occupies, keeping the rest of the bitstream aligned. (A full port that builds
+// Metadata objects lives in the git history if the content is ever needed.)
 
-import { Metadata } from './Metadata.js';
-import { AttributeMetadata } from './GeometryMetadata.js';
 import { decodeVarint } from '../core/VarintDecoding.js';
 
-// Class for decoding the metadata.
+// Limit metadata nesting depth to avoid stack overflow.
+const kMaxSubmetadataLevel = 1000;
+
 class MetadataDecoder {
 
   constructor() {
-
     this.buffer_ = null;
-
   }
 
-  // Decodes metadata from the buffer into the provided Metadata object.
-  // Returns true on success.
-  decodeMetadata(inBuffer, metadata) {
-
-    if (!metadata) {
-      return false;
-    }
-
-    this.buffer_ = inBuffer;
-    return this._decodeMetadata(metadata);
-
-  }
-
-  // Decodes geometry metadata (including attribute metadata) from the buffer.
-  // Returns true on success.
-  decodeGeometryMetadata(inBuffer, metadata) {
-
-    if (!metadata) {
-      return false;
-    }
-
+  // Skips the geometry metadata (per-attribute metadata followed by the
+  // geometry-level metadata) in the buffer. Returns true on success.
+  skipGeometryMetadata(inBuffer) {
     this.buffer_ = inBuffer;
 
     const numAttMetadata = decodeVarint(this.buffer_);
@@ -41,163 +26,84 @@ class MetadataDecoder {
       return false;
     }
 
-    // Decode attribute metadata.
     for (let i = 0; i < numAttMetadata; ++i) {
-
-      const attUniqueId = decodeVarint(this.buffer_);
-      if (attUniqueId === undefined) {
+      // Attribute unique id, then the attribute's metadata block.
+      if (decodeVarint(this.buffer_) === undefined) {
         return false;
       }
-
-      const attMetadata = new AttributeMetadata();
-      attMetadata.setAttUniqueId(attUniqueId);
-
-      if (!this._decodeMetadata(attMetadata)) {
+      if (!this._skipMetadata(0)) {
         return false;
       }
-
-      metadata.addAttributeMetadata(attMetadata);
-
     }
 
-    return this._decodeMetadata(metadata);
-
+    return this._skipMetadata(0);
   }
 
-  // Internal iterative metadata decoder using a stack to avoid deep recursion.
-  _decodeMetadata(metadata) {
+  // Reads (and discards) one metadata block: its key-value entries and any
+  // nested sub-metadata. Mirrors the byte layout decoded by the C++
+  // MetadataDecoder. Sub-blocks are read depth-first in stream order, matching
+  // the reference's stack-based traversal.
+  _skipMetadata(level) {
+    if (level > kMaxSubmetadataLevel) {
+      return false;
+    }
 
-    // Limit metadata nesting depth to avoid stack overflow.
-    const kMaxSubmetadataLevel = 1000;
-
-    const metadataStack = [];
-    metadataStack.push({
-      parentMetadata: null,
-      decodedMetadata: metadata,
-      level: 0
-    });
-
-    while (metadataStack.length > 0) {
-
-      const mp = metadataStack.pop();
-      let currentMetadata = mp.decodedMetadata;
-
-      if (mp.parentMetadata !== null) {
-
-        if (mp.level > kMaxSubmetadataLevel) {
-          return false;
-        }
-
-        const subMetadataName = this._decodeName();
-        if (subMetadataName === null) {
-          return false;
-        }
-
-        const subMetadata = new Metadata();
-        currentMetadata = subMetadata;
-
-        if (!mp.parentMetadata.addSubMetadata(subMetadataName, subMetadata)) {
-          return false;
-        }
-
-      }
-
-      if (currentMetadata === null) {
+    const numEntries = decodeVarint(this.buffer_);
+    if (numEntries === undefined) {
+      return false;
+    }
+    for (let i = 0; i < numEntries; ++i) {
+      if (!this._skipEntry()) {
         return false;
       }
+    }
 
-      // Decode entries.
-      const numEntries = decodeVarint(this.buffer_);
-      if (numEntries === undefined) {
+    const numSubMetadata = decodeVarint(this.buffer_);
+    if (numSubMetadata === undefined) {
+      return false;
+    }
+    if (numSubMetadata > this.buffer_.remainingSize) {
+      // The decoded number of metadata items is unreasonably high.
+      return false;
+    }
+    for (let i = 0; i < numSubMetadata; ++i) {
+      // Sub-metadata name, then the sub-metadata block.
+      if (!this._skipName()) {
         return false;
       }
-
-      for (let i = 0; i < numEntries; ++i) {
-
-        if (!this._decodeEntry(currentMetadata)) {
-          return false;
-        }
-
-      }
-
-      // Decode sub-metadata count.
-      const numSubMetadata = decodeVarint(this.buffer_);
-      if (numSubMetadata === undefined) {
+      if (!this._skipMetadata(level + 1)) {
         return false;
       }
-
-      if (numSubMetadata > this.buffer_.remainingSize) {
-        // The decoded number of metadata items is unreasonably high.
-        return false;
-      }
-
-      for (let i = 0; i < numSubMetadata; ++i) {
-
-        metadataStack.push({
-          parentMetadata: currentMetadata,
-          decodedMetadata: null,
-          level: mp.parentMetadata ? mp.level + 1 : mp.level
-        });
-
-      }
-
     }
 
     return true;
-
   }
 
-  // Decodes a single key-value entry and adds it to the metadata.
-  _decodeEntry(metadata) {
-
-    const entryName = this._decodeName();
-    if (entryName === null) {
+  // Skips a single key-value entry: name followed by a length-prefixed value.
+  _skipEntry() {
+    if (!this._skipName()) {
       return false;
     }
-
     const dataSize = decodeVarint(this.buffer_);
-    if (dataSize === undefined) {
+    if (dataSize === undefined || dataSize === 0) {
       return false;
     }
-
-    if (dataSize === 0) {
-      return false;
-    }
-
     if (dataSize > this.buffer_.remainingSize) {
       return false;
     }
-
-    const entryValue = this.buffer_.decodeBytes(dataSize);
-    if (entryValue === undefined) {
-      return false;
-    }
-
-    metadata.addEntryBinary(entryName, entryValue);
-    return true;
-
+    return this.buffer_.decodeBytes(dataSize) !== undefined;
   }
 
-  // Decodes a name string (uint8 length prefix followed by ASCII bytes).
-  _decodeName() {
-
+  // Skips a name (uint8 length prefix followed by that many bytes).
+  _skipName() {
     const nameLen = this.buffer_.decodeUint8();
     if (nameLen === undefined) {
-      return null;
+      return false;
     }
-
     if (nameLen === 0) {
-      return '';
+      return true;
     }
-
-    const nameBytes = this.buffer_.decodeBytes(nameLen);
-    if (nameBytes === undefined) {
-      return null;
-    }
-
-    const decoder = new TextDecoder();
-    return decoder.decode(nameBytes);
-
+    return this.buffer_.decodeBytes(nameLen) !== undefined;
   }
 
 }

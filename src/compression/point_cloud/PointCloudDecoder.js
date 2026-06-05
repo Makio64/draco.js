@@ -3,7 +3,6 @@
 import { Status, StatusCode, okStatus } from '../../core/Status.js';
 import { DecoderBuffer } from '../../core/DecoderBuffer.js';
 import { MetadataDecoder } from '../../metadata/MetadataDecoder.js';
-import { GeometryMetadata } from '../../metadata/GeometryMetadata.js';
 import {
   DracoHeader,
   EncodedGeometryType,
@@ -250,13 +249,11 @@ class PointCloudDecoder {
   }
 
   _decodeMetadata() {
-    // Decode the geometry metadata from the bitstream. The content is not
-    // surfaced on the output geometry, but it must be decoded so the bytes are
-    // consumed and the rest of the bitstream stays aligned (otherwise a file
-    // with metadata decodes to garbage / empty geometry).
-    const metadata = new GeometryMetadata();
+    // Skip over the geometry metadata so the bytes are consumed and the rest of
+    // the bitstream stays aligned (the content is not surfaced on the output
+    // geometry; otherwise a metadata-bearing file decodes to empty geometry).
     const metadataDecoder = new MetadataDecoder();
-    if (!metadataDecoder.decodeGeometryMetadata(this._buffer, metadata)) {
+    if (!metadataDecoder.skipGeometryMetadata(this._buffer)) {
       return new Status(StatusCode.DRACO_ERROR, 'Failed to decode metadata.');
     }
     return okStatus();
