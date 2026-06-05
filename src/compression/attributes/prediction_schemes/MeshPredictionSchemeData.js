@@ -29,9 +29,6 @@ class MeshPredictionSchemeData {
   }
 
   /** @returns {object} */
-  get mesh() { return this._mesh; }
-
-  /** @returns {object} */
   get cornerTable() { return this._cornerTable; }
 
   /** @returns {Array|Int32Array} */

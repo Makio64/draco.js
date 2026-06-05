@@ -31,7 +31,6 @@ class MaxPredictionDegreeTraverser {
     // Flat connectivity arrays (see DepthFirstTraverser for why).
     this._cornerToVertex = null;
     this._oppositeCorners = null;
-    this._hasOnNewFaceVisited = false;
     // Identifies the traversal order for the shared traversal cache
     // (MESH_TRAVERSAL_PREDICTION_DEGREE). See MeshTraversalSequencer.
     this._traversalMethodId = 1;
@@ -45,7 +44,6 @@ class MaxPredictionDegreeTraverser {
     this._numVisitedFaces = 0;
     this._cornerToVertex = cornerTable.cornerToVertexArray();
     this._oppositeCorners = cornerTable.oppositeCornerArray();
-    this._hasOnNewFaceVisited = typeof observer.onNewFaceVisited === 'function';
     this._traversalStacks = [[], [], []]; // kMaxPriority buckets
     this._bestPriority = 0;
   }
@@ -118,7 +116,6 @@ class MaxPredictionDegreeTraverser {
     const isFaceVisited = this._isFaceVisited;
     const isVertexVisited = this._isVertexVisited;
     const observer = this._observer;
-    const hasOnNewFaceVisited = this._hasOnNewFaceVisited;
 
     // Traversal starts from |cornerId|; it follows the right or left
     // neighboring faces based on their prediction degree.
@@ -157,9 +154,6 @@ class MaxPredictionDegreeTraverser {
         faceId = (cornerId / 3) | 0;
         isFaceVisited[faceId] = 1;
         this._numVisitedFaces++;
-        if (hasOnNewFaceVisited) {
-          observer.onNewFaceVisited(faceId);
-        }
 
         // If the newly reached vertex hasn't been visited, mark and notify.
         const vertId = cornerToVertex[cornerId];

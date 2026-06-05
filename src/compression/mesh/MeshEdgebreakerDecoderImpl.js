@@ -31,22 +31,12 @@ class MeshEdgebreakerDecoderImpl {
     this._decoder = null;
     this._cornerTable = null;
     this._cornerTraversalStack = [];
-    this._vertexTraversalLength = [];
     this._topologySplitData = [];
     this._holeEventData = [];
     this._initFaceConfigurations = [];
     this._initCorners = [];
-    this._lastSymbolId = -1;
-    this._lastVertId = -1;
-    this._lastFaceId = -1;
-    this._visitedFaces = [];
-    this._visitedVerts = [];
     this._isVertHole = [];
-    this._numNewVertices = 0;
-    this._newToParentVertexMap = new Map();
     this._numEncodedVertices = 0;
-    this._processedCornerIds = [];
-    this._processedConnectivityCorners = [];
     this._posEncodingData = new MeshAttributeIndicesEncodingData();
     this._posDataDecoderId = -1;
     // Per-decode cache of vertex-traversal results, keyed by corner table, so
@@ -194,9 +184,8 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   decodeConnectivity() {
-    this._numNewVertices = 0;
-    this._newToParentVertexMap.clear();
-
+    // Bitstreams < 2.2 prefix a new-vertex count here; it is read only to
+    // advance the cursor (the value is unused by this decoder).
     if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
       let numNewVerts;
       if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
@@ -206,7 +195,6 @@ class MeshEdgebreakerDecoderImpl {
         numNewVerts = decodeVarint(this._decoder.buffer());
         if (numNewVerts === undefined) return false;
       }
-      this._numNewVertices = numNewVerts;
     }
 
     let numEncodedVertices;
@@ -278,19 +266,12 @@ class MeshEdgebreakerDecoderImpl {
       return false; // Split symbols are a sub-set of all symbols.
     }
     // Decode topology (connectivity).
-    this._vertexTraversalLength = [];
     this._cornerTable = new CornerTable();
     this._vertexTraversalCache = new Map();
-    this._processedCornerIds = [];
-    this._processedConnectivityCorners = [];
     this._topologySplitData = [];
     this._holeEventData = [];
     this._initFaceConfigurations = [];
     this._initCorners = [];
-
-    this._lastSymbolId = -1;
-    this._lastFaceId = -1;
-    this._lastVertId = -1;
 
     this._attributeData = [];
     for (let i = 0; i < numAttributeData; ++i) {

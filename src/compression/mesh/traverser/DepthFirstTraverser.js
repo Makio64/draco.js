@@ -39,7 +39,6 @@ class DepthFirstTraverser {
     this._vertexLeftmost = cornerTable.vertexLeftmostCornerArray();
     this._numCorners = cornerTable.numCorners();
     this._cornerTraversalStack = new Int32Array(this._numCorners);
-    this._hasOnNewFaceVisited = typeof observer.onNewFaceVisited === 'function';
   }
 
   cornerTable() {
@@ -61,7 +60,6 @@ class DepthFirstTraverser {
     const oppositeCorners = this._oppositeCorners;
     const vertexLeftmost = this._vertexLeftmost;
     const stack = this._cornerTraversalStack;
-    const hasOnNewFaceVisited = this._hasOnNewFaceVisited;
     let numVisitedFaces = this._numVisitedFaces;
 
     let stackSize = 0;
@@ -99,9 +97,6 @@ class DepthFirstTraverser {
       while (true) {
         isFaceVisited[faceId] = true;
         numVisitedFaces++;
-        if (hasOnNewFaceVisited) {
-          observer.onNewFaceVisited(faceId);
-        }
 
         const vertId = cornerToVertex[cornerId];
         if (vertId === kInvalidVertexIndex) {

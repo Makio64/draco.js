@@ -63,11 +63,6 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     return false;
   }
 
-  /** @returns {number} */
-  getNormalPredictionMode() {
-    return this._normalPredictionMode;
-  }
-
   /**
    * Precomputes the integer position of every data entry once, so the hot
    * per-corner ring traversal reads from a flat Int32Array instead of going

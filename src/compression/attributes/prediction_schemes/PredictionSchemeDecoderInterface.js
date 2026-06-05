@@ -60,22 +60,6 @@ class PredictionSchemeDecoderInterface {
   }
 
   /**
-   * Returns the transform type used by the prediction scheme.
-   * @returns {number}
-   */
-  getTransformType() {
-    return -1;
-  }
-
-  /**
-   * Returns the encoded/decoded attribute.
-   * @returns {object|null}
-   */
-  getAttribute() {
-    return null;
-  }
-
-  /**
    * Decodes prediction scheme-specific data from the input buffer.
    * @param {DecoderBuffer} buffer
    * @returns {boolean}

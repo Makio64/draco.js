@@ -168,10 +168,6 @@ class AttributesDecoder extends AttributesDecoderInterface {
     return true;
   }
 
-  get pointCloud() {
-    return this._pointCloud;
-  }
-
 }
 
 export { AttributesDecoder };

@@ -34,11 +34,6 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
     return true;
   }
 
-  /** @returns {object} */
-  getAttribute() {
-    return this._attribute;
-  }
-
   /** @returns {number} */
   getNumParentAttributes() {
     return 0;
@@ -63,16 +58,6 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
   /** @returns {boolean} */
   areCorrectionsPositive() {
     return this._transform.areCorrectionsPositive();
-  }
-
-  /** @returns {number} */
-  getTransformType() {
-    return this._transform.getType();
-  }
-
-  /** @returns {object} */
-  get attribute() {
-    return this._attribute;
   }
 
   /** @returns {object} */

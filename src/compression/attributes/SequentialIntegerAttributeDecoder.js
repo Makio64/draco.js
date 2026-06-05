@@ -18,13 +18,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     this._predictionScheme = null;
   }
 
-  init(decoder, attributeId) {
-    if (!super.init(decoder, attributeId)) {
-      return false;
-    }
-    return true;
-  }
-
   transformAttributeToOriginalFormat(pointIds) {
     if (this.decoder &&
         this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {

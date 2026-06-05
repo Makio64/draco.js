@@ -21,14 +21,6 @@ class MeshPredictionSchemeDecoder extends PredictionSchemeDecoder {
     this._meshData = meshData;
   }
 
-  /**
-   * Returns the mesh data used by this prediction scheme.
-   * @returns {object}
-   */
-  get meshData() {
-    return this._meshData;
-  }
-
 }
 
 export { MeshPredictionSchemeDecoder };

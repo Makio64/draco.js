@@ -36,14 +36,9 @@ class GeometryAttribute {
     this._attributeType = attributeType;
   }
 
-  // Returns the byte position of the attribute entry in the data buffer.
-  getBytePos(attIndex) {
-    return this._byteOffset + this._byteStride * attIndex;
-  }
-
   // Returns a Uint8Array subarray pointing to the attribute entry in the buffer.
   getAddress(attIndex) {
-    const bytePos = this.getBytePos(attIndex);
+    const bytePos = this._byteOffset + this._byteStride * attIndex;
     return this._buffer.data.subarray(bytePos);
   }
 

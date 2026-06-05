@@ -46,20 +46,6 @@ class PredictionSchemeWrapDecodingTransform {
   }
 
   /**
-   * @returns {number}
-   */
-  numComponents() {
-    return this._numComponents;
-  }
-
-  /**
-   * @returns {number}
-   */
-  quantizationBits() {
-    return -1;
-  }
-
-  /**
    * Computes the original value from predicted and correction values,
    * unwrapping values that fall outside the [min, max] range.
    * @param {Int32Array|TypedArray} predictedVals
