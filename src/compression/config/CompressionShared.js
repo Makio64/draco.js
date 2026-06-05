@@ -29,12 +29,6 @@ export const EncodedGeometryType = {
   NUM_ENCODED_GEOMETRY_TYPES: 2
 };
 
-// List of encoding methods for point clouds.
-export const PointCloudEncodingMethod = {
-  POINT_CLOUD_SEQUENTIAL_ENCODING: 0,
-  POINT_CLOUD_KD_TREE_ENCODING: 1
-};
-
 // List of encoding methods for meshes.
 export const MeshEncoderMethod = {
   MESH_SEQUENTIAL_ENCODING: 0,
