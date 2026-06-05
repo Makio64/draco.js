@@ -6207,8 +6207,13 @@ class MeshTraversalSequencer {
     // method, since different methods produce different orders.
     const cornerTable = this._traverser.cornerTable();
     const methodId = this._traverser._traversalMethodId;
+    // Key the cache by the flat cornerToVertex array, not the corner-table
+    // instance: attributes with identical seams share these arrays (via
+    // adoptVertexRecompute) so they produce the same traversal, and within a
+    // prim all attributes share faces_ -- so the cached point order/maps apply.
+    const cacheKey = cornerTable.cornerToVertexArray();
     if (this._traversalCache) {
-      const byMethod = this._traversalCache.get(cornerTable);
+      const byMethod = this._traversalCache.get(cacheKey);
       const cached = byMethod && byMethod.get(methodId);
       if (cached !== undefined) {
         this._outPointIds = cached.pointIds;
@@ -6228,10 +6233,10 @@ class MeshTraversalSequencer {
     }
 
     if (this._traversalCache) {
-      let byMethod = this._traversalCache.get(cornerTable);
+      let byMethod = this._traversalCache.get(cacheKey);
       if (byMethod === undefined) {
         byMethod = new Map();
-        this._traversalCache.set(cornerTable, byMethod);
+        this._traversalCache.set(cacheKey, byMethod);
       }
       byMethod.set(methodId, {
         pointIds: this._outPointIds,
