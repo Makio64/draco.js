@@ -4,8 +4,9 @@
 import { MeshPredictionSchemeDecoder } from './MeshPredictionSchemeDecoder.js';
 import { PredictionSchemeMethod } from '../../config/CompressionShared.js';
 import { computeParallelogramPrediction } from './MeshPredictionSchemeParallelogramShared.js';
-import { kInvalidCornerIndex } from '../../../mesh/CornerTable.js';
 import { RAnsBitDecoder } from '../../bit_coders/RAnsBitDecoder.js';
+
+const kInvalidCornerIndex = -1;
 
 const OPTIMAL_MULTI_PARALLELOGRAM = 0;
 const MAX_NUM_PARALLELOGRAMS = 4;

@@ -38,10 +38,6 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
     return this._transform.areCorrectionsPositive();
   }
 
-  get transform() {
-    return this._transform;
-  }
-
 }
 
 export { PredictionSchemeDecoder };

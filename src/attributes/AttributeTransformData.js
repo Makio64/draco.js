@@ -18,23 +18,6 @@ class AttributeTransformData {
     this._transformType = type;
   }
 
-  // |type| is a string tag: 'int32', 'uint32', 'float32', 'uint8', etc.
-  getParameterValue(byteOffset, type) {
-    const data = this._buffer.data;
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    switch (type) {
-      case 'int32': return view.getInt32(byteOffset, true);
-      case 'uint32': return view.getUint32(byteOffset, true);
-      case 'float32': return view.getFloat32(byteOffset, true);
-      case 'float64': return view.getFloat64(byteOffset, true);
-      case 'int8': return view.getInt8(byteOffset);
-      case 'uint8': return view.getUint8(byteOffset);
-      case 'int16': return view.getInt16(byteOffset, true);
-      case 'uint16': return view.getUint16(byteOffset, true);
-      default: return view.getInt32(byteOffset, true);
-    }
-  }
-
   setParameterValue(byteOffset, value, type) {
     const sizeNeeded = byteOffset + this._typeSize(type);
     if (sizeNeeded > this._buffer.dataSize) {

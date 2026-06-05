@@ -4,7 +4,8 @@
 import { MeshPredictionSchemeDecoder } from './MeshPredictionSchemeDecoder.js';
 import { PredictionSchemeMethod } from '../../config/CompressionShared.js';
 import { computeParallelogramPrediction } from './MeshPredictionSchemeParallelogramShared.js';
-import { kInvalidCornerIndex } from '../../../mesh/CornerTable.js';
+
+const kInvalidCornerIndex = -1;
 
 /**
  * Decoder for the multi-parallelogram scheme: parallelogram predictions around
