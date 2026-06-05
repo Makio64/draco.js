@@ -77,10 +77,7 @@ class MeshAttributeCornerTable {
     const ct = this.corner_table_;
     const numCorners = ct.numCorners();
     const numBaseVertices = ct.numVertices();
-    // New-vertex count is bounded by numCorners, so preallocate Int32Arrays
-    // indexed by new-vertex id (push order == numNewVertices) instead of growing
-    // Arrays with push().
-    const attEntryMap = new Int32Array(numCorners);
+    // Preallocate leftMostMap by new-vertex id (new-vertex count <= numCorners).
     const leftMostMap = new Int32Array(numCorners);
     const cornerToVertex = this.corner_to_vertex_map_;
     const isVertexOnSeam = this.is_vertex_on_seam_;
@@ -102,7 +99,6 @@ class MeshAttributeCornerTable {
 
       if (!isVertexOnSeam[v]) {
         const firstVertId = numNewVertices++;
-        attEntryMap[firstVertId] = firstVertId;
         leftMostMap[firstVertId] = c;
         cornerToVertex[c] = firstVertId;
 
@@ -117,7 +113,6 @@ class MeshAttributeCornerTable {
         }
       } else {
         let firstVertId = numNewVertices++;
-        attEntryMap[firstVertId] = firstVertId;
 
         let firstC = c;
         let actC;
@@ -143,7 +138,6 @@ class MeshAttributeCornerTable {
           const nAct = (actC % 3 === 2) ? actC - 2 : actC + 1;
           if (isEdgeOnSeam[nAct]) {
             firstVertId = numNewVertices++;
-            attEntryMap[firstVertId] = firstVertId;
             leftMostMap[firstVertId] = actC;
           }
           cornerToVertex[actC] = firstVertId;
@@ -154,8 +148,9 @@ class MeshAttributeCornerTable {
       }
     }
 
-    // subarray, not copy: exact-length views so numVertices()/accessors see the right length.
-    this.vertex_to_attribute_entry_id_map_ = attEntryMap.subarray(0, numNewVertices);
+    // vertex_to_attribute_entry_id_map_ is only read for its length (numVertices()).
+    this.vertex_to_attribute_entry_id_map_ = new Int32Array(numNewVertices);
+    // subarray, not copy: exact-length view so accessors see the right length.
     this.vertex_to_left_most_corner_map_ = leftMostMap.subarray(0, numNewVertices);
 
     return true;

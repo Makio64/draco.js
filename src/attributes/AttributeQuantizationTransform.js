@@ -77,6 +77,27 @@ class AttributeQuantizationTransform extends AttributeTransform {
     // float `delta` (both rounded to float32), then added to the float32 min.
     // The Float32Array store performs the final round of the addition.
     const fround = Math.fround;
+
+    // Specialize nc=3/2 (positions/texcoords) with minValues hoisted to locals;
+    // same operands/order as the generic path below, so bit-identical.
+    if (numComponents === 3) {
+      const m0 = minValues[0], m1 = minValues[1], m2 = minValues[2];
+      for (let o = 0; o < total; o += 3) {
+        dstF32[o] = fround(fround(srcI32[o]) * delta) + m0;
+        dstF32[o + 1] = fround(fround(srcI32[o + 1]) * delta) + m1;
+        dstF32[o + 2] = fround(fround(srcI32[o + 2]) * delta) + m2;
+      }
+      return true;
+    }
+    if (numComponents === 2) {
+      const m0 = minValues[0], m1 = minValues[1];
+      for (let o = 0; o < total; o += 2) {
+        dstF32[o] = fround(fround(srcI32[o]) * delta) + m0;
+        dstF32[o + 1] = fround(fround(srcI32[o + 1]) * delta) + m1;
+      }
+      return true;
+    }
+
     let o = 0;
     for (let i = 0; i < numValues; i++) {
       for (let c = 0; c < numComponents; c++) {

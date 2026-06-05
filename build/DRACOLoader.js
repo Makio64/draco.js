@@ -1933,12 +1933,43 @@ class PointAttribute extends GeometryAttribute {
         }
       }
 
-      for (let i = 0; i < numPoints; i++) {
-        const attIndex = isIdentity ? i : indicesMap[i];
-        const srcOffset = srcStart + attIndex * strideElements;
-        const dstOffset = i * numComponents;
-        for (let j = 0; j < numComponents; j++) {
-          array[dstOffset + j] = srcView[srcOffset + j];
+      // isIdentity is loop-invariant; branch once. The explicit-mapping gather
+      // is the hot post-decode path (positions/texcoords use an explicit
+      // point->value map). Specialize nc=2/3 to unroll the per-component copy.
+      if (isIdentity) {
+        let dst = 0;
+        for (let i = 0; i < numPoints; i++) {
+          const srcOffset = srcStart + i * strideElements;
+          for (let j = 0; j < numComponents; j++) {
+            array[dst + j] = srcView[srcOffset + j];
+          }
+          dst += numComponents;
+        }
+      } else if (numComponents === 3) {
+        let dst = 0;
+        for (let i = 0; i < numPoints; i++) {
+          const srcOffset = srcStart + indicesMap[i] * strideElements;
+          array[dst] = srcView[srcOffset];
+          array[dst + 1] = srcView[srcOffset + 1];
+          array[dst + 2] = srcView[srcOffset + 2];
+          dst += 3;
+        }
+      } else if (numComponents === 2) {
+        let dst = 0;
+        for (let i = 0; i < numPoints; i++) {
+          const srcOffset = srcStart + indicesMap[i] * strideElements;
+          array[dst] = srcView[srcOffset];
+          array[dst + 1] = srcView[srcOffset + 1];
+          dst += 2;
+        }
+      } else {
+        let dst = 0;
+        for (let i = 0; i < numPoints; i++) {
+          const srcOffset = srcStart + indicesMap[i] * strideElements;
+          for (let j = 0; j < numComponents; j++) {
+            array[dst + j] = srcView[srcOffset + j];
+          }
+          dst += numComponents;
         }
       }
       return array;
@@ -4901,6 +4932,30 @@ class AttributeQuantizationTransform extends AttributeTransform {
     // float `delta` (both rounded to float32), then added to the float32 min.
     // The Float32Array store performs the final round of the addition.
     const fround = Math.fround;
+
+    // Specialize the two component counts that account for every quantized
+    // attribute in practice (positions=3, texcoords=2). minValues is a boxed
+    // double Array; hoisting its entries into locals removes a per-component
+    // bounds-checked load from the innermost loop. Same operands and order, so
+    // the float32 result is bit-identical to the generic path below.
+    if (numComponents === 3) {
+      const m0 = minValues[0], m1 = minValues[1], m2 = minValues[2];
+      for (let o = 0; o < total; o += 3) {
+        dstF32[o] = fround(fround(srcI32[o]) * delta) + m0;
+        dstF32[o + 1] = fround(fround(srcI32[o + 1]) * delta) + m1;
+        dstF32[o + 2] = fround(fround(srcI32[o + 2]) * delta) + m2;
+      }
+      return true;
+    }
+    if (numComponents === 2) {
+      const m0 = minValues[0], m1 = minValues[1];
+      for (let o = 0; o < total; o += 2) {
+        dstF32[o] = fround(fround(srcI32[o]) * delta) + m0;
+        dstF32[o + 1] = fround(fround(srcI32[o + 1]) * delta) + m1;
+      }
+      return true;
+    }
+
     let o = 0;
     for (let i = 0; i < numValues; i++) {
       for (let c = 0; c < numComponents; c++) {
@@ -6360,10 +6415,8 @@ class MeshAttributeCornerTable {
     const ct = this.corner_table_;
     const numCorners = ct.numCorners();
     const numBaseVertices = ct.numVertices();
-    // New-vertex count is bounded by numCorners, so preallocate Int32Arrays
-    // indexed by new-vertex id (push order == numNewVertices) instead of growing
-    // Arrays with push().
-    const attEntryMap = new Int32Array(numCorners);
+    // New-vertex count is bounded by numCorners, so preallocate leftMostMap
+    // indexed by new-vertex id (push order == numNewVertices) instead of push().
     const leftMostMap = new Int32Array(numCorners);
     const cornerToVertex = this.corner_to_vertex_map_;
     const isVertexOnSeam = this.is_vertex_on_seam_;
@@ -6385,7 +6438,6 @@ class MeshAttributeCornerTable {
 
       if (!isVertexOnSeam[v]) {
         const firstVertId = numNewVertices++;
-        attEntryMap[firstVertId] = firstVertId;
         leftMostMap[firstVertId] = c;
         cornerToVertex[c] = firstVertId;
 
@@ -6400,7 +6452,6 @@ class MeshAttributeCornerTable {
         }
       } else {
         let firstVertId = numNewVertices++;
-        attEntryMap[firstVertId] = firstVertId;
 
         let firstC = c;
         let actC;
@@ -6426,7 +6477,6 @@ class MeshAttributeCornerTable {
           const nAct = (actC % 3 === 2) ? actC - 2 : actC + 1;
           if (isEdgeOnSeam[nAct]) {
             firstVertId = numNewVertices++;
-            attEntryMap[firstVertId] = firstVertId;
             leftMostMap[firstVertId] = actC;
           }
           cornerToVertex[actC] = firstVertId;
@@ -6437,8 +6487,9 @@ class MeshAttributeCornerTable {
       }
     }
 
-    // subarray, not copy: exact-length views so numVertices()/accessors see the right length.
-    this.vertex_to_attribute_entry_id_map_ = attEntryMap.subarray(0, numNewVertices);
+    // vertex_to_attribute_entry_id_map_ is only read for its length (numVertices()).
+    this.vertex_to_attribute_entry_id_map_ = new Int32Array(numNewVertices);
+    // subarray, not copy: exact-length view so accessors see the right length.
     this.vertex_to_left_most_corner_map_ = leftMostMap.subarray(0, numNewVertices);
 
     return true;

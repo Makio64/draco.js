@@ -257,12 +257,41 @@ class PointAttribute extends GeometryAttribute {
         }
       }
 
-      for (let i = 0; i < numPoints; i++) {
-        const attIndex = isIdentity ? i : indicesMap[i];
-        const srcOffset = srcStart + attIndex * strideElements;
-        const dstOffset = i * numComponents;
-        for (let j = 0; j < numComponents; j++) {
-          array[dstOffset + j] = srcView[srcOffset + j];
+      // Branch the loop-invariant isIdentity once; unroll the nc=2/3 gather.
+      if (isIdentity) {
+        let dst = 0;
+        for (let i = 0; i < numPoints; i++) {
+          const srcOffset = srcStart + i * strideElements;
+          for (let j = 0; j < numComponents; j++) {
+            array[dst + j] = srcView[srcOffset + j];
+          }
+          dst += numComponents;
+        }
+      } else if (numComponents === 3) {
+        let dst = 0;
+        for (let i = 0; i < numPoints; i++) {
+          const srcOffset = srcStart + indicesMap[i] * strideElements;
+          array[dst] = srcView[srcOffset];
+          array[dst + 1] = srcView[srcOffset + 1];
+          array[dst + 2] = srcView[srcOffset + 2];
+          dst += 3;
+        }
+      } else if (numComponents === 2) {
+        let dst = 0;
+        for (let i = 0; i < numPoints; i++) {
+          const srcOffset = srcStart + indicesMap[i] * strideElements;
+          array[dst] = srcView[srcOffset];
+          array[dst + 1] = srcView[srcOffset + 1];
+          dst += 2;
+        }
+      } else {
+        let dst = 0;
+        for (let i = 0; i < numPoints; i++) {
+          const srcOffset = srcStart + indicesMap[i] * strideElements;
+          for (let j = 0; j < numComponents; j++) {
+            array[dst + j] = srcView[srcOffset + j];
+          }
+          dst += numComponents;
         }
       }
       return array;
