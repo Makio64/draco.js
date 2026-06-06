@@ -113,9 +113,9 @@ class PointAttribute extends GeometryAttribute {
       return;
     }
 
-    // INT32 fast path: every portable attribute is INT32, read per-corner by the
-    // geometric-normal / texcoords predictors. Cached Int32Array view avoids the
-    // per-component DataView dispatch; base is always 4-aligned (byteStride % 4 == 0).
+    // INT32 fast path: portable attrs are INT32, read per-corner by the
+    // geometric-normal / texcoords predictors. Cached Int32Array view avoids
+    // the per-component DataView dispatch (base is always 4-aligned).
     if (dt === DataType.INT32) {
       if (this._cachedInt32View === undefined || this._cachedInt32Buffer !== bufData.buffer) {
         this._cachedInt32Buffer = bufData.buffer;

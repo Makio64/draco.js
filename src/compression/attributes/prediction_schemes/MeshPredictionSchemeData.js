@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeData.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_data.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeData.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_data.h
 
 /**
  * Stores mesh connectivity data and how it was encoded/decoded.

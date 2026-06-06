@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/PredictionSchemeDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_decoder.h
+// compression/attributes/prediction_schemes/PredictionSchemeDecoder.js - ported from compression/attributes/prediction_schemes/prediction_scheme_decoder.h
 
 import { PredictionSchemeDecoderInterface } from './PredictionSchemeDecoderInterface.js';
 

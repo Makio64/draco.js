@@ -1,5 +1,4 @@
-// compression/mesh/traverser/DepthFirstTraverser.js
-// Ported from compression/mesh/traverser/depth_first_traverser.h
+// compression/mesh/traverser/DepthFirstTraverser.js - ported from compression/mesh/traverser/depth_first_traverser.h
 
 const kInvalidCornerIndex = -1;
 const kInvalidFaceIndex = -1;

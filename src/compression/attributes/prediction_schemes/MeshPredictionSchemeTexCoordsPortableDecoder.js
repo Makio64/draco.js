@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortableDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortableDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_decoder.h
 
 import { MeshPredictionSchemeDecoder } from './MeshPredictionSchemeDecoder.js';
 import { PredictionSchemeMethod } from '../../config/CompressionShared.js';

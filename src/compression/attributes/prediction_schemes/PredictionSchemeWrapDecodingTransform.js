@@ -1,20 +1,10 @@
-// src/compression/attributes/prediction_schemes/PredictionSchemeWrapDecodingTransform.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_wrap_decoding_transform.h
+// compression/attributes/prediction_schemes/PredictionSchemeWrapDecodingTransform.js - ported from compression/attributes/prediction_schemes/prediction_scheme_wrap_decoding_transform.h
 
 import { PredictionSchemeTransformType } from '../../config/CompressionShared.js';
 
-/**
- * PredictionSchemeWrapDecodingTransform unwraps values encoded with the
- * wrap encoding transform. Values are wrapped around min/max range.
- *
- * The wrapping works as follows:
- *   - Encoding stores correction X = O - P, wrapped around the data range N:
- *       X + N if X < -N/2
- *       X - N if X > N/2
- *   - Decoding unwraps: F = P + X, then:
- *       F + N if F < MIN
- *       F - N if F > MAX
- */
+// Unwraps values encoded with the wrap transform: the encoder stored a
+// correction wrapped into the data range; decoding adds it to the prediction
+// and wraps the result back into [min, max].
 class PredictionSchemeWrapDecodingTransform {
 
   constructor() {
@@ -36,13 +26,8 @@ class PredictionSchemeWrapDecodingTransform {
     return false;
   }
 
-  /**
-   * Unwraps values that fall outside the [min, max] range.
-   */
   computeOriginalValue(predictedVals, predictedOffset, corrVals, corrOffset,
     outOriginalVals, outOffset) {
-    // Clamp to [min, max] then unwrap, fused into one pass with bounds in
-    // locals and no scratch buffer.
     const nc = this._numComponents;
     const minValue = this._minValue;
     const maxValue = this._maxValue;
@@ -65,7 +50,6 @@ class PredictionSchemeWrapDecodingTransform {
     }
   }
 
-  /** Decodes the min and max values from the buffer. */
   decodeTransformData(buffer) {
     const minValue = buffer.decodeInt32();
     if (minValue === undefined) return false;

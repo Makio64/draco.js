@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_canonicalized_decoding_transform.h
+// compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform.js - ported from compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_canonicalized_decoding_transform.h
 
 import { PredictionSchemeTransformType } from '../../config/CompressionShared.js';
 import { PredictionSchemeNormalOctahedronTransformBase } from './PredictionSchemeNormalOctahedronTransformBase.js';

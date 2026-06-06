@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/PredictionSchemeDecoderFactory.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_decoder_factory.h
+// compression/attributes/prediction_schemes/PredictionSchemeDecoderFactory.js - ported from compression/attributes/prediction_schemes/prediction_scheme_decoder_factory.h
 
 import { PredictionSchemeMethod, PredictionSchemeTransformType } from '../../config/CompressionShared.js';
 import { PredictionSchemeDeltaDecoder } from './PredictionSchemeDeltaDecoder.js';

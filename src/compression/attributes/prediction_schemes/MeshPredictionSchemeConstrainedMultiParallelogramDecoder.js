@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeConstrainedMultiParallelogramDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_constrained_multi_parallelogram_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeConstrainedMultiParallelogramDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_constrained_multi_parallelogram_decoder.h
 
 import { MeshPredictionSchemeDecoder } from './MeshPredictionSchemeDecoder.js';
 import { PredictionSchemeMethod } from '../../config/CompressionShared.js';

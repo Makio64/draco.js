@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortablePredictor.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_predictor.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortablePredictor.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_predictor.h
 
 import { DataType } from '../../../core/DracoTypes.js';
 
@@ -22,11 +21,8 @@ function bigIntSqrt(value) {
   return x;
 }
 
-// Precomputes the integer position of every data entry into a flat Int32Array
-// (3 components per entry) so the per-corner prediction loops do plain array
-// reads -- the JS-port equivalent of the C++ predictor's per-call
-// GetPositionForEntryId(). tempPos is a reusable 3-element scratch buffer used
-// only on the non-INT32 fallback path.
+// Precompute every entry's integer position into a flat Int32Array (the JS-port
+// form of the C++ predictor's per-call GetPositionForEntryId()).
 function buildInt32PositionCache(att, map, numEntries, tempPos) {
   const cache = new Int32Array(numEntries * 3);
   const bufData = att.buffer && att.buffer.data;

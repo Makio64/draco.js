@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalPredictorArea.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalPredictorArea.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
 // and mesh_prediction_scheme_geometric_normal_predictor_base.h
 
 import { DataType } from '../../../core/DracoTypes.js';
@@ -7,11 +6,8 @@ import { NormalPredictionMode } from '../../config/CompressionShared.js';
 
 const UPPER_BOUND = 1 << 29;
 
-// Precomputes the integer position of every data entry into a flat Int32Array
-// (3 components per entry) so the per-corner ring walk does plain array reads --
-// the JS-port equivalent of the C++ predictor's per-call GetPositionForDataId().
-// tempPos is a reusable 3-element scratch buffer used only on the non-INT32
-// fallback path.
+// Precompute every entry's integer position into a flat Int32Array (the JS-port
+// form of the C++ predictor's per-call GetPositionForDataId()).
 function buildInt32PositionCache(att, map, numEntries, tempPos) {
   const cache = new Int32Array(numEntries * 3);
   const bufData = att.buffer && att.buffer.data;
@@ -63,14 +59,10 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._meshData = meshData;
     this._normalPredictionMode = NormalPredictionMode.TRIANGLE_AREA;
     this._tempPos = new Array(3);
-    // Flat Int32 position cache indexed by data id; turns O(corners*valence)
-    // convertValue calls (the ring is read once per vertex corner) into one per
-    // data entry.
-    this._posCache = null;
+    this._posCache = null;            // flat Int32 positions, indexed by data id
     this._cornerToVertex = null;
     this._oppositeCorners = null;
-    // corner -> posCache offset (vertexToDataMap[cornerToVertex[c]]*3), precomputed.
-    this._cornerToOffset = null;
+    this._cornerToOffset = null;      // corner -> posCache offset, precomputed
   }
 
   setPositionAttribute(positionAttribute) {
@@ -100,12 +92,8 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     const table = this._meshData.cornerTable;
     this._cornerToVertex = table.cornerToVertexArray();
     this._oppositeCorners = table.oppositeCornerArray();
-    // Precompute corner -> posCache offset once. The TRIANGLE_AREA ring walk
-    // reads next/prev positions for every corner around each vertex (total work
-    // = O(numCorners)); folding the double indirection vertexToDataMap[
-    // cornerToVertex[c]] and the *3 into one flat Int32Array turns each of those
-    // ~2*numCorners reads into a single load, at the cost of one O(numCorners)
-    // build pass (net ~2:1 fewer dependent random loads).
+    // Precompute corner -> posCache offset once so the ring walk folds the
+    // vertexToDataMap[cornerToVertex[c]]*3 double indirection into one load.
     const cornerToVertex = this._cornerToVertex;
     const vertexToDataMap = this._meshData.vertexToDataMap;
     const nc = cornerToVertex.length;
@@ -117,7 +105,6 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._cornerToOffset = c2o;
   }
 
-  /** Computes predicted normal for a corner; writes [x, y, z] into prediction. */
   computePredictedValue(cornerId, prediction) {
     const oppositeCorners = this._oppositeCorners;
     const cornerToOffset = this._cornerToOffset;
@@ -153,11 +140,10 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       normalY = dNextZ * dPrevX - dNextX * dPrevZ;
       normalZ = dNextX * dPrevY - dNextY * dPrevX;
     } else {
-      // TRIANGLE_AREA: iterate every corner around the vertex exactly like C++
-      // VertexCornersIterator: swing LEFT until a boundary or full loop, then
-      // (only if an open boundary was hit) swing RIGHT to cover the other side.
-      // Swinging right only would drop every triangle left of the start corner
-      // for boundary vertices, corrupting the normal on meshes with open edges.
+      // TRIANGLE_AREA: visit every corner around the vertex like C++
+      // VertexCornersIterator -- swing LEFT to a boundary/full loop, then (only
+      // if an open boundary was hit) swing RIGHT for the other side. Right-only
+      // would drop triangles left of the start corner on boundary vertices.
       let currentCorner = cornerId;
       let leftTraversal = true;
 

@@ -1,5 +1,4 @@
-// compression/mesh/traverser/MeshAttributeIndicesEncodingObserver.js
-// Ported from compression/mesh/traverser/mesh_attribute_indices_encoding_observer.h
+// compression/mesh/traverser/MeshAttributeIndicesEncodingObserver.js - ported from compression/mesh/traverser/mesh_attribute_indices_encoding_observer.h
 
 // Observer that records vertex visit order during mesh traversal.
 // Used to generate encoding/decoding order for attribute values.

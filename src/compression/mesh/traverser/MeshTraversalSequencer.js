@@ -1,5 +1,4 @@
-// compression/mesh/traverser/MeshTraversalSequencer.js
-// Ported from compression/mesh/traverser/mesh_traversal_sequencer.h
+// compression/mesh/traverser/MeshTraversalSequencer.js - ported from compression/mesh/traverser/mesh_traversal_sequencer.h
 
 // Sequencer that generates point sequence in an order given by a deterministic
 // traversal on the mesh surface.

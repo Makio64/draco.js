@@ -1,5 +1,4 @@
-// src/compression/attributes/NormalCompressionUtils.js
-// Ported from draco/compression/attributes/normal_compression_utils.h
+// compression/attributes/NormalCompressionUtils.js - ported from compression/attributes/normal_compression_utils.h
 
 // Converts unit vectors to/from octahedral coordinates for normal compression.
 // Invariants: maxQuantizedValue = 2^q - 1 (odd); maxValue = maxQuantizedValue - 1

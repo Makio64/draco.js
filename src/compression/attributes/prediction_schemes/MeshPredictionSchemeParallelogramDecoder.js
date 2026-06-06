@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeParallelogramDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeParallelogramDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_decoder.h
 
 import { MeshPredictionSchemeDecoder } from './MeshPredictionSchemeDecoder.js';
 import {

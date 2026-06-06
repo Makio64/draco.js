@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronTransformBase.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_transform_base.h
+// compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronTransformBase.js - ported from compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_transform_base.h
 //
 // Shared base for the octahedral-normal decoding transforms. Holds the
 // OctahedronToolBox and the quantization-bit plumbing; each subclass supplies

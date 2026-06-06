@@ -1,5 +1,4 @@
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeParallelogramShared.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_shared.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeParallelogramShared.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_shared.h
 
 /**
  * Computes parallelogram prediction P = next + prev - opp for a corner/entry.

@@ -1,5 +1,4 @@
-// compression/mesh/traverser/MaxPredictionDegreeTraverser.js
-// Ported from compression/mesh/traverser/max_prediction_degree_traverser.h
+// compression/mesh/traverser/MaxPredictionDegreeTraverser.js - ported from compression/mesh/traverser/max_prediction_degree_traverser.h
 
 const kInvalidCornerIndex = -1;
 const kInvalidFaceIndex = -1;
