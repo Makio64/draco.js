@@ -15,11 +15,6 @@ export class Dequantizer {
     return true;
   }
 
-  // C++ DequantizeFloat: `value * delta_` in float32 (int converted to float first).
-  dequantizeFloat(val) {
-    return Math.fround(Math.fround(val) * this._delta);
-  }
-
   get delta() {
     return this._delta;
   }
