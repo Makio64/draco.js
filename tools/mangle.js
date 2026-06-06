@@ -57,9 +57,14 @@ export function mangle() {
 
       const result = await minify(code, {
         module: true,
-        compress: { passes: 2 },
+        compress: {
+          passes: 3,
+          ecma: 2020,
+          pure_getters: true,   // our getters are plain field reads — no side effects
+          keep_fargs: false,    // nothing relies on Function.prototype.length
+        },
         mangle: { properties: { reserved: [...reserved], keep_quoted: true } },
-        format: { comments: /@license/ },
+        format: { comments: /@license/, ecma: 2020 },
       });
 
       return { code: result.code, map: result.map ?? null };
