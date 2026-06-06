@@ -188,7 +188,13 @@ export class RAnsDecoder {
 
   // Builds the ransPrecision-entry lookup table. Returns false on bad input data.
   ransBuildLookUpTable(tokenProbs, numSymbols) {
-    this.lutTable = new Uint32Array(this.ransPrecision);
+    // lutTable is indexed by `rem` (random in [0, ransPrecision)), so it's the
+    // hottest random read in decodeSymbols()/ransRead(). Its values are symbol
+    // ids (< numSymbols), so pick the narrowest element type that holds them:
+    // shrinking the table (up to 4x) keeps that random access closer to cache.
+    const LutArray = numSymbols <= 256 ? Uint8Array
+      : (numSymbols <= 65536 ? Uint16Array : Uint32Array);
+    this.lutTable = new LutArray(this.ransPrecision);
     this.probTable = new Uint32Array(numSymbols);
     this.cumProbTable = new Uint32Array(numSymbols);
     let cumProb = 0;
