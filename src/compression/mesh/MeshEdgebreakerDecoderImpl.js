@@ -6,9 +6,8 @@ import { DRACO_BITSTREAM_VERSION, MeshTraversalMethod } from '../config/Compress
 import { MeshAttributeElementType } from '../../mesh/Mesh.js';
 import {
   TOPOLOGY_C, TOPOLOGY_S, TOPOLOGY_L, TOPOLOGY_R, TOPOLOGY_E,
-  TOPOLOGY_INVALID,
   TopologySplitEventData, HoleEventData,
-  LEFT_FACE_EDGE, RIGHT_FACE_EDGE
+  RIGHT_FACE_EDGE
 } from './MeshEdgebreakerShared.js';
 import { SequentialAttributeDecodersController } from '../attributes/SequentialAttributeDecodersController.js';
 import { DepthFirstTraverser } from './traverser/DepthFirstTraverser.js';
@@ -1241,7 +1240,6 @@ class CornerTable {
 
 export {
   MeshEdgebreakerDecoderImpl,
-  MeshAttributeIndicesEncodingData,
   AttributeData,
   CornerTable
 };

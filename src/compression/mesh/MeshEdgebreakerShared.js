@@ -7,37 +7,13 @@ export const TOPOLOGY_S = 0x1;  // 1 0 0
 export const TOPOLOGY_L = 0x3;  // 1 1 0
 export const TOPOLOGY_R = 0x5;  // 1 0 1
 export const TOPOLOGY_E = 0x7;  // 1 1 1
-// Initial face of a connected component.
-export const TOPOLOGY_INIT_FACE = 8;
 export const TOPOLOGY_INVALID = 9;
-
-export const EDGEBREAKER_SYMBOL_C = 0;
-export const EDGEBREAKER_SYMBOL_S = 1;
-export const EDGEBREAKER_SYMBOL_L = 2;
-export const EDGEBREAKER_SYMBOL_R = 3;
-export const EDGEBREAKER_SYMBOL_E = 4;
-export const EDGEBREAKER_SYMBOL_INVALID = 5;
-
-// Bit-length of each EdgebreakerTopologyBitPattern, as a lookup table.
-export const edgeBreakerTopologyBitPatternLength = [1, 3, 0, 3, 0, 3, 0, 3];
-
-export const edgeBreakerTopologyToSymbolId = [
-  EDGEBREAKER_SYMBOL_C,       // 0 -> C
-  EDGEBREAKER_SYMBOL_S,       // 1 -> S
-  EDGEBREAKER_SYMBOL_INVALID, // 2 -> invalid
-  EDGEBREAKER_SYMBOL_L,       // 3 -> L
-  EDGEBREAKER_SYMBOL_INVALID, // 4 -> invalid
-  EDGEBREAKER_SYMBOL_R,       // 5 -> R
-  EDGEBREAKER_SYMBOL_INVALID, // 6 -> invalid
-  EDGEBREAKER_SYMBOL_E        // 7 -> E
-];
 
 export const edgeBreakerSymbolToTopologyId = [
   TOPOLOGY_C, TOPOLOGY_S, TOPOLOGY_L, TOPOLOGY_R, TOPOLOGY_E
 ];
 
-// Edge relative to the tip vertex of a visited triangle.
-export const LEFT_FACE_EDGE = 0;
+// Edge relative to the tip vertex of a visited triangle (the other is the left edge).
 export const RIGHT_FACE_EDGE = 1;
 
 // Data about a source face connecting to an already-traversed face that was
