@@ -22,6 +22,11 @@ On the largest meshes (e.g. a 358k-face glTF) the two are about even; WASM keeps
 a lead of up to ~1.35× on smaller and mid-size meshes. You trade, at most, a
 modest amount of decode speed for a much smaller, simpler-to-deploy loader.
 
+This trade pays off most on spotty mobile connections, where transferring
+~100 KB takes much longer than ~20 KB. Even when JS parsing is slower than WASM,
+the model often **displays sooner** end-to-end: the network savings outweigh the
+extra decode time.
+
 ## Status
 
 Targets **Draco bitstream version 2.2** — what current Draco encoders and glTF
