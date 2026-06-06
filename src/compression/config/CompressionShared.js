@@ -10,16 +10,6 @@ export function DRACO_BITSTREAM_VERSION(major, minor) {
   return (major << 8) | minor;
 }
 
-export const kDracoPointCloudBitstreamVersion = DRACO_BITSTREAM_VERSION(
-  kDracoPointCloudBitstreamVersionMajor,
-  kDracoPointCloudBitstreamVersionMinor
-);
-
-export const kDracoMeshBitstreamVersion = DRACO_BITSTREAM_VERSION(
-  kDracoMeshBitstreamVersionMajor,
-  kDracoMeshBitstreamVersionMinor
-);
-
 export const EncodedGeometryType = {
   INVALID_GEOMETRY_TYPE: -1,
   POINT_CLOUD: 0,
@@ -30,12 +20,6 @@ export const EncodedGeometryType = {
 export const MeshEncoderMethod = {
   MESH_SEQUENTIAL_ENCODING: 0,
   MESH_EDGEBREAKER_ENCODING: 1
-};
-
-export const AttributeEncoderType = {
-  BASIC_ATTRIBUTE_ENCODER: 0,
-  MESH_TRAVERSAL_ATTRIBUTE_ENCODER: 1,
-  KD_TREE_ATTRIBUTE_ENCODER: 2
 };
 
 export const SequentialAttributeEncoderType = {
