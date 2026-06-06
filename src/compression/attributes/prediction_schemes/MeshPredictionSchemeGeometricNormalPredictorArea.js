@@ -25,6 +25,8 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._posCache = null;
     this._cornerToVertex = null;
     this._oppositeCorners = null;
+    // corner -> posCache offset (vertexToDataMap[cornerToVertex[c]]*3), precomputed.
+    this._cornerToOffset = null;
   }
 
   setPositionAttribute(positionAttribute) {
@@ -54,16 +56,29 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     const table = this._meshData.cornerTable;
     this._cornerToVertex = table.cornerToVertexArray();
     this._oppositeCorners = table.oppositeCornerArray();
+    // Precompute corner -> posCache offset once. The TRIANGLE_AREA ring walk
+    // reads next/prev positions for every corner around each vertex (total work
+    // = O(numCorners)); folding the double indirection vertexToDataMap[
+    // cornerToVertex[c]] and the *3 into one flat Int32Array turns each of those
+    // ~2*numCorners reads into a single load, at the cost of one O(numCorners)
+    // build pass (net ~2:1 fewer dependent random loads).
+    const cornerToVertex = this._cornerToVertex;
+    const vertexToDataMap = this._meshData.vertexToDataMap;
+    const nc = cornerToVertex.length;
+    const c2o = new Int32Array(nc);
+    for (let c = 0; c < nc; ++c) {
+      const v = cornerToVertex[c];
+      c2o[c] = v < 0 ? -1 : vertexToDataMap[v] * 3;
+    }
+    this._cornerToOffset = c2o;
   }
 
   /** Computes predicted normal for a corner; writes [x, y, z] into prediction. */
   computePredictedValue(cornerId, prediction) {
-    const cornerToVertex = this._cornerToVertex;
     const oppositeCorners = this._oppositeCorners;
-    const vertexToDataMap = this._meshData.vertexToDataMap;
+    const cornerToOffset = this._cornerToOffset;
     const posCache = this._posCache;
-    const centerDataId = vertexToDataMap[cornerToVertex[cornerId]];
-    const centerOffset = centerDataId * 3;
+    const centerOffset = cornerToOffset[cornerId];
     const centX = posCache[centerOffset];
     const centY = posCache[centerOffset + 1];
     const centZ = posCache[centerOffset + 2];
@@ -74,11 +89,11 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       const rem = cornerId - ((cornerId / 3) | 0) * 3;
       const cNext = rem === 2 ? cornerId - 2 : cornerId + 1;
       const cPrev = rem === 0 ? cornerId + 2 : cornerId - 1;
-      let posOffset = vertexToDataMap[cornerToVertex[cNext]] * 3;
+      let posOffset = cornerToOffset[cNext];
       const nextX = posCache[posOffset];
       const nextY = posCache[posOffset + 1];
       const nextZ = posCache[posOffset + 2];
-      posOffset = vertexToDataMap[cornerToVertex[cPrev]] * 3;
+      posOffset = cornerToOffset[cPrev];
       const prevX = posCache[posOffset];
       const prevY = posCache[posOffset + 1];
       const prevZ = posCache[posOffset + 2];
@@ -106,11 +121,11 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
         const rem = currentCorner - ((currentCorner / 3) | 0) * 3;
         const cNext = rem === 2 ? currentCorner - 2 : currentCorner + 1;
         const cPrev = rem === 0 ? currentCorner + 2 : currentCorner - 1;
-        let posOffset = vertexToDataMap[cornerToVertex[cNext]] * 3;
+        let posOffset = cornerToOffset[cNext];
         const nextX = posCache[posOffset];
         const nextY = posCache[posOffset + 1];
         const nextZ = posCache[posOffset + 2];
-        posOffset = vertexToDataMap[cornerToVertex[cPrev]] * 3;
+        posOffset = cornerToOffset[cPrev];
         const prevX = posCache[posOffset];
         const prevY = posCache[posOffset + 1];
         const prevZ = posCache[posOffset + 2];
