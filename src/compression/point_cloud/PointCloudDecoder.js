@@ -1,7 +1,6 @@
 // compression/point_cloud/PointCloudDecoder.js - ported from point_cloud/point_cloud_decoder.h/cc
 
 import { Status, StatusCode, okStatus } from '../../core/Status.js';
-import { DecoderBuffer } from '../../core/DecoderBuffer.js';
 import { MetadataDecoder } from '../../metadata/MetadataDecoder.js';
 import {
   DracoHeader,
