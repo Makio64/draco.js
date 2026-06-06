@@ -1,6 +1,6 @@
 // compression/bit_coders/RAnsBitDecoder.js - ported from compression/bit_coders/rans_bit_decoder.h/cc
 
-import { AnsDecoder, ansReadInit, ansReadEnd, ANS_L_BASE, ANS_IO_BASE, ANS_P8_PRECISION } from '../entropy/ANSCoding.js';
+import { AnsDecoder, ansReadInit, ansReadEnd, ANS_L_BASE, ANS_P8_PRECISION } from '../entropy/ANSCoding.js';
 import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
 // Decodes bits encoded with RAnsBitEncoder.

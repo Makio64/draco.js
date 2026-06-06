@@ -3,17 +3,17 @@
 
 export const ANS_P8_PRECISION = 256;
 export const ANS_L_BASE = 4096;
-export const ANS_IO_BASE = 256;
+const ANS_IO_BASE = 256;
 
-export function memGetLe16(buf, offset) {
+function memGetLe16(buf, offset) {
   return buf[offset] | (buf[offset + 1] << 8);
 }
 
-export function memGetLe24(buf, offset) {
+function memGetLe24(buf, offset) {
   return buf[offset] | (buf[offset + 1] << 8) | (buf[offset + 2] << 16);
 }
 
-export function memGetLe32(buf, offset) {
+function memGetLe32(buf, offset) {
   return (
     (buf[offset]) |
     (buf[offset + 1] << 8) |
@@ -67,27 +67,6 @@ export function ansReadInit(ans, buf, offset) {
 export function ansReadEnd(ans) {
   return ans.state === ANS_L_BASE;
 }
-
-// rABS with descending spread. p0 is l_s from the paper; ANS_P8_PRECISION is m.
-export function rabsDescRead(ans, p0) {
-  const p = ANS_P8_PRECISION - p0;
-  if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-    ans.state = (ans.state << 8) | ans.buf[--ans.bufOffset];
-  }
-  const x = ans.state;
-  const quot = x >>> 8;  // /256 and %256: ANS_P8_PRECISION is always 256
-  const rem = x & 0xFF;
-  const xn = quot * p;
-  const val = (rem < p) ? 1 : 0;
-  if (val) {
-    ans.state = xn + rem;
-  } else {
-    ans.state = x - xn - p;
-  }
-  return val;
-}
-
-export const rabsRead = rabsDescRead;
 
 export class RAnsDecoder {
 
