@@ -2,10 +2,54 @@
 // Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
 // and mesh_prediction_scheme_geometric_normal_predictor_base.h
 
-import { buildInt32PositionCache } from './PredictionSchemePositionCache.js';
+import { DataType } from '../../../core/DracoTypes.js';
 import { NormalPredictionMode } from '../../config/CompressionShared.js';
 
 const UPPER_BOUND = 1 << 29;
+
+// Precomputes the integer position of every data entry into a flat Int32Array
+// (3 components per entry) so the per-corner ring walk does plain array reads --
+// the JS-port equivalent of the C++ predictor's per-call GetPositionForDataId().
+// tempPos is a reusable 3-element scratch buffer used only on the non-INT32
+// fallback path.
+function buildInt32PositionCache(att, map, numEntries, tempPos) {
+  const cache = new Int32Array(numEntries * 3);
+  const bufData = att.buffer && att.buffer.data;
+
+  if (att.dataType === DataType.INT32 && att.numComponents === 3 && bufData) {
+    const src = new Int32Array(bufData.buffer);
+    const srcStart = (bufData.byteOffset + att.byteOffset) >> 2;
+    const stride = att.byteStride >> 2;
+    const isIdentity = att.isMappingIdentity;
+    const indicesMap = att.indicesMap;
+    if (isIdentity) {
+      for (let d = 0; d < numEntries; ++d) {
+        const srcOffset = srcStart + map[d] * stride;
+        const o = d * 3;
+        cache[o] = src[srcOffset];
+        cache[o + 1] = src[srcOffset + 1];
+        cache[o + 2] = src[srcOffset + 2];
+      }
+    } else {
+      for (let d = 0; d < numEntries; ++d) {
+        const srcOffset = srcStart + indicesMap[map[d]] * stride;
+        const o = d * 3;
+        cache[o] = src[srcOffset];
+        cache[o + 1] = src[srcOffset + 1];
+        cache[o + 2] = src[srcOffset + 2];
+      }
+    }
+  } else {
+    for (let d = 0; d < numEntries; ++d) {
+      att.convertValue(att.mappedIndex(map[d]), tempPos);
+      const o = d * 3;
+      cache[o] = tempPos[0];
+      cache[o + 1] = tempPos[1];
+      cache[o + 2] = tempPos[2];
+    }
+  }
+  return cache;
+}
 
 /**
  * Predictor that estimates the normal via the surrounding triangles of a
