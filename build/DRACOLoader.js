@@ -1,14 +1,6 @@
 /**
- * Draco.js — a pure-JavaScript Draco mesh loader for three.js.
- *
- * Draco (https://google.github.io/draco/) is an open source library for
- * compressing and decompressing 3D meshes and point clouds. Draco.js is a
- * pure-JavaScript port of its decoder — a drop-in replacement for three.js's
- * DRACOLoader, usable on its own or inside GLTFLoader.
- *
- * https://mrdoob.github.io/draco.js/
- *
- * @license MIT
+ * Draco.js — pure-JavaScript Draco decoder for three.js.
+ * https://mrdoob.github.io/draco.js/  @license MIT
  */
 import { Loader, FileLoader, SRGBColorSpace, LinearSRGBColorSpace, BufferGeometry, BufferAttribute, Color, ColorManagement } from 'three';
 
@@ -1790,9 +1782,9 @@ class PointAttribute extends GeometryAttribute {
       return;
     }
 
-    // INT32 fast path: every portable attribute is INT32, read per-corner by the
-    // geometric-normal / texcoords predictors. Cached Int32Array view avoids the
-    // per-component DataView dispatch; base is always 4-aligned (byteStride % 4 == 0).
+    // INT32 fast path: portable attrs are INT32, read per-corner by the
+    // geometric-normal / texcoords predictors. Cached Int32Array view avoids
+    // the per-component DataView dispatch (base is always 4-aligned).
     if (dt === DataType.INT32) {
       if (this._cachedInt32View === undefined || this._cachedInt32Buffer !== bufData.buffer) {
         this._cachedInt32Buffer = bufData.buffer;
@@ -2280,8 +2272,7 @@ class SequentialAttributeDecoder {
 
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeDecoderInterface.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_decoder_interface.h
+// compression/attributes/prediction_schemes/PredictionSchemeDecoderInterface.js - ported from compression/attributes/prediction_schemes/prediction_scheme_decoder_interface.h
 
 
 /**
@@ -2325,8 +2316,7 @@ class PredictionSchemeDecoderInterface {
 
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_decoder.h
+// compression/attributes/prediction_schemes/PredictionSchemeDecoder.js - ported from compression/attributes/prediction_schemes/prediction_scheme_decoder.h
 
 
 /**
@@ -2366,8 +2356,7 @@ class PredictionSchemeDecoder extends PredictionSchemeDecoderInterface {
 
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeDeltaDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_delta_decoder.h
+// compression/attributes/prediction_schemes/PredictionSchemeDeltaDecoder.js - ported from compression/attributes/prediction_schemes/prediction_scheme_delta_decoder.h
 
 
 /**
@@ -2412,8 +2401,7 @@ class PredictionSchemeDeltaDecoder extends PredictionSchemeDecoder {
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_decoder.h
 
 
 /**
@@ -2429,8 +2417,7 @@ class MeshPredictionSchemeDecoder extends PredictionSchemeDecoder {
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeParallelogramDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeParallelogramDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_decoder.h
 
 
 /**
@@ -2836,8 +2823,7 @@ class MeshPredictionSchemeParallelogramDecoder extends MeshPredictionSchemeDecod
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeParallelogramShared.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_shared.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeParallelogramShared.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_shared.h
 
 /**
  * Computes parallelogram prediction P = next + prev - opp for a corner/entry.
@@ -2879,8 +2865,7 @@ function computeParallelogramPrediction(dataEntryId, ci, oppositeCorners,
   return false;
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeMultiParallelogramDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_multi_parallelogram_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeMultiParallelogramDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_multi_parallelogram_decoder.h
 
 
 const kInvalidCornerIndex$5 = -1;
@@ -3037,8 +3022,7 @@ class RAnsBitDecoder {
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeConstrainedMultiParallelogramDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_constrained_multi_parallelogram_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeConstrainedMultiParallelogramDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_constrained_multi_parallelogram_decoder.h
 
 
 const kInvalidCornerIndex$4 = -1;
@@ -3184,8 +3168,7 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_decoder.h
 
 
 const GEOMETRY_ATTRIBUTE_POSITION$2 = 0;
@@ -3410,8 +3393,7 @@ class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortablePredictor.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_predictor.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortablePredictor.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_predictor.h
 
 
 // 2^53: integer products below this are exact as a JS double; at or above it
@@ -3433,11 +3415,8 @@ function bigIntSqrt(value) {
   return x;
 }
 
-// Precomputes the integer position of every data entry into a flat Int32Array
-// (3 components per entry) so the per-corner prediction loops do plain array
-// reads -- the JS-port equivalent of the C++ predictor's per-call
-// GetPositionForEntryId(). tempPos is a reusable 3-element scratch buffer used
-// only on the non-INT32 fallback path.
+// Precompute every entry's integer position into a flat Int32Array (the JS-port
+// form of the C++ predictor's per-call GetPositionForEntryId()).
 function buildInt32PositionCache$1(att, map, numEntries, tempPos) {
   const cache = new Int32Array(numEntries * 3);
   const bufData = att.buffer && att.buffer.data;
@@ -3743,8 +3722,7 @@ class MeshPredictionSchemeTexCoordsPortablePredictor {
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortableDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsPortableDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_portable_decoder.h
 
 
 const GEOMETRY_ATTRIBUTE_POSITION$1 = 0;
@@ -3831,8 +3809,7 @@ class MeshPredictionSchemeTexCoordsPortableDecoder extends MeshPredictionSchemeD
 
 }
 
-// src/compression/attributes/NormalCompressionUtils.js
-// Ported from draco/compression/attributes/normal_compression_utils.h
+// compression/attributes/NormalCompressionUtils.js - ported from compression/attributes/normal_compression_utils.h
 
 // Converts unit vectors to/from octahedral coordinates for normal compression.
 // Invariants: maxQuantizedValue = 2^q - 1 (odd); maxValue = maxQuantizedValue - 1
@@ -3963,18 +3940,14 @@ class OctahedronToolBox {
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalPredictorArea.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalPredictorArea.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
 // and mesh_prediction_scheme_geometric_normal_predictor_base.h
 
 
 const UPPER_BOUND = 1 << 29;
 
-// Precomputes the integer position of every data entry into a flat Int32Array
-// (3 components per entry) so the per-corner ring walk does plain array reads --
-// the JS-port equivalent of the C++ predictor's per-call GetPositionForDataId().
-// tempPos is a reusable 3-element scratch buffer used only on the non-INT32
-// fallback path.
+// Precompute every entry's integer position into a flat Int32Array (the JS-port
+// form of the C++ predictor's per-call GetPositionForDataId()).
 function buildInt32PositionCache(att, map, numEntries, tempPos) {
   const cache = new Int32Array(numEntries * 3);
   const bufData = att.buffer && att.buffer.data;
@@ -4026,14 +3999,10 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._meshData = meshData;
     this._normalPredictionMode = NormalPredictionMode.TRIANGLE_AREA;
     this._tempPos = new Array(3);
-    // Flat Int32 position cache indexed by data id; turns O(corners*valence)
-    // convertValue calls (the ring is read once per vertex corner) into one per
-    // data entry.
-    this._posCache = null;
+    this._posCache = null;            // flat Int32 positions, indexed by data id
     this._cornerToVertex = null;
     this._oppositeCorners = null;
-    // corner -> posCache offset (vertexToDataMap[cornerToVertex[c]]*3), precomputed.
-    this._cornerToOffset = null;
+    this._cornerToOffset = null;      // corner -> posCache offset, precomputed
   }
 
   setPositionAttribute(positionAttribute) {
@@ -4063,12 +4032,8 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     const table = this._meshData.cornerTable;
     this._cornerToVertex = table.cornerToVertexArray();
     this._oppositeCorners = table.oppositeCornerArray();
-    // Precompute corner -> posCache offset once. The TRIANGLE_AREA ring walk
-    // reads next/prev positions for every corner around each vertex (total work
-    // = O(numCorners)); folding the double indirection vertexToDataMap[
-    // cornerToVertex[c]] and the *3 into one flat Int32Array turns each of those
-    // ~2*numCorners reads into a single load, at the cost of one O(numCorners)
-    // build pass (net ~2:1 fewer dependent random loads).
+    // Precompute corner -> posCache offset once so the ring walk folds the
+    // vertexToDataMap[cornerToVertex[c]]*3 double indirection into one load.
     const cornerToVertex = this._cornerToVertex;
     const vertexToDataMap = this._meshData.vertexToDataMap;
     const nc = cornerToVertex.length;
@@ -4080,7 +4045,6 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._cornerToOffset = c2o;
   }
 
-  /** Computes predicted normal for a corner; writes [x, y, z] into prediction. */
   computePredictedValue(cornerId, prediction) {
     const oppositeCorners = this._oppositeCorners;
     const cornerToOffset = this._cornerToOffset;
@@ -4116,11 +4080,10 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       normalY = dNextZ * dPrevX - dNextX * dPrevZ;
       normalZ = dNextX * dPrevY - dNextY * dPrevX;
     } else {
-      // TRIANGLE_AREA: iterate every corner around the vertex exactly like C++
-      // VertexCornersIterator: swing LEFT until a boundary or full loop, then
-      // (only if an open boundary was hit) swing RIGHT to cover the other side.
-      // Swinging right only would drop every triangle left of the start corner
-      // for boundary vertices, corrupting the normal on meshes with open edges.
+      // TRIANGLE_AREA: visit every corner around the vertex like C++
+      // VertexCornersIterator -- swing LEFT to a boundary/full loop, then (only
+      // if an open boundary was hit) swing RIGHT for the other side. Right-only
+      // would drop triangles left of the start corner on boundary vertices.
       let currentCorner = cornerId;
       let leftTraversal = true;
 
@@ -4209,8 +4172,7 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalDecoder.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_decoder.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_decoder.h
 
 
 const GEOMETRY_ATTRIBUTE_POSITION = 0;
@@ -4316,8 +4278,7 @@ class MeshPredictionSchemeGeometricNormalDecoder extends MeshPredictionSchemeDec
 
 }
 
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeData.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_data.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeData.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_data.h
 
 /**
  * Stores mesh connectivity data and how it was encoded/decoded.
@@ -4353,8 +4314,7 @@ class MeshPredictionSchemeData {
 
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeDecoderFactory.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_decoder_factory.h
+// compression/attributes/prediction_schemes/PredictionSchemeDecoderFactory.js - ported from compression/attributes/prediction_schemes/prediction_scheme_decoder_factory.h
 
 
 function createMeshPredictionSchemeDecoder(method, attribute, transform,
@@ -4457,22 +4417,12 @@ function createPredictionSchemeForDecoder(method, attId, decoder, transform) {
   return new PredictionSchemeDeltaDecoder(att, transform);
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeWrapDecodingTransform.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_wrap_decoding_transform.h
+// compression/attributes/prediction_schemes/PredictionSchemeWrapDecodingTransform.js - ported from compression/attributes/prediction_schemes/prediction_scheme_wrap_decoding_transform.h
 
 
-/**
- * PredictionSchemeWrapDecodingTransform unwraps values encoded with the
- * wrap encoding transform. Values are wrapped around min/max range.
- *
- * The wrapping works as follows:
- *   - Encoding stores correction X = O - P, wrapped around the data range N:
- *       X + N if X < -N/2
- *       X - N if X > N/2
- *   - Decoding unwraps: F = P + X, then:
- *       F + N if F < MIN
- *       F - N if F > MAX
- */
+// Unwraps values encoded with the wrap transform: the encoder stored a
+// correction wrapped into the data range; decoding adds it to the prediction
+// and wraps the result back into [min, max].
 class PredictionSchemeWrapDecodingTransform {
 
   constructor() {
@@ -4494,13 +4444,8 @@ class PredictionSchemeWrapDecodingTransform {
     return false;
   }
 
-  /**
-   * Unwraps values that fall outside the [min, max] range.
-   */
   computeOriginalValue(predictedVals, predictedOffset, corrVals, corrOffset,
     outOriginalVals, outOffset) {
-    // Clamp to [min, max] then unwrap, fused into one pass with bounds in
-    // locals and no scratch buffer.
     const nc = this._numComponents;
     const minValue = this._minValue;
     const maxValue = this._maxValue;
@@ -4523,7 +4468,6 @@ class PredictionSchemeWrapDecodingTransform {
     }
   }
 
-  /** Decodes the min and max values from the buffer. */
   decodeTransformData(buffer) {
     const minValue = buffer.decodeInt32();
     if (minValue === undefined) return false;
@@ -5124,8 +5068,7 @@ class AttributeOctahedronTransform extends AttributeTransform {
 
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronTransformBase.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_transform_base.h
+// compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronTransformBase.js - ported from compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_transform_base.h
 //
 // Shared base for the octahedral-normal decoding transforms. Holds the
 // OctahedronToolBox and the quantization-bit plumbing; each subclass supplies
@@ -5162,8 +5105,7 @@ class PredictionSchemeNormalOctahedronTransformBase {
 
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_canonicalized_decoding_transform.h
+// compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform.js - ported from compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_canonicalized_decoding_transform.h
 
 
 /**
@@ -5306,8 +5248,7 @@ class PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform extends Pre
 
 }
 
-// src/compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronDecodingTransform.js
-// Ported from draco/compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_decoding_transform.h
+// compression/attributes/prediction_schemes/PredictionSchemeNormalOctahedronDecodingTransform.js - ported from compression/attributes/prediction_schemes/prediction_scheme_normal_octahedron_decoding_transform.h
 
 
 /**
@@ -5839,8 +5780,7 @@ class HoleEventData {
 // Valence-based edgebreaker coding modes.
 const EDGEBREAKER_VALENCE_MODE_2_7 = 0;
 
-// compression/mesh/traverser/DepthFirstTraverser.js
-// Ported from compression/mesh/traverser/depth_first_traverser.h
+// compression/mesh/traverser/DepthFirstTraverser.js - ported from compression/mesh/traverser/depth_first_traverser.h
 
 const kInvalidCornerIndex$3 = -1;
 const kInvalidFaceIndex$1 = -1;
@@ -6003,8 +5943,7 @@ class DepthFirstTraverser {
 
 }
 
-// compression/mesh/traverser/MaxPredictionDegreeTraverser.js
-// Ported from compression/mesh/traverser/max_prediction_degree_traverser.h
+// compression/mesh/traverser/MaxPredictionDegreeTraverser.js - ported from compression/mesh/traverser/max_prediction_degree_traverser.h
 
 const kInvalidCornerIndex$2 = -1;
 const kInvalidFaceIndex = -1;
@@ -6203,8 +6142,7 @@ class MaxPredictionDegreeTraverser {
 
 }
 
-// compression/mesh/traverser/MeshTraversalSequencer.js
-// Ported from compression/mesh/traverser/mesh_traversal_sequencer.h
+// compression/mesh/traverser/MeshTraversalSequencer.js - ported from compression/mesh/traverser/mesh_traversal_sequencer.h
 
 // Sequencer that generates point sequence in an order given by a deterministic
 // traversal on the mesh surface.
@@ -6334,8 +6272,7 @@ class MeshTraversalSequencer {
 
 }
 
-// compression/mesh/traverser/MeshAttributeIndicesEncodingObserver.js
-// Ported from compression/mesh/traverser/mesh_attribute_indices_encoding_observer.h
+// compression/mesh/traverser/MeshAttributeIndicesEncodingObserver.js - ported from compression/mesh/traverser/mesh_attribute_indices_encoding_observer.h
 
 // Observer that records vertex visit order during mesh traversal.
 // Used to generate encoding/decoding order for attribute values.
