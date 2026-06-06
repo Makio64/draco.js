@@ -1,7 +1,6 @@
 // attributes/GeometryAttribute.js - ported from attributes/geometry_attribute.h/cc
 
-import { DataType, dataTypeLength } from '../core/DracoTypes.js';
-import { DataBuffer } from '../core/DataBuffer.js';
+import { DataType } from '../core/DracoTypes.js';
 
 const Type = {
   INVALID: -1,
@@ -40,11 +39,6 @@ class GeometryAttribute {
   getAddress(attIndex) {
     const bytePos = this._byteOffset + this._byteStride * attIndex;
     return this._buffer.data.subarray(bytePos);
-  }
-
-  setAttributeValue(entryIndex, value) {
-    const bytePos = entryIndex * this._byteStride;
-    this._buffer.write(bytePos, value, this._byteStride);
   }
 
   copyFrom(srcAtt) {
