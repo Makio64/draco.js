@@ -1230,7 +1230,13 @@ class RAnsDecoder {
 
   // Builds the ransPrecision-entry lookup table. Returns false on bad input data.
   ransBuildLookUpTable(tokenProbs, numSymbols) {
-    this.lutTable = new Uint32Array(this.ransPrecision);
+    // lutTable is indexed by `rem` (random in [0, ransPrecision)), so it's the
+    // hottest random read in decodeSymbols()/ransRead(). Its values are symbol
+    // ids (< numSymbols), so pick the narrowest element type that holds them:
+    // shrinking the table (up to 4x) keeps that random access closer to cache.
+    const LutArray = numSymbols <= 256 ? Uint8Array
+      : (numSymbols <= 65536 ? Uint16Array : Uint32Array);
+    this.lutTable = new LutArray(this.ransPrecision);
     this.probTable = new Uint32Array(numSymbols);
     this.cumProbTable = new Uint32Array(numSymbols);
     let cumProb = 0;
@@ -3991,6 +3997,8 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     this._posCache = null;
     this._cornerToVertex = null;
     this._oppositeCorners = null;
+    // corner -> posCache offset (vertexToDataMap[cornerToVertex[c]]*3), precomputed.
+    this._cornerToOffset = null;
   }
 
   setPositionAttribute(positionAttribute) {
@@ -4020,16 +4028,29 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     const table = this._meshData.cornerTable;
     this._cornerToVertex = table.cornerToVertexArray();
     this._oppositeCorners = table.oppositeCornerArray();
+    // Precompute corner -> posCache offset once. The TRIANGLE_AREA ring walk
+    // reads next/prev positions for every corner around each vertex (total work
+    // = O(numCorners)); folding the double indirection vertexToDataMap[
+    // cornerToVertex[c]] and the *3 into one flat Int32Array turns each of those
+    // ~2*numCorners reads into a single load, at the cost of one O(numCorners)
+    // build pass (net ~2:1 fewer dependent random loads).
+    const cornerToVertex = this._cornerToVertex;
+    const vertexToDataMap = this._meshData.vertexToDataMap;
+    const nc = cornerToVertex.length;
+    const c2o = new Int32Array(nc);
+    for (let c = 0; c < nc; ++c) {
+      const v = cornerToVertex[c];
+      c2o[c] = v < 0 ? -1 : vertexToDataMap[v] * 3;
+    }
+    this._cornerToOffset = c2o;
   }
 
   /** Computes predicted normal for a corner; writes [x, y, z] into prediction. */
   computePredictedValue(cornerId, prediction) {
-    const cornerToVertex = this._cornerToVertex;
     const oppositeCorners = this._oppositeCorners;
-    const vertexToDataMap = this._meshData.vertexToDataMap;
+    const cornerToOffset = this._cornerToOffset;
     const posCache = this._posCache;
-    const centerDataId = vertexToDataMap[cornerToVertex[cornerId]];
-    const centerOffset = centerDataId * 3;
+    const centerOffset = cornerToOffset[cornerId];
     const centX = posCache[centerOffset];
     const centY = posCache[centerOffset + 1];
     const centZ = posCache[centerOffset + 2];
@@ -4040,11 +4061,11 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
       const rem = cornerId - ((cornerId / 3) | 0) * 3;
       const cNext = rem === 2 ? cornerId - 2 : cornerId + 1;
       const cPrev = rem === 0 ? cornerId + 2 : cornerId - 1;
-      let posOffset = vertexToDataMap[cornerToVertex[cNext]] * 3;
+      let posOffset = cornerToOffset[cNext];
       const nextX = posCache[posOffset];
       const nextY = posCache[posOffset + 1];
       const nextZ = posCache[posOffset + 2];
-      posOffset = vertexToDataMap[cornerToVertex[cPrev]] * 3;
+      posOffset = cornerToOffset[cPrev];
       const prevX = posCache[posOffset];
       const prevY = posCache[posOffset + 1];
       const prevZ = posCache[posOffset + 2];
@@ -4072,11 +4093,11 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
         const rem = currentCorner - ((currentCorner / 3) | 0) * 3;
         const cNext = rem === 2 ? currentCorner - 2 : currentCorner + 1;
         const cPrev = rem === 0 ? currentCorner + 2 : currentCorner - 1;
-        let posOffset = vertexToDataMap[cornerToVertex[cNext]] * 3;
+        let posOffset = cornerToOffset[cNext];
         const nextX = posCache[posOffset];
         const nextY = posCache[posOffset + 1];
         const nextZ = posCache[posOffset + 2];
-        posOffset = vertexToDataMap[cornerToVertex[cPrev]] * 3;
+        posOffset = cornerToOffset[cPrev];
         const prevX = posCache[posOffset];
         const prevY = posCache[posOffset + 1];
         const prevZ = posCache[posOffset + 2];
@@ -6935,11 +6956,7 @@ class MeshEdgebreakerDecoderImpl {
           }
         }
       } else {
-        for (let ci = 0; ci < this._cornerTable.numCorners(); ci += 3) {
-          if (!this._decodeAttributeConnectivitiesOnFace(ci)) {
-            return false;
-          }
-        }
+        this._decodeAttributeConnectivities();
       }
     }
     this._traversalDecoder.done();
@@ -7462,35 +7479,32 @@ class MeshEdgebreakerDecoderImpl {
     return true;
   }
 
-  _decodeAttributeConnectivitiesOnFace(corner) {
-    // Iterate the face's three corners without allocating a [corner, next, prev]
-    // array; read opposites from the flat array.
-    const ct = this._cornerTable;
-    const oppositeCorners = ct.oppositeCornerArray();
+  // Decode every face's attribute seam connectivity in one flat pass over
+  // corners (bitstream >= 2.1). The per-face entry point this replaces re-read
+  // the opposite-corner array, attribute-data list and connectivity decoders on
+  // each of its numFaces calls; hoisting them here leaves only the irreducible
+  // per-corner decodeNextBit work. Within each face the three corners are
+  // visited in encoder edge order [base, next, prev] = [c, c+1, c+2] (the
+  // caller always starts a face at its base corner, so next/prev need no wrap).
+  _decodeAttributeConnectivities() {
+    const oppositeCorners = this._cornerTable.oppositeCornerArray();
     const attributeData = this._attributeData;
     const numAttrData = attributeData.length;
-    const srcFaceId = (corner / 3) | 0;
-    const faceBase = srcFaceId * 3;
+    const connectivityDecoders =
+      this._traversalDecoder._attributeConnectivityDecoders;
+    const numCorners = this._cornerTable.numCorners();
 
-    // Order [corner, next, previous] to match the encoder's edge order.
-    const rem = corner - faceBase;
-    const nextCorner = rem === 2 ? corner - 2 : corner + 1;
-    const prevCorner = rem === 0 ? corner + 2 : corner - 1;
-
-    const connectivityDecoders = this._traversalDecoder._attributeConnectivityDecoders;
-
-    // --- cc = corner ---
-    {
-      const cc = corner;
-      const oppCorner = oppositeCorners[cc];
-      if (oppCorner === kInvalidCornerIndex) {
-        for (let i = 0; i < numAttrData; ++i) {
-          const ad = attributeData[i];
-          ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
-        }
-      } else {
-        const oppFaceId = (oppCorner / 3) | 0;
-        if (oppFaceId >= srcFaceId) {
+    for (let corner = 0; corner < numCorners; corner += 3) {
+      const srcFaceId = (corner / 3) | 0;
+      for (let k = 0; k < 3; ++k) {
+        const cc = corner + k;
+        const oppCorner = oppositeCorners[cc];
+        if (oppCorner === kInvalidCornerIndex) {
+          for (let i = 0; i < numAttrData; ++i) {
+            const ad = attributeData[i];
+            ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
+          }
+        } else if (((oppCorner / 3) | 0) >= srcFaceId) {
           for (let i = 0; i < numAttrData; ++i) {
             if (connectivityDecoders[i].decodeNextBit()) {
               const ad = attributeData[i];
@@ -7500,52 +7514,6 @@ class MeshEdgebreakerDecoderImpl {
         }
       }
     }
-
-    // --- cc = nextCorner ---
-    {
-      const cc = nextCorner;
-      const oppCorner = oppositeCorners[cc];
-      if (oppCorner === kInvalidCornerIndex) {
-        for (let i = 0; i < numAttrData; ++i) {
-          const ad = attributeData[i];
-          ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
-        }
-      } else {
-        const oppFaceId = (oppCorner / 3) | 0;
-        if (oppFaceId >= srcFaceId) {
-          for (let i = 0; i < numAttrData; ++i) {
-            if (connectivityDecoders[i].decodeNextBit()) {
-              const ad = attributeData[i];
-              ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
-            }
-          }
-        }
-      }
-    }
-
-    // --- cc = prevCorner ---
-    {
-      const cc = prevCorner;
-      const oppCorner = oppositeCorners[cc];
-      if (oppCorner === kInvalidCornerIndex) {
-        for (let i = 0; i < numAttrData; ++i) {
-          const ad = attributeData[i];
-          ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
-        }
-      } else {
-        const oppFaceId = (oppCorner / 3) | 0;
-        if (oppFaceId >= srcFaceId) {
-          for (let i = 0; i < numAttrData; ++i) {
-            if (connectivityDecoders[i].decodeNextBit()) {
-              const ad = attributeData[i];
-              ad.attributeSeamCorners[ad.numSeamCorners++] = cc;
-            }
-          }
-        }
-      }
-    }
-
-    return true;
   }
 
   _assignPointsToCorners(numConnectivityVerts) {
