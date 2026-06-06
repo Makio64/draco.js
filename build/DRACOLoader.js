@@ -1544,6 +1544,86 @@ function dataTypeLength(dt) {
   }
 }
 
+// attributes/GeometryAttribute.js - ported from attributes/geometry_attribute.h/cc
+
+
+const Type = {
+  INVALID: -1,
+  NAMED_ATTRIBUTES_COUNT: 5
+};
+
+class GeometryAttribute {
+
+  constructor() {
+    this._buffer = null;
+    this._numComponents = 1;
+    this._dataType = DataType.FLOAT32;
+    this._normalized = false;
+    this._byteStride = 0;
+    this._byteOffset = 0;
+    this._attributeType = Type.INVALID;
+    this._uniqueId = 0;
+  }
+
+  init(attributeType, buffer, numComponents, dataType, normalized, byteStride, byteOffset) {
+    this._buffer = buffer;
+    this._numComponents = numComponents;
+    this._dataType = dataType;
+    this._normalized = normalized;
+    this._byteStride = byteStride;
+    this._byteOffset = byteOffset;
+    this._attributeType = attributeType;
+  }
+
+  // Returns a Uint8Array view of the buffer starting at the attribute entry.
+  getAddress(attIndex) {
+    const bytePos = this._byteOffset + this._byteStride * attIndex;
+    return this._buffer.data.subarray(bytePos);
+  }
+
+  copyFrom(srcAtt) {
+    this._numComponents = srcAtt._numComponents;
+    this._dataType = srcAtt._dataType;
+    this._normalized = srcAtt._normalized;
+    this._byteStride = srcAtt._byteStride;
+    this._byteOffset = srcAtt._byteOffset;
+    this._attributeType = srcAtt._attributeType;
+    this._uniqueId = srcAtt._uniqueId;
+
+    if (srcAtt._buffer === null) {
+      this._buffer = null;
+    } else {
+      if (this._buffer === null) {
+        return false;
+      }
+      this._buffer.update(srcAtt._buffer.data, srcAtt._buffer.dataSize);
+    }
+    return true;
+  }
+
+  resetBuffer(buffer, byteStride, byteOffset) {
+    this._buffer = buffer;
+    this._byteStride = byteStride;
+    this._byteOffset = byteOffset;
+  }
+
+  get attributeType() { return this._attributeType; }
+
+  get dataType() { return this._dataType; }
+
+  get numComponents() { return this._numComponents; }
+
+  get buffer() { return this._buffer; }
+
+  get byteStride() { return this._byteStride; }
+
+  get byteOffset() { return this._byteOffset; }
+
+  get uniqueId() { return this._uniqueId; }
+  set uniqueId(id) { this._uniqueId = id; }
+
+}
+
 // core/DataBuffer.js - ported from data_buffer.h/cc
 
 class DataBuffer {
@@ -1591,91 +1671,6 @@ class DataBuffer {
     newData.set(this._data.subarray(0, Math.min(this._data.length, newSize)));
     this._data = newData;
   }
-
-}
-
-// attributes/GeometryAttribute.js - ported from attributes/geometry_attribute.h/cc
-
-
-const Type = {
-  INVALID: -1,
-  NAMED_ATTRIBUTES_COUNT: 5
-};
-
-class GeometryAttribute {
-
-  constructor() {
-    this._buffer = null;
-    this._numComponents = 1;
-    this._dataType = DataType.FLOAT32;
-    this._normalized = false;
-    this._byteStride = 0;
-    this._byteOffset = 0;
-    this._attributeType = Type.INVALID;
-    this._uniqueId = 0;
-  }
-
-  init(attributeType, buffer, numComponents, dataType, normalized, byteStride, byteOffset) {
-    this._buffer = buffer;
-    this._numComponents = numComponents;
-    this._dataType = dataType;
-    this._normalized = normalized;
-    this._byteStride = byteStride;
-    this._byteOffset = byteOffset;
-    this._attributeType = attributeType;
-  }
-
-  // Returns a Uint8Array view of the buffer starting at the attribute entry.
-  getAddress(attIndex) {
-    const bytePos = this._byteOffset + this._byteStride * attIndex;
-    return this._buffer.data.subarray(bytePos);
-  }
-
-  setAttributeValue(entryIndex, value) {
-    const bytePos = entryIndex * this._byteStride;
-    this._buffer.write(bytePos, value, this._byteStride);
-  }
-
-  copyFrom(srcAtt) {
-    this._numComponents = srcAtt._numComponents;
-    this._dataType = srcAtt._dataType;
-    this._normalized = srcAtt._normalized;
-    this._byteStride = srcAtt._byteStride;
-    this._byteOffset = srcAtt._byteOffset;
-    this._attributeType = srcAtt._attributeType;
-    this._uniqueId = srcAtt._uniqueId;
-
-    if (srcAtt._buffer === null) {
-      this._buffer = null;
-    } else {
-      if (this._buffer === null) {
-        return false;
-      }
-      this._buffer.update(srcAtt._buffer.data, srcAtt._buffer.dataSize);
-    }
-    return true;
-  }
-
-  resetBuffer(buffer, byteStride, byteOffset) {
-    this._buffer = buffer;
-    this._byteStride = byteStride;
-    this._byteOffset = byteOffset;
-  }
-
-  get attributeType() { return this._attributeType; }
-
-  get dataType() { return this._dataType; }
-
-  get numComponents() { return this._numComponents; }
-
-  get buffer() { return this._buffer; }
-
-  get byteStride() { return this._byteStride; }
-
-  get byteOffset() { return this._byteOffset; }
-
-  get uniqueId() { return this._uniqueId; }
-  set uniqueId(id) { this._uniqueId = id; }
 
 }
 
@@ -4839,11 +4834,6 @@ class Dequantizer {
     return true;
   }
 
-  // C++ DequantizeFloat: `value * delta_` in float32 (int converted to float first).
-  dequantizeFloat(val) {
-    return Math.fround(Math.fround(val) * this._delta);
-  }
-
   get delta() {
     return this._delta;
   }
@@ -5781,6 +5771,8 @@ const TOPOLOGY_INVALID = 9;
 const edgeBreakerSymbolToTopologyId = [
   TOPOLOGY_C, TOPOLOGY_S, TOPOLOGY_L, TOPOLOGY_R, TOPOLOGY_E
 ];
+
+// Edge relative to the tip vertex of a visited triangle (the other is the left edge).
 const RIGHT_FACE_EDGE = 1;
 
 // Data about a source face connecting to an already-traversed face that was
