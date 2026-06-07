@@ -24,17 +24,26 @@ for (const instance of [
   new THREE.Color(),
   new THREE.FileLoader(),
   new THREE.Loader(),
+  new THREE.LoadingManager(), // load() drives it via itemStart/itemEnd/itemError
   THREE.ColorManagement,
 ]) collectProps(instance, boundary);
 
 for (const name of [
   // Public DRACOLoader API.
   'load', 'parse', 'parseAsync', 'loadAsync', 'decodeDracoFile', 'decodeGeometry',
-  'setDecoderPath', 'setDecoderConfig', 'setWorkerLimit', 'preload', 'dispose',
+  'setDecoderPath', 'setDecoderConfig', 'setWorkerLimit', 'setWorkerThreshold', 'setWorkerMode', 'preload', 'dispose',
   'setPath', 'setResourcePath', 'setCrossOrigin', 'setRequestHeader', 'setWithCredentials',
   'defaultAttributeIDs', 'defaultAttributeTypes',
   // Default attribute names — they become three geometry attribute names.
   'position', 'normal', 'color', 'uv',
+  // three *namespace* exports reached through the lazy `import('three')` (see
+  // src/DRACOLoader.js). Unlike instance fields, these constructor/constant names
+  // aren't gathered by instantiation, so without reserving them `THREE.BufferGeometry`
+  // would mangle to an undefined member on the external module.
+  'BufferGeometry', 'BufferAttribute', 'Color', 'ColorManagement',
+  'SRGBColorSpace', 'LinearSRGBColorSpace',
+  // navigator.hardwareConcurrency picks the default worker count.
+  'hardwareConcurrency',
 ]) boundary.add(name);
 
 export function mangle() {

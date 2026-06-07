@@ -20,9 +20,8 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { performance } from 'perf_hooks';
-import { DecoderBuffer } from '../src/core/DecoderBuffer.js';
-import { Decoder } from '../src/compression/Decode.js';
-import { EncodedGeometryType } from '../src/compression/config/CompressionShared.js';
+import { readSample } from './lib/glb.mjs';
+import { decode, hashGeometry } from './lib/decode.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -44,65 +43,6 @@ const SAMPLES = [
   ['ferrari.glb', 30], // 51 primitives, ~358k faces — large clean stress test
 ];
 
-const GLB_MAGIC = 0x46546c67;
-const GLB_CHUNK_JSON = 0x4e4f534a;
-const GLB_CHUNK_BIN = 0x004e4942;
-
-// Returns the list of Draco-compressed buffers (one Uint8Array per primitive)
-// for a sample. .drc -> a single buffer; .glb -> every KHR_draco primitive.
-function readSample(name) {
-  const buf = fs.readFileSync(path.join(SAMPLES_DIR, name));
-  const u8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-  if (!name.endsWith('.glb')) return [u8];
-
-  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
-  if (dv.getUint32(0, true) !== GLB_MAGIC) throw new Error(`${name}: not a GLB`);
-  const total = dv.getUint32(8, true);
-  let off = 12;
-  let json = null;
-  let binOff = 0;
-  while (off < total) {
-    const clen = dv.getUint32(off, true);
-    const ctype = dv.getUint32(off + 4, true);
-    off += 8;
-    if (ctype === GLB_CHUNK_JSON) {
-      json = JSON.parse(new TextDecoder().decode(u8.subarray(off, off + clen)));
-    } else if (ctype === GLB_CHUNK_BIN) {
-      binOff = off;
-    }
-    off += clen;
-  }
-  const buffers = [];
-  for (const mesh of json.meshes) {
-    for (const prim of mesh.primitives) {
-      const ext = prim.extensions && prim.extensions.KHR_draco_mesh_compression;
-      if (!ext) continue;
-      const bv = json.bufferViews[ext.bufferView];
-      const start = binOff + (bv.byteOffset || 0);
-      buffers.push(u8.subarray(start, start + bv.byteLength));
-    }
-  }
-  if (buffers.length === 0) throw new Error(`${name}: no Draco primitives`);
-  return buffers;
-}
-
-// Decode one buffer into a Mesh/PointCloud. The encoded input is only read, so
-// the same Uint8Array can be reused across iterations with a fresh buffer view.
-function decode(u8) {
-  const db = new DecoderBuffer();
-  db.init(u8, u8.length);
-  const type = Decoder.getEncodedGeometryType(db);
-  const decoder = new Decoder();
-  if (type === EncodedGeometryType.TRIANGULAR_MESH) {
-    const r = decoder.decodeMeshFromBuffer(db);
-    if (!r.ok) throw new Error(r.message);
-    return { geom: r.mesh, isMesh: true };
-  }
-  const r = decoder.decodePointCloudFromBuffer(db);
-  if (!r.ok) throw new Error(r.message);
-  return { geom: r.pointCloud, isMesh: false };
-}
-
 // Decode one buffer with the draco3d WASM reference, then free the WASM-side
 // objects. Used only by --wasm to time WASM decode under the same loop as JS.
 function decodeWASM(module, decoder, u8) {
@@ -119,50 +59,6 @@ function decodeWASM(module, decoder, u8) {
   }
   module.destroy(buffer);
   module.destroy(geom);
-}
-
-// Hash the complete decoded result. Values go through a Float64Array, which
-// exactly represents the FLOAT32 / INT32 attribute values, so an identical
-// decode always yields an identical digest.
-function hashGeometry(geom, isMesh) {
-  const h = crypto.createHash('sha256');
-  const numPoints = geom.numPoints();
-  const numAttributes = geom.numAttributes();
-  const numFaces = isMesh ? geom.numFaces() : 0;
-  h.update(Buffer.from(Int32Array.from([isMesh ? 1 : 0, numFaces, numPoints, numAttributes]).buffer));
-
-  if (isMesh) {
-    const faces = new Int32Array(numFaces * 3);
-    for (let i = 0; i < numFaces; i++) {
-      const f = geom.face(i);
-      faces[i * 3] = f[0];
-      faces[i * 3 + 1] = f[1];
-      faces[i * 3 + 2] = f[2];
-    }
-    h.update(Buffer.from(faces.buffer));
-  }
-
-  for (let a = 0; a < numAttributes; a++) {
-    const att = geom.attribute(a);
-    const nc = att ? att.numComponents : 0;
-    const hasBuf = att && att._buffer != null;
-    // Hash structural metadata always (so a present->absent change is caught),
-    // then the per-point values when the attribute is actually backed by data.
-    h.update(Buffer.from(Int32Array.from([
-      att ? att.uniqueId : -1, att ? att.attributeType : -1, nc, hasBuf ? 1 : 0,
-    ]).buffer));
-    if (!hasBuf) continue;
-    const vals = new Float64Array(numPoints * nc);
-    const tmp = new Array(nc);
-    for (let i = 0; i < numPoints; i++) {
-      const ai = att.mappedIndex(i);
-      att.convertValue(ai, tmp);
-      const o = i * nc;
-      for (let c = 0; c < nc; c++) vals[o + c] = tmp[c];
-    }
-    h.update(Buffer.from(vals.buffer));
-  }
-  return h.digest('hex');
 }
 
 async function main() {
@@ -187,7 +83,7 @@ async function main() {
   console.log('-'.repeat(80));
 
   for (const [name, iters] of SAMPLES) {
-    const buffers = readSample(name);
+    const buffers = readSample(SAMPLES_DIR, name);
     const bytes = buffers.reduce((s, b) => s + b.length, 0);
 
     // Warmup (let the JIT settle) + correctness snapshot over all primitives.

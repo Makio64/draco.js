@@ -10,12 +10,14 @@ JavaScript.
 
 Why a JS port instead of the official WASM build?
 
-- **Small** — ~20 KB gzipped (62 KB minified), vs ~100 KB gzipped for the
+- **Small** — ~20 KB gzipped (66 KB minified), vs ~100 KB gzipped for the
   `draco3d` WASM decoder + glue (~5× smaller).
-- **Simple to ship** — one ES module. No `.wasm` fetch, no worker/glue setup,
-  no cross-origin or CSP headaches.
-- **Fast** — within ~1.0–1.4× of the WASM decoder on substantial meshes, and
-  effectively at parity on the largest, with byte-for-byte identical output.
+- **Simple to ship** — one ES module. No `.wasm` fetch, no cross-origin or CSP
+  headaches. The same file is also the decode worker, so even the parallel path
+  needs no separate worker file or glue.
+- **Fast** — within ~1.0–1.4× of the WASM decoder per mesh, byte-for-byte
+  identical output, and a built-in worker pool that decodes multi-primitive
+  loads in parallel and off the main thread ([see below](#web-workers)).
 
 You trade decode speed for a much smaller, simpler loader. This pays
 off most on pages with a single model, where the decoder is a one-time cost that
@@ -55,6 +57,41 @@ It can also load standalone `.drc` files:
 ```js
 const geometry = await new DRACOLoader().loadAsync( 'model.drc' ); // BufferGeometry
 ```
+
+## Web workers
+
+By default the loader decodes through an **adaptive worker pool**. Because the
+build is top-level dependency-free, the same single file doubles as its own
+module worker (spawned from `import.meta.url`) — so the parallel path needs
+nothing extra to fetch or configure.
+
+Decode calls that arrive together are batched and routed as one:
+
+- A **single mesh** or a **small batch** decodes on the **main thread** — a lone
+  Draco stream is sequential, so a worker could only add overhead. Never slower
+  than single-threaded here.
+- A **multi-primitive load with enough total work** (e.g. a glTF scene of many
+  Draco meshes) **fans out across the pool**, decoding in parallel across cores.
+
+On a 14-core machine (decode only; ferrari = 51 primitives, LittlestTokyo = 71)
+that's **~2.7–2.8× faster** than single-threaded, with single meshes and tiny
+batches staying at single-thread speed. Reproduce with `npm run bench:parallel`.
+Where module workers aren't available (Node, older browsers) it falls back to
+synchronous decode.
+
+### Tuning
+
+```js
+const loader = new DRACOLoader();
+loader.setWorkerLimit( 8 );            // pool size (default navigator.hardwareConcurrency; 0 = always sync)
+loader.setWorkerThreshold( 256 * 1024 ); // min total bytes before a batch uses the pool
+loader.setWorkerMode( 'offload' );     // 'adaptive' (default, speed-first) | 'offload' (jank-free)
+```
+
+`setWorkerMode('offload')` sends any decode at/above the threshold to a worker —
+**even a single mesh** — so a big decode never freezes the main thread (a touch
+slower wall-clock, but no frame hitch). Pair with `setWorkerThreshold(0)` to
+offload every decode.
 
 ## Credits
 

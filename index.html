@@ -14,7 +14,7 @@
   #canvas-wrap { position: absolute; inset: 0; }
   canvas { display: block; }
   #panel {
-    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 400px; max-width: calc(100vw - 24px);
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 480px; max-width: calc(100vw - 24px);
     background: rgba(20,24,30,0.92); border: 1px solid #2a3038; border-radius: 10px;
     padding: 14px 16px; backdrop-filter: blur(6px); z-index: 10;
   }
@@ -30,8 +30,9 @@
   button:hover { background: #232a33; }
   button:disabled { opacity: .5; cursor: default; }
   table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-  th, td { text-align: right; padding: 5px 6px; border-bottom: 1px solid #232a33; white-space: nowrap; }
+  th, td { text-align: right; padding: 5px 5px; border-bottom: 1px solid #232a33; white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; color: #8a93a0; }
+  th[title] { cursor: help; }
   thead th { color: #cdd6e0; font-size: 11px; border-bottom: 1px solid #313945; }
   .js   { color: #93c5fd; }
   .wasm { color: #93c5fd; }
@@ -77,13 +78,19 @@
 
     <table>
       <thead>
-        <tr><th>Metric</th><th class="wasm">WASM</th><th class="js">JS</th><th></th></tr>
+        <tr>
+          <th>Metric</th>
+          <th class="wasm" title="three.js Draco decoder (WASM + worker pool)">WASM</th>
+          <th class="js" title="this build, forced to a single main-thread decode (setWorkerLimit(0))">JS</th>
+          <th class="js" title="this build's adaptive default: a multi-primitive load with enough total work fans out across the web-worker pool; a single mesh or a small batch stays on the main thread, so it is never slower than JS">JS·W</th>
+          <th title="parse speedup of the worker pool over the single-thread JS decode">W vs JS</th>
+        </tr>
       </thead>
       <tbody>
-        <tr><td>loader size</td><td class="wasm" id="wasm-gzip">–</td><td class="js" id="js-gzip">–</td><td id="size-ratio">–</td></tr>
-        <tr><td>load + init</td><td class="wasm" id="wasm-load">–</td><td class="js" id="js-load">–</td><td id="load-ratio">–</td></tr>
-        <tr><td>parse</td><td class="wasm" id="wasm-parse">–</td><td class="js" id="js-parse">–</td><td id="parse-ratio">–</td></tr>
-        <tr><td>total</td><td class="wasm" id="wasm-total">–</td><td class="js" id="js-total">–</td><td id="total-ratio">–</td></tr>
+        <tr><td>loader size</td><td class="wasm" id="wasm-gzip">–</td><td class="js" id="js-gzip">–</td><td class="js" id="jsw-gzip">–</td><td></td></tr>
+        <tr><td>load + init</td><td class="wasm" id="wasm-load">–</td><td class="js" id="js-load">–</td><td class="js" id="jsw-load">–</td><td></td></tr>
+        <tr><td>parse</td><td class="wasm" id="wasm-parse">–</td><td class="js" id="js-parse">–</td><td class="js" id="jsw-parse">–</td><td id="parse-speedup"></td></tr>
+        <tr><td>total</td><td class="wasm" id="wasm-total">–</td><td class="js" id="js-total">–</td><td class="js" id="jsw-total">–</td><td id="total-speedup"></td></tr>
       </tbody>
     </table>
     <div id="status"></div>
@@ -241,32 +248,28 @@ const modelFromHash = () => {
   const name = decodeURIComponent(location.hash.slice(1));
   return [...$('model').options].some(o => o.value === name) ? name : null;
 };
-// Set a ratio cell to wasmVal / jsVal. Lower is better (fewer bytes / fewer ms), so
-// >1× means JS wins (green) and <1× means JS loses (orange).
-function setRatio(id, jsVal, wasmVal, jsCellId, wasmCellId) {
+// Show a speedup factor (baseMs / fastMs) in a cell — green when the worker pool
+// is meaningfully faster, orange if slower, neutral if ~equal.
+function setSpeedup(id, baseMs, fastMs) {
   const el = $(id);
-  const jsCell = jsCellId ? $(jsCellId) : null;
-  const wasmCell = wasmCellId ? $(wasmCellId) : null;
-  if (jsVal == null || wasmVal == null || !jsVal || !wasmVal) {
-    el.textContent = '–'; el.style.color = '';
-    if (jsCell) jsCell.style.color = '';
-    if (wasmCell) wasmCell.style.color = '';
-    return;
+  if (!baseMs || !fastMs) { el.textContent = ''; el.style.color = ''; return; }
+  const r = baseMs / fastMs;
+  el.textContent = r.toFixed(r < 10 ? 2 : 1) + '×';
+  el.style.color = r >= 1.05 ? 'hsl(140, 60%, 62%)' : (r <= 0.95 ? 'hsl(25, 80%, 62%)' : '#cdd6e0');
+}
+
+// Bold + green the fastest cell among a set of {id, ms}; reset the others to
+// their column colour. Highlights the parse/total winner across WASM / JS / JS·W.
+function highlightFastest(cells) {
+  const valid = cells.filter(c => c.ms > 0);
+  if (!valid.length) return;
+  const min = Math.min(...valid.map(c => c.ms));
+  for (const c of cells) {
+    const el = $(c.id);
+    const win = c.ms > 0 && c.ms === min;
+    el.style.fontWeight = win ? '700' : '';
+    el.style.color = win ? 'hsl(140, 60%, 62%)' : '';
   }
-  if (jsVal === wasmVal) {
-    el.textContent = '1.0×'; el.style.color = '#cdd6e0';
-    if (jsCell) jsCell.style.color = '#cdd6e0';
-    if (wasmCell) wasmCell.style.color = '#cdd6e0';
-    return;
-  }
-  const ratio = wasmVal / jsVal;
-  el.textContent = `${ratio.toFixed(1)}×`;
-  const jsWins = ratio > 1;
-  // Winner green, loser orange; the WASM cell takes the opposite tint of JS.
-  const tint = wins => wins ? 'hsl(140, 60%, 62%)' : 'hsl(25, 80%, 62%)';
-  el.style.color = tint(jsWins);
-  if (jsCell) jsCell.style.color = tint(jsWins);
-  if (wasmCell) wasmCell.style.color = tint(!jsWins);
 }
 
 // gzip a byte array in-browser via CompressionStream; null if unsupported.
@@ -345,10 +348,11 @@ function partsFromData(name, data) {
 
 // Decode a whole model (all primitives) once; returns { ms, geometries }.
 // Primitives are decoded concurrently — the way a real glTF load drives them —
-// so the WASM loader's worker pool can parallelize across them instead of being
-// serialized into back-to-back round-trips. The main-thread JS loader runs them
-// sequentially regardless, so this only affects multi-primitive models, and
-// times the same thing for both: each decodeDracoFile call to its callback.
+// so a loader's worker pool (WASM, or this build's JS·W) can parallelize across
+// them instead of serializing into back-to-back round-trips. A single-thread
+// loader (JS with setWorkerLimit(0)) runs them one after another on the main
+// thread, so the gain only shows on multi-primitive models. Each loader times
+// the same thing: every decodeDracoFile call through to its callback.
 async function decodeModel(loader, parts) {
   const t0 = performance.now();
   const geometries = await Promise.all(
@@ -360,9 +364,9 @@ async function decodeModel(loader, parts) {
 // ---------------------------------------------------------------------------
 // Loaders (lazily imported + measured)
 // ---------------------------------------------------------------------------
-let jsLoader, wasmLoader;       // raw Draco loaders (timing)
+let jsLoader, jsLoaderSync, wasmLoader; // raw Draco loaders (timing): JS·W pool, JS single-thread, WASM
 let gltfLoaderJS, gltfLoaderWASM; // full glTF loaders (visual), one per Draco decoder
-const info = { js: {}, wasm: {} };
+const info = { js: {}, jsw: {}, wasm: {} };
 
 // Parse a .glb ArrayBuffer into a three.js scene (materials + textures), with
 // Draco geometry decoded by the given loader's DRACOLoader.
@@ -376,12 +380,26 @@ async function initLoaders() {
   // real cold-start cost a user pays before the first decode.
   const warmup = await (await fetch('./samples/cube.drc')).arrayBuffer();
 
-  // JS loader (this project's minified build — what you'd ship).
+  // JS loader (this project's minified build — what you'd ship). Two instances
+  // from the same single file: `jsLoader` keeps its web-worker pool (the auto-on
+  // default), `jsLoaderSync` is forced to a single main-thread decode so the
+  // table can show the worker speedup. The pool reuses its workers across model
+  // switches, so after the first decode the JS·W column is steady-state.
   let t0 = performance.now();
   const jsMod = await import('./build/DRACOLoader.min.js');
+  const jsImportMs = performance.now() - t0;
+
+  t0 = performance.now();
   jsLoader = new jsMod.DRACOLoader();
+  jsLoader.preload(); // spin up a worker now so the first parse isn't paying for it
   (await decodeOne(jsLoader, warmup.slice(0), null, null)).dispose();
-  info.js.load = performance.now() - t0;
+  info.jsw.load = jsImportMs + (performance.now() - t0);
+
+  t0 = performance.now();
+  jsLoaderSync = new jsMod.DRACOLoader();
+  jsLoaderSync.setWorkerLimit(0); // force the single main-thread path
+  (await decodeOne(jsLoaderSync, warmup.slice(0), null, null)).dispose();
+  info.js.load = jsImportMs + (performance.now() - t0);
 
   // preload() doesn't await the wasm, so force readiness with a warmup decode.
   t0 = performance.now();
@@ -408,15 +426,16 @@ async function initLoaders() {
     sizeOf(DRACO_PATH + 'draco_decoder.wasm'),
   ]);
   info.js.gz = js.gz;
+  info.jsw.gz = js.gz; // same single file, served once and shared by every worker
   info.wasm.gz = wasmParts.every(p => p.gz != null) ? wasmParts.reduce((a, b) => a + b.gz, 0) : null;
 
   const gz = b => b != null ? fmtKB(b) : 'n/a';
   $('js-gzip').textContent = gz(info.js.gz);
+  $('jsw-gzip').textContent = gz(info.jsw.gz);
   $('wasm-gzip').textContent = gz(info.wasm.gz);
-  setRatio('size-ratio', info.js.gz, info.wasm.gz, 'js-gzip', 'wasm-gzip');
   $('js-load').textContent = fmtMs(info.js.load);
+  $('jsw-load').textContent = fmtMs(info.jsw.load);
   $('wasm-load').textContent = fmtMs(info.wasm.load);
-  setRatio('load-ratio', info.js.load, info.wasm.load, 'js-load', 'wasm-load');
 }
 
 // ---------------------------------------------------------------------------
@@ -438,9 +457,13 @@ async function processModel(name, fileData) {
 
     // --- Timing: clean Draco-only decode (no material/texture work), so the
     // table keeps measuring the decoder, not the rest of glTF assembly. ---
-    status('decoding with JS loader…');
-    const js = await decodeModel(jsLoader, parts);
+    status('decoding with JS loader (single thread)…');
+    const js = await decodeModel(jsLoaderSync, parts);
     $('js-parse').textContent = fmtMs(js.ms);
+
+    status('decoding with JS loader (web workers)…');
+    const jsw = await decodeModel(jsLoader, parts);
+    $('jsw-parse').textContent = fmtMs(jsw.ms);
 
     status('decoding with WASM loader…');
     const wasm = await decodeModel(wasmLoader, parts);
@@ -448,11 +471,17 @@ async function processModel(name, fileData) {
 
     // total = one-time loader cold-start + this model's parse.
     const jsTotal = info.js.load + js.ms;
+    const jswTotal = info.jsw.load + jsw.ms;
     const wasmTotal = info.wasm.load + wasm.ms;
     $('js-total').textContent = fmtMs(jsTotal);
+    $('jsw-total').textContent = fmtMs(jswTotal);
     $('wasm-total').textContent = fmtMs(wasmTotal);
-    setRatio('parse-ratio', js.ms, wasm.ms, 'js-parse', 'wasm-parse');
-    setRatio('total-ratio', jsTotal, wasmTotal, 'js-total', 'wasm-total');
+
+    // Headline: how much the web-worker pool beats the single-thread JS decode.
+    setSpeedup('parse-speedup', js.ms, jsw.ms);
+    setSpeedup('total-speedup', jsTotal, jswTotal);
+    highlightFastest([{ id: 'wasm-parse', ms: wasm.ms }, { id: 'js-parse', ms: js.ms }, { id: 'jsw-parse', ms: jsw.ms }]);
+    highlightFastest([{ id: 'wasm-total', ms: wasmTotal }, { id: 'js-total', ms: jsTotal }, { id: 'jsw-total', ms: jswTotal }]);
 
     // --- Visual: render the model with its real materials/textures. glTF goes
     // through GLTFLoader (Draco geometry decoded by each side's loader); raw .drc

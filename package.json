@@ -8,6 +8,7 @@
   "scripts": {
     "build": "rollup -c",
     "bench": "node tools/bench.mjs",
+    "bench:parallel": "node tools/bench-parallel.mjs",
     "verify": "node tools/verify-wasm.mjs",
     "start": "npx http-server -p 8080 -c-1"
   },
