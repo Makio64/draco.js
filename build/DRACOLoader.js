@@ -40,7 +40,6 @@ const PredictionSchemeMethod = {
   PREDICTION_DIFFERENCE: 0,
   MESH_PREDICTION_PARALLELOGRAM: 1,
   MESH_PREDICTION_MULTI_PARALLELOGRAM: 2,
-  MESH_PREDICTION_TEX_COORDS_DEPRECATED: 3,
   MESH_PREDICTION_CONSTRAINED_MULTI_PARALLELOGRAM: 4,
   MESH_PREDICTION_TEX_COORDS_PORTABLE: 5,
   MESH_PREDICTION_GEOMETRIC_NORMAL: 6,
@@ -846,7 +845,7 @@ class PointCloudDecoder {
         ? kDracoPointCloudBitstreamVersionMinor
         : kDracoMeshBitstreamVersionMinor;
 
-    // Version compatibility check (older bitstreams are still supported).
+    // Version compatibility check.
     if (this._versionMajor < 1 || this._versionMajor > maxSupportedMajorVersion) {
       return new Status(StatusCode.UNKNOWN_VERSION, 'Unknown major version.');
     }
@@ -858,8 +857,15 @@ class PointCloudDecoder {
     this._buffer.bitstreamVersion =
       DRACO_BITSTREAM_VERSION(this._versionMajor, this._versionMinor);
 
-    if (this.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(1, 3) &&
-        (header.flags & METADATA_FLAG_MASK)) {
+    // Only the current Draco 2.2 mesh bitstream is supported; pre-2.2 decode
+    // paths were removed, so older meshes are rejected rather than mis-decoded.
+    if (header.encoderType === EncodedGeometryType.TRIANGULAR_MESH &&
+        this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
+      return new Status(StatusCode.UNKNOWN_VERSION,
+        'Unsupported bitstream version (only Draco 2.2 meshes are supported).');
+    }
+
+    if (header.flags & METADATA_FLAG_MASK) {
       const metadataStatus = this._decodeMetadata();
       if (!metadataStatus.ok()) {
         return metadataStatus;
@@ -1284,14 +1290,9 @@ class RAnsSymbolDecoder {
       return false;
     }
 
-    if (buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)) {
-      this.numSymbols_ = buffer.decodeUint32();
-      if (this.numSymbols_ === undefined) return false;
-    } else {
-      const val = buffer.decodeVarintUint32();
-      if (val === undefined) return false;
-      this.numSymbols_ = val;
-    }
+    const val = buffer.decodeVarintUint32();
+    if (val === undefined) return false;
+    this.numSymbols_ = val;
 
     // Reject an unreasonably high symbol count.
     if (Math.trunc(this.numSymbols_ / 64) > buffer.remainingSize) {
@@ -1339,15 +1340,8 @@ class RAnsSymbolDecoder {
 
   // Starts decoding, advancing buffer past the encoded data.
   startDecoding(buffer) {
-    let bytesEncoded;
-
-    if (buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)) {
-      bytesEncoded = buffer.decodeUint64();
-      if (bytesEncoded === undefined) return false;
-    } else {
-      bytesEncoded = buffer.decodeVarintUint64();
-      if (bytesEncoded === undefined) return false;
-    }
+    const bytesEncoded = buffer.decodeVarintUint64();
+    if (bytesEncoded === undefined) return false;
 
     if (bytesEncoded > buffer.remainingSize) {
       return false;
@@ -2024,14 +2018,8 @@ class AttributesDecoder extends AttributesDecoderInterface {
   decodeAttributesDecoderData(buffer) {
     let numAttributes;
 
-    if (this._pointCloudDecoder.bitstreamVersion() <
-        DRACO_BITSTREAM_VERSION(2, 0)) {
-      numAttributes = buffer.decodeUint32();
-      if (numAttributes === undefined) return false;
-    } else {
-      numAttributes = decodeVarint(buffer, false);
-      if (numAttributes === undefined) return false;
-    }
+    numAttributes = decodeVarint(buffer, false);
+    if (numAttributes === undefined) return false;
 
     if (numAttributes === 0) {
       return false;
@@ -2075,17 +2063,9 @@ class AttributesDecoder extends AttributesDecoderInterface {
         dataTypeLength(dataType) * numComponents, 0
       );
 
-      let uniqueId;
-      if (this._pointCloudDecoder.bitstreamVersion() <
-          DRACO_BITSTREAM_VERSION(1, 3)) {
-        uniqueId = buffer.decodeUint16();
-        if (uniqueId === undefined) return false;
-        ga.uniqueId = uniqueId;
-      } else {
-        uniqueId = decodeVarint(buffer, false);
-        if (uniqueId === undefined) return false;
-        ga.uniqueId = uniqueId;
-      }
+      const uniqueId = decodeVarint(buffer, false);
+      if (uniqueId === undefined) return false;
+      ga.uniqueId = uniqueId;
 
       const pa = new PointAttribute(ga);
       const attId = pc.addAttribute(pa);
@@ -2232,15 +2212,9 @@ class SequentialAttributeDecoder {
       if (attId === -1) {
         return false; // Requested attribute does not exist.
       }
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        if (!ps.setParentAttribute(this._decoder.pointCloud().attribute(attId))) {
-          return false;
-        }
-      } else {
-        const pa = this._decoder.getPortableAttribute(attId);
-        if (pa === null || !ps.setParentAttribute(pa)) {
-          return false;
-        }
+      const pa = this._decoder.getPortableAttribute(attId);
+      if (pa === null || !ps.setParentAttribute(pa)) {
+        return false;
       }
     }
     return true;
@@ -2975,14 +2949,8 @@ class RAnsBitDecoder {
     this.probZero_ = probZero;
     this.p_ = ANS_P8_PRECISION - probZero;
 
-    let sizeInBytes;
-    if (sourceBuffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      sizeInBytes = sourceBuffer.decodeUint32();
-      if (sizeInBytes === undefined) return false;
-    } else {
-      sizeInBytes = sourceBuffer.decodeVarintUint32();
-      if (sizeInBytes === undefined) return false;
-    }
+    const sizeInBytes = sourceBuffer.decodeVarintUint32();
+    if (sizeInBytes === undefined) return false;
 
     if (sizeInBytes > sourceBuffer.remainingSize) {
       return false;
@@ -3162,231 +3130,6 @@ class MeshPredictionSchemeConstrainedMultiParallelogramDecoder extends MeshPredi
           multiPredVals, 0, inCorr, dstOffset, outData, dstOffset
         );
       }
-    }
-    return true;
-  }
-
-}
-
-// compression/attributes/prediction_schemes/MeshPredictionSchemeTexCoordsDecoder.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_tex_coords_decoder.h
-
-
-const GEOMETRY_ATTRIBUTE_POSITION$2 = 0;
-
-/**
- * Decoder for UV coordinate predictions using mesh geometry. Not portable;
- * kept for backwards compatibility. See MeshPredictionSchemeTexCoordsPortableDecoder.
- */
-class MeshPredictionSchemeTexCoordsDecoder extends MeshPredictionSchemeDecoder {
-
-  constructor(attribute, transform, meshData, version) {
-    super(attribute, transform, meshData);
-    this._posAttribute = null;
-    this._entryToPointIdMap = null;
-    this._predictedValue = null;
-    this._numComponents = 0;
-    this._orientations = [];
-    this._version = version;
-  }
-
-  getPredictionMethod() {
-    return PredictionSchemeMethod.MESH_PREDICTION_TEX_COORDS_DEPRECATED;
-  }
-
-  isInitialized() {
-    if (this._posAttribute === null) return false;
-    if (!this._meshData.isInitialized()) return false;
-    return true;
-  }
-
-  getNumParentAttributes() {
-    return 1;
-  }
-
-  getParentAttributeType(i) {
-    return GEOMETRY_ATTRIBUTE_POSITION$2;
-  }
-
-  setParentAttribute(att) {
-    if (att === null) return false;
-    if (att.attributeType !== GEOMETRY_ATTRIBUTE_POSITION$2) return false;
-    if (att.numComponents !== 3) return false;
-    this._posAttribute = att;
-    return true;
-  }
-
-  decodePredictionData(buffer) {
-    let numOrientations = 0;
-    if (buffer.bitstreamVersion < 0x0202) {
-      numOrientations = buffer.decodeUint32();
-      if (numOrientations === undefined) return false;
-    } else {
-      numOrientations = buffer.decodeVarintUint32();
-      if (numOrientations === undefined) return false;
-    }
-    if (numOrientations === 0) return false;
-    if (numOrientations > this._meshData.cornerTable.numCorners()) return false;
-
-    this._orientations = new Array(numOrientations);
-    let lastOrientation = true;
-    const decoder = new RAnsBitDecoder();
-    if (!decoder.startDecoding(buffer)) return false;
-    for (let i = 0; i < numOrientations; ++i) {
-      if (!decoder.decodeNextBit()) {
-        lastOrientation = !lastOrientation;
-      }
-      this._orientations[i] = lastOrientation;
-    }
-    decoder.endDecoding();
-    return super.decodePredictionData(buffer);
-  }
-
-  computeOriginalValues(inCorr, outData, size, numComponents, entryToPointIdMap) {
-    if (numComponents !== 2) return false;
-    this._numComponents = numComponents;
-    this._entryToPointIdMap = entryToPointIdMap;
-    this._predictedValue = new Int32Array(numComponents);
-    this._transform.init(numComponents);
-
-    const cornerMapSize = this._meshData.dataToCornerMap.length;
-    for (let p = 0; p < cornerMapSize; ++p) {
-      const cornerId = this._meshData.dataToCornerMap[p];
-      if (!this._computePredictedValue(cornerId, outData, p)) return false;
-
-      const dstOffset = p * numComponents;
-      this._transform.computeOriginalValue(
-        this._predictedValue, 0, inCorr, dstOffset, outData, dstOffset
-      );
-    }
-    return true;
-  }
-
-  _getPositionForEntryId(entryId) {
-    const pointId = this._entryToPointIdMap[entryId];
-    const pos = new Float32Array(3);
-    this._posAttribute.convertValue(
-      this._posAttribute.mappedIndex(pointId), pos
-    );
-    return pos;
-  }
-
-  _getTexCoordForEntryId(entryId, data) {
-    const dataOffset = entryId * this._numComponents;
-    return [data[dataOffset], data[dataOffset + 1]];
-  }
-
-  _computePredictedValue(cornerId, data, dataId) {
-    const table = this._meshData.cornerTable;
-    const nextCornerId = table.next(cornerId);
-    const prevCornerId = table.previous(cornerId);
-
-    const nextVertId = table.vertex(nextCornerId);
-    const prevVertId = table.vertex(prevCornerId);
-
-    const nextDataId = this._meshData.vertexToDataMap[nextVertId];
-    const prevDataId = this._meshData.vertexToDataMap[prevVertId];
-
-    if (prevDataId < dataId && nextDataId < dataId) {
-      const nUV = this._getTexCoordForEntryId(nextDataId, data);
-      const pUV = this._getTexCoordForEntryId(prevDataId, data);
-
-      if (pUV[0] === nUV[0] && pUV[1] === nUV[1]) {
-        // Degenerated UV triangle.
-        for (let i = 0; i < 2; ++i) {
-          const v = pUV[i];
-          if (isNaN(v) || v > 0x7FFFFFFF || v < -2147483648) {
-            this._predictedValue[i] = -2147483648;
-          } else {
-            this._predictedValue[i] = v | 0;
-          }
-        }
-        return true;
-      }
-
-      const tipPos = this._getPositionForEntryId(dataId);
-      const nextPos = this._getPositionForEntryId(nextDataId);
-      const prevPos = this._getPositionForEntryId(prevDataId);
-
-      const pn = [
-        prevPos[0] - nextPos[0],
-        prevPos[1] - nextPos[1],
-        prevPos[2] - nextPos[2]
-      ];
-      const cn = [
-        tipPos[0] - nextPos[0],
-        tipPos[1] - nextPos[1],
-        tipPos[2] - nextPos[2]
-      ];
-
-      const pnNorm2Squared = pn[0] * pn[0] + pn[1] * pn[1] + pn[2] * pn[2];
-
-      let s, t;
-      if (this._version < 0x0102 || pnNorm2Squared > 0) {
-        s = (pn[0] * cn[0] + pn[1] * cn[1] + pn[2] * cn[2]) / pnNorm2Squared;
-        // t = |cn - pn * s| / |pn|
-        const diff = [cn[0] - pn[0] * s, cn[1] - pn[1] * s, cn[2] - pn[2] * s];
-        const diffNorm2 = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
-        t = Math.sqrt(diffNorm2 / pnNorm2Squared);
-      } else {
-        s = 0;
-        t = 0;
-      }
-
-      const pnUV = [pUV[0] - nUV[0], pUV[1] - nUV[1]];
-      const pnus = pnUV[0] * s + nUV[0];
-      const pnut = pnUV[0] * t;
-      const pnvs = pnUV[1] * s + nUV[1];
-      const pnvt = pnUV[1] * t;
-
-      if (this._orientations.length === 0) return false;
-
-      const orientation = this._orientations[this._orientations.length - 1];
-      this._orientations.length--;
-
-      let predictedU, predictedV;
-      if (orientation) {
-        predictedU = pnus - pnvt;
-        predictedV = pnvs + pnut;
-      } else {
-        predictedU = pnus + pnvt;
-        predictedV = pnvs - pnut;
-      }
-
-      const u = Math.floor(predictedU + 0.5);
-      if (isNaN(u) || u > 0x7FFFFFFF || u < -2147483648) {
-        this._predictedValue[0] = -2147483648;
-      } else {
-        this._predictedValue[0] = u | 0;
-      }
-      const v = Math.floor(predictedV + 0.5);
-      if (isNaN(v) || v > 0x7FFFFFFF || v < -2147483648) {
-        this._predictedValue[1] = -2147483648;
-      } else {
-        this._predictedValue[1] = v | 0;
-      }
-
-      return true;
-    }
-
-    // Fallback to delta coding when a neighbor corner is unavailable.
-    let dataOffset = 0;
-    if (prevDataId < dataId) {
-      dataOffset = prevDataId * this._numComponents;
-    }
-    if (nextDataId < dataId) {
-      dataOffset = nextDataId * this._numComponents;
-    } else {
-      if (dataId > 0) {
-        dataOffset = (dataId - 1) * this._numComponents;
-      } else {
-        for (let i = 0; i < this._numComponents; ++i) {
-          this._predictedValue[i] = 0;
-        }
-        return true;
-      }
-    }
-    for (let i = 0; i < this._numComponents; ++i) {
-      this._predictedValue[i] = data[dataOffset + i];
     }
     return true;
   }
@@ -4348,11 +4091,6 @@ function createMeshPredictionSchemeDecoder(method, attribute, transform,
         attribute, transform, meshData
       );
 
-    case PredictionSchemeMethod.MESH_PREDICTION_TEX_COORDS_DEPRECATED:
-      return new MeshPredictionSchemeTexCoordsDecoder(
-        attribute, transform, meshData, bitstreamVersion
-      );
-
     case PredictionSchemeMethod.MESH_PREDICTION_TEX_COORDS_PORTABLE:
       return new MeshPredictionSchemeTexCoordsPortableDecoder(
         attribute, transform, meshData
@@ -4503,10 +4241,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
   }
 
   transformAttributeToOriginalFormat(pointIds) {
-    if (this.decoder &&
-        this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      return true; // Don't revert the transform here for older files.
-    }
     return this._storeValues(pointIds.length);
   }
 
@@ -4541,14 +4275,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
 
     if (!this.decodeIntegerValues(pointIds, buffer)) {
       return false;
-    }
-
-    if (this.decoder &&
-        this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      // For older files, revert the transform right after we decode the data.
-      if (!this._storeValues(pointIds.length)) {
-        return false;
-      }
     }
     return true;
   }
@@ -4965,19 +4691,9 @@ class SequentialQuantizationAttributeDecoder extends SequentialIntegerAttributeD
     return true;
   }
 
-  decodeIntegerValues(pointIds, buffer) {
-    if (this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0) &&
-        !this._decodeQuantizedDataInfo()) {
-      return false;
-    }
-    return super.decodeIntegerValues(pointIds, buffer);
-  }
-
   decodeDataNeededByPortableTransform(pointIds, buffer) {
-    if (this.decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 0)) {
-      if (!this._decodeQuantizedDataInfo()) {
-        return false;
-      }
+    if (!this._decodeQuantizedDataInfo()) {
+      return false;
     }
 
     return this._quantizationTransform.transferToAttribute(this.portableAttribute);
@@ -5265,12 +4981,6 @@ class PredictionSchemeNormalOctahedronDecodingTransform extends PredictionScheme
     const maxQuantizedValue = buffer.decodeInt32();
     if (maxQuantizedValue === undefined) return false;
 
-    if (buffer.bitstreamVersion < 0x0202) { // DRACO_BITSTREAM_VERSION(2, 2)
-      // center_value is read but ignored.
-      const centerValue = buffer.decodeInt32();
-      if (centerValue === undefined) return false;
-    }
-
     return this._setMaxQuantizedValue(maxQuantizedValue);
   }
 
@@ -5390,23 +5100,10 @@ class SequentialNormalAttributeDecoder extends SequentialIntegerAttributeDecoder
     return 2;
   }
 
-  decodeIntegerValues(pointIds, buffer) {
-    if (this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      // Older bitstreams have no portableAttribute decoded yet, so we pass the
-      // raw attribute to decodeParameters() instead.
-      if (!this._octahedralTransform.decodeParameters(this.attribute, buffer)) {
-        return false;
-      }
-    }
-    return super.decodeIntegerValues(pointIds, buffer);
-  }
-
   decodeDataNeededByPortableTransform(pointIds, buffer) {
-    if (this.decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 0)) {
-      if (!this._octahedralTransform.decodeParameters(
-            this.getPortableAttribute(), buffer)) {
-        return false;
-      }
+    if (!this._octahedralTransform.decodeParameters(
+          this.getPortableAttribute(), buffer)) {
+      return false;
     }
 
     return this._octahedralTransform.transferToAttribute(this.portableAttribute);
@@ -5612,17 +5309,10 @@ class MeshSequentialDecoder extends MeshDecoder {
     let numFaces;
     let numPoints;
 
-    if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      numFaces = this.buffer().decodeUint32();
-      if (numFaces === undefined) return false;
-      numPoints = this.buffer().decodeUint32();
-      if (numPoints === undefined) return false;
-    } else {
-      numFaces = decodeVarint(this.buffer());
-      if (numFaces === undefined) return false;
-      numPoints = decodeVarint(this.buffer());
-      if (numPoints === undefined) return false;
-    }
+    numFaces = decodeVarint(this.buffer());
+    if (numFaces === undefined) return false;
+    numPoints = decodeVarint(this.buffer());
+    if (numPoints === undefined) return false;
 
     // Compressed sequential encoding can only handle (2^32 - 1) / 3 indices.
     if (numFaces > 0xFFFFFFFF / 3) {
@@ -5662,8 +5352,7 @@ class MeshSequentialDecoder extends MeshDecoder {
           }
           this.mesh().addFace(face);
         }
-      } else if (numPoints < (1 << 21) &&
-                 this.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 2)) {
+      } else if (numPoints < (1 << 21)) {
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {
@@ -5767,18 +5456,6 @@ class TopologySplitEventData {
   }
 
 }
-
-// Info about the first symbol that reached a vertex of a so-far unvisited hole.
-class HoleEventData {
-
-  constructor(symbolId) {
-    this.symbolId = symbolId !== undefined ? symbolId : 0;
-  }
-
-}
-
-// Valence-based edgebreaker coding modes.
-const EDGEBREAKER_VALENCE_MODE_2_7 = 0;
 
 // compression/mesh/traverser/DepthFirstTraverser.js - ported from compression/mesh/traverser/depth_first_traverser.h
 
@@ -6617,13 +6294,6 @@ class MeshAttributeCornerTable {
 
 const kInvalidCornerIndex = -1;
 
-// varint in bitstream >= 2.0, raw little-endian uint32 below it; undefined on short read.
-function decodeVarintOrUint32(buffer, bitstreamVersion) {
-  return bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)
-    ? buffer.decodeUint32()
-    : decodeVarint(buffer);
-}
-
 // Edgebreaker decoder; based on Isenburg et al'02 "Spirale Reversi: Reverse
 // decoding of the Edgebreaker encoding".
 class MeshEdgebreakerDecoderImpl {
@@ -6633,7 +6303,6 @@ class MeshEdgebreakerDecoderImpl {
     this._cornerTable = null;
     this._cornerTraversalStack = [];
     this._topologySplitData = [];
-    this._holeEventData = [];
     this._initFaceConfigurations = [];
     this._initCorners = [];
     this._isVertHole = [];
@@ -6717,14 +6386,10 @@ class MeshEdgebreakerDecoderImpl {
       this._posDataDecoderId = attDecoderId;
     }
 
-    let traversalMethod = MeshTraversalMethod.MESH_TRAVERSAL_DEPTH_FIRST;
-    if (this._decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(1, 2)) {
-      const traversalMethodEncoded = this._decoder.buffer().decodeUint8();
-      if (traversalMethodEncoded === undefined) return false;
-      if (traversalMethodEncoded >= MeshTraversalMethod.NUM_TRAVERSAL_METHODS) {
-        return false;
-      }
-      traversalMethod = traversalMethodEncoded;
+    const traversalMethod = this._decoder.buffer().decodeUint8();
+    if (traversalMethod === undefined) return false;
+    if (traversalMethod >= MeshTraversalMethod.NUM_TRAVERSAL_METHODS) {
+      return false;
     }
 
     const mesh = this._decoder.mesh();
@@ -6783,20 +6448,11 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   decodeConnectivity() {
-    // Bitstreams < 2.2 prefix an unused new-vertex count here; read only to advance the cursor.
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      const numNewVerts = decodeVarintOrUint32(
-        this._decoder.buffer(), this._decoder.bitstreamVersion());
-      if (numNewVerts === undefined) return false;
-    }
-
-    const numEncodedVertices = decodeVarintOrUint32(
-      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    const numEncodedVertices = decodeVarint(this._decoder.buffer());
     if (numEncodedVertices === undefined) return false;
     this._numEncodedVertices = numEncodedVertices;
 
-    const numFaces = decodeVarintOrUint32(
-      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    const numFaces = decodeVarint(this._decoder.buffer());
     if (numFaces === undefined) return false;
 
     if (numFaces > 0x7FFFFFFF / 3) {
@@ -6818,8 +6474,7 @@ class MeshEdgebreakerDecoderImpl {
     const numAttributeData = this._decoder.buffer().decodeUint8();
     if (numAttributeData === undefined) return false;
 
-    const numEncodedSymbols = decodeVarintOrUint32(
-      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    const numEncodedSymbols = decodeVarint(this._decoder.buffer());
     if (numEncodedSymbols === undefined) return false;
 
     if (numFaces < numEncodedSymbols) {
@@ -6830,8 +6485,7 @@ class MeshEdgebreakerDecoderImpl {
       return false;
     }
 
-    const numEncodedSplitSymbols = decodeVarintOrUint32(
-      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    const numEncodedSplitSymbols = decodeVarint(this._decoder.buffer());
     if (numEncodedSplitSymbols === undefined) return false;
 
     if (numEncodedSplitSymbols > numEncodedSymbols) {
@@ -6840,7 +6494,6 @@ class MeshEdgebreakerDecoderImpl {
     this._cornerTable = new CornerTable();
     this._vertexTraversalCache = new Map();
     this._topologySplitData = [];
-    this._holeEventData = [];
     this._initFaceConfigurations = [];
     this._initCorners = [];
 
@@ -6863,31 +6516,8 @@ class MeshEdgebreakerDecoderImpl {
     this._isVertHole = new Uint8Array(
       this._numEncodedVertices + numEncodedSplitSymbols).fill(1);
 
-    let topologySplitDecodedBytes = -1;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      const encodedConnectivitySize = decodeVarintOrUint32(
-        this._decoder.buffer(), this._decoder.bitstreamVersion());
-      if (encodedConnectivitySize === undefined) return false;
-      if (encodedConnectivitySize === 0 ||
-          encodedConnectivitySize > this._decoder.buffer().remainingSize) {
-        return false;
-      }
-      const eventBuffer = new DecoderBuffer();
-      const head = this._decoder.buffer().dataHead;
-      eventBuffer.init(
-        head.subarray(encodedConnectivitySize),
-        this._decoder.buffer().remainingSize - encodedConnectivitySize,
-        this._decoder.buffer().bitstreamVersion
-      );
-      topologySplitDecodedBytes =
-        this._decodeHoleAndTopologySplitEvents(eventBuffer);
-      if (topologySplitDecodedBytes === -1) {
-        return false;
-      }
-    } else {
-      if (this._decodeHoleAndTopologySplitEvents(this._decoder.buffer()) === -1) {
-        return false;
-      }
+    if (this._decodeHoleAndTopologySplitEvents(this._decoder.buffer()) === -1) {
+      return false;
     }
 
     this._traversalDecoder.init(this);
@@ -6912,21 +6542,8 @@ class MeshEdgebreakerDecoderImpl {
       this._decoder.buffer().bitstreamVersion
     );
 
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      // Skip topology split data that was already decoded earlier.
-      this._decoder.buffer().advance(topologySplitDecodedBytes);
-    }
-
     if (this._attributeData.length > 0) {
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 1)) {
-        for (let ci = 0; ci < this._cornerTable.numCorners(); ci += 3) {
-          if (!this._decodeAttributeConnectivitiesOnFaceLegacy(ci)) {
-            return false;
-          }
-        }
-      } else {
-        this._decodeAttributeConnectivities();
-      }
+      this._decodeAttributeConnectivities();
     }
     this._traversalDecoder.done();
 
@@ -7339,113 +6956,39 @@ class MeshEdgebreakerDecoderImpl {
     return numVertices;
   }
 
+  // Hole events were removed from the bitstream in 2.1; for 2.2 this only
+  // decodes the inline topology-split events.
   _decodeHoleAndTopologySplitEvents(decoderBuffer) {
-    const numTopologySplits = decodeVarintOrUint32(
-      decoderBuffer, this._decoder.bitstreamVersion());
+    const numTopologySplits = decodeVarint(decoderBuffer);
     if (numTopologySplits === undefined) return -1;
 
     if (numTopologySplits > 0) {
       if (numTopologySplits > this._cornerTable.numFaces()) {
         return -1;
       }
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(1, 2)) {
-        for (let i = 0; i < numTopologySplits; ++i) {
-          const eventData = new TopologySplitEventData();
-          eventData.splitSymbolId = decoderBuffer.decodeUint32();
-          if (eventData.splitSymbolId === undefined) return -1;
-          eventData.sourceSymbolId = decoderBuffer.decodeUint32();
-          if (eventData.sourceSymbolId === undefined) return -1;
-          const edgeData = decoderBuffer.decodeUint8();
-          if (edgeData === undefined) return -1;
-          eventData.sourceEdge = edgeData & 1;
-          this._topologySplitData.push(eventData);
-        }
-      } else {
-        // Source and split symbol ids use delta + varint coding.
-        let lastSourceSymbolId = 0;
-        for (let i = 0; i < numTopologySplits; ++i) {
-          const eventData = new TopologySplitEventData();
-          const delta = decodeVarint(decoderBuffer);
-          if (delta === undefined) return -1;
-          eventData.sourceSymbolId = delta + lastSourceSymbolId;
-          const delta2 = decodeVarint(decoderBuffer);
-          if (delta2 === undefined) return -1;
-          if (delta2 > eventData.sourceSymbolId) return -1;
-          eventData.splitSymbolId = eventData.sourceSymbolId - delta2;
-          lastSourceSymbolId = eventData.sourceSymbolId;
-          this._topologySplitData.push(eventData);
-        }
-        // Split edges come from a direct bit decoder.
-        decoderBuffer.startBitDecoding(false);
-        for (let i = 0; i < numTopologySplits; ++i) {
-          let edgeData;
-          if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-            edgeData = decoderBuffer.decodeLeastSignificantBits32(2);
-          } else {
-            edgeData = decoderBuffer.decodeLeastSignificantBits32(1);
-          }
-          this._topologySplitData[i].sourceEdge = edgeData & 1;
-        }
-        decoderBuffer.endBitDecoding();
+      // Source and split symbol ids use delta + varint coding.
+      let lastSourceSymbolId = 0;
+      for (let i = 0; i < numTopologySplits; ++i) {
+        const eventData = new TopologySplitEventData();
+        const delta = decodeVarint(decoderBuffer);
+        if (delta === undefined) return -1;
+        eventData.sourceSymbolId = delta + lastSourceSymbolId;
+        const delta2 = decodeVarint(decoderBuffer);
+        if (delta2 === undefined) return -1;
+        if (delta2 > eventData.sourceSymbolId) return -1;
+        eventData.splitSymbolId = eventData.sourceSymbolId - delta2;
+        lastSourceSymbolId = eventData.sourceSymbolId;
+        this._topologySplitData.push(eventData);
       }
-    }
-
-    let numHoleEvents = 0;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numHoleEvents = decoderBuffer.decodeUint32();
-      if (numHoleEvents === undefined) return -1;
-    } else if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 1)) {
-      numHoleEvents = decodeVarint(decoderBuffer);
-      if (numHoleEvents === undefined) return -1;
-    }
-
-    if (numHoleEvents > 0) {
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(1, 2)) {
-        for (let i = 0; i < numHoleEvents; ++i) {
-          const symbolId = decoderBuffer.decodeInt32();
-          if (symbolId === undefined) return -1;
-          this._holeEventData.push(new HoleEventData(symbolId));
-        }
-      } else {
-        let lastSymbolId = 0;
-        for (let i = 0; i < numHoleEvents; ++i) {
-          const delta = decodeVarint(decoderBuffer);
-          if (delta === undefined) return -1;
-          const eventData = new HoleEventData(delta + lastSymbolId);
-          lastSymbolId = eventData.symbolId;
-          this._holeEventData.push(eventData);
-        }
+      // Split edges come from a direct bit decoder.
+      decoderBuffer.startBitDecoding(false);
+      for (let i = 0; i < numTopologySplits; ++i) {
+        const edgeData = decoderBuffer.decodeLeastSignificantBits32(1);
+        this._topologySplitData[i].sourceEdge = edgeData & 1;
       }
+      decoderBuffer.endBitDecoding();
     }
     return decoderBuffer.decodedSize;
-  }
-
-  _decodeAttributeConnectivitiesOnFaceLegacy(corner) {
-    const corners = [
-      corner,
-      this._cornerTable.next(corner),
-      this._cornerTable.previous(corner)
-    ];
-
-    for (let c = 0; c < 3; ++c) {
-      const oppCorner = this._cornerTable.opposite(corners[c]);
-      if (oppCorner === kInvalidCornerIndex) {
-        // Boundary edge is automatically an attribute seam.
-        for (let i = 0; i < this._attributeData.length; ++i) {
-          const ad = this._attributeData[i];
-          ad.attributeSeamCorners[ad.numSeamCorners++] = corners[c];
-        }
-        continue;
-      }
-      for (let i = 0; i < this._attributeData.length; ++i) {
-        const isSeam = this._traversalDecoder.decodeAttributeSeam(i);
-        if (isSeam) {
-          const ad = this._attributeData[i];
-          ad.attributeSeamCorners[ad.numSeamCorners++] = corners[c];
-        }
-      }
-    }
-    return true;
   }
 
   // Decode every face's attribute seam connectivity in one flat pass over
@@ -7846,7 +7389,6 @@ class MeshEdgebreakerTraversalDecoder {
     this._buffer = new DecoderBuffer();
     this._symbolBuffer = new DecoderBuffer();
     this._startFaceDecoder = null; // RAnsBitDecoder
-    this._startFaceBuffer = new DecoderBuffer();
     this._attributeConnectivityDecoders = null; // Array of RAnsBitDecoder
     this._numAttributeData = 0;
     this._decoderImpl = null;
@@ -7893,13 +7435,8 @@ class MeshEdgebreakerTraversalDecoder {
   }
 
   decodeStartFaceConfiguration() {
-    if (this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      const faceConfiguration = this._startFaceBuffer.decodeLeastSignificantBits32(1);
-      return faceConfiguration ? true : false;
-    } else {
-      if (this._startFaceDecoder === null) return false;
-      return this._startFaceDecoder.decodeNextBit() ? true : false;
-    }
+    if (this._startFaceDecoder === null) return false;
+    return this._startFaceDecoder.decodeNextBit() ? true : false;
   }
 
   decodeSymbol() {
@@ -7925,12 +7462,8 @@ class MeshEdgebreakerTraversalDecoder {
     if (this._symbolBuffer.bitDecoderActive) {
       this._symbolBuffer.endBitDecoding();
     }
-    if (this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      this._startFaceBuffer.endBitDecoding();
-    } else {
-      if (this._startFaceDecoder !== null) {
-        this._startFaceDecoder.endDecoding();
-      }
+    if (this._startFaceDecoder !== null) {
+      this._startFaceDecoder.endDecoding();
     }
   }
 
@@ -7962,28 +7495,7 @@ class MeshEdgebreakerTraversalDecoder {
   }
 
   decodeStartFaces() {
-    if (this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      this._startFaceBuffer.init(
-        this._buffer.dataHead,
-        this._buffer.remainingSize,
-        this._buffer.bitstreamVersion
-      );
-      const traversalSize = this._startFaceBuffer.startBitDecoding(true);
-      if (traversalSize === undefined) {
-        return false;
-      }
-      this._buffer.init(
-        this._startFaceBuffer.dataHead,
-        this._startFaceBuffer.remainingSize,
-        this._startFaceBuffer.bitstreamVersion
-      );
-      if (traversalSize > this._buffer.remainingSize) {
-        return false;
-      }
-      this._buffer.advance(traversalSize);
-      return true;
-    }
-    // Version >= 2.2 codes start faces with an RAnsBitDecoder.
+    // Start faces are coded with an RAnsBitDecoder.
     try {
       this._startFaceDecoder = this._createRAnsBitDecoder();
       if (this._startFaceDecoder === null) {
@@ -8159,12 +7671,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
   }
 
   start(outBuffer) {
-    if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      if (!this.decodeTraversalSymbols()) {
-        return false;
-      }
-    }
-
     if (!this.decodeStartFaces()) {
       return false;
     }
@@ -8177,30 +7683,8 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
       this.buffer.bitstreamVersion
     );
 
-    if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      let numSplitSymbols;
-      if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        numSplitSymbols = outBuffer.decodeUint32();
-        if (numSplitSymbols === undefined) return false;
-      } else {
-        numSplitSymbols = decodeVarint(outBuffer);
-        if (numSplitSymbols === undefined) return false;
-      }
-      if (numSplitSymbols >= this._numVertices) {
-        return false;
-      }
-      const mode = outBuffer.decodeInt8();
-      if (mode === undefined) return false;
-      if (mode === EDGEBREAKER_VALENCE_MODE_2_7) {
-        this._minValence = 2;
-        this._maxValence = 7;
-      } else {
-        return false; // Unsupported mode.
-      }
-    } else {
-      this._minValence = 2;
-      this._maxValence = 7;
-    }
+    this._minValence = 2;
+    this._maxValence = 7;
 
     if (this._numVertices < 0) {
       return false;
@@ -8247,12 +7731,8 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
       }
       this._lastSymbol = edgeBreakerSymbolToTopologyId[symbolId];
     } else {
-      if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-        this._lastSymbol = super.decodeSymbol();
-      } else {
-        // The first symbol is always E.
-        this._lastSymbol = TOPOLOGY_E;
-      }
+      // The first symbol is always E.
+      this._lastSymbol = TOPOLOGY_E;
     }
     return this._lastSymbol;
   }
@@ -8497,7 +7977,8 @@ class Decoder {
     }
 
     const decoder = createMeshDecoder(result.header.encoderMethod);
-    return decoder.decodeMesh(this.options_, inBuffer, outGeometry);
+    const status = decoder.decodeMesh(this.options_, inBuffer, outGeometry);
+    return { ok: status.ok(), message: status.errorMsg };
 
   }
 
