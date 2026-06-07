@@ -10,27 +10,24 @@ JavaScript.
 
 Why a JS port instead of the official WASM build?
 
-- **Small** — ~22 KB gzipped (69 KB minified), vs ~100 KB gzipped for the
-  `draco3d` WASM decoder + glue (~4.6× smaller).
+- **Small** — ~20 KB gzipped (62 KB minified), vs ~100 KB gzipped for the
+  `draco3d` WASM decoder + glue (~5× smaller).
 - **Simple to ship** — one ES module. No `.wasm` fetch, no worker/glue setup,
   no cross-origin or CSP headaches.
-- **Fast** — on substantial meshes it's within ~1.0–1.4× of the WASM decoder,
-  and effectively at parity on the largest ones, with byte-for-byte identical
-  output (see [Correctness](#correctness)).
+- **Fast** — within ~1.0–1.4× of the WASM decoder on substantial meshes, and
+  effectively at parity on the largest, with byte-for-byte identical output
+  (see [Correctness](#correctness)).
 
-On the largest meshes (e.g. a 358k-face glTF) the two are about even; WASM keeps
-a lead of up to ~1.35× on smaller and mid-size meshes. You trade, at most, a
-modest amount of decode speed for a much smaller, simpler-to-deploy loader.
-
-This trade pays off most on spotty mobile connections, where transferring
-~100 KB takes much longer than ~20 KB. Even when JS parsing is slower than WASM,
-the model often **displays sooner** end-to-end: the network savings outweigh the
-extra decode time.
+You trade, at most, a modest amount of decode speed for a much smaller,
+simpler-to-deploy loader — a trade that pays off most on spotty mobile
+connections, where transferring ~100 KB takes far longer than ~20 KB. Even when
+JS decode is slower than WASM, the model often **displays sooner** end-to-end:
+the network savings outweigh the extra decode time.
 
 ## Status
 
 Targets **Draco bitstream version 2.2** — what current Draco encoders and glTF
-exporters produce.
+exporters produce. Older bitstreams (< 2.2) are rejected with an error.
 
 Not implemented:
 
@@ -38,7 +35,6 @@ Not implemented:
   decoded.
 - **Metadata content** — geometry metadata is parsed (so metadata-bearing files
   still decode correctly) but is not surfaced on the returned geometry.
-- **Older bitstreams** (< 2.2) — not a support goal, though many still decode.
 
 ## Usage
 
@@ -82,7 +78,7 @@ decoded geometry.
 ```
 src/          decoder source, mirroring draco/src/draco/ file-for-file
 build/        bundled output (build/DRACOLoader.js + .min.js)
-tools/        bench.mjs (timing + regression) and verify-wasm.mjs (WASM parity)
+tools/        bench (timing + regression), verify-wasm / verify-bundle (parity)
 libs/         three.js's WASM Draco loader, vendored for the comparison
 samples/      .drc and Draco-compressed .glb test models
 index.html    JS-vs-WASM comparison viewer
