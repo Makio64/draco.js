@@ -1,14 +1,12 @@
 // compression/mesh/MeshEdgebreakerTraversalValenceDecoder.js - ported from mesh/mesh_edgebreaker_traversal_valence_decoder.h
 
 import { MeshEdgebreakerTraversalDecoder } from './MeshEdgebreakerTraversalDecoder.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 import { decodeVarint } from '../../core/VarintDecoding.js';
 import { decodeSymbols } from '../entropy/SymbolDecoding.js';
 import {
   TOPOLOGY_C, TOPOLOGY_S, TOPOLOGY_L, TOPOLOGY_R, TOPOLOGY_E,
   TOPOLOGY_INVALID,
-  edgeBreakerSymbolToTopologyId,
-  EDGEBREAKER_VALENCE_MODE_2_7
+  edgeBreakerSymbolToTopologyId
 } from './MeshEdgebreakerShared.js';
 
 // Decoder for traversal encoded with MeshEdgebreakerTraversalValenceEncoder.
@@ -40,12 +38,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
   }
 
   start(outBuffer) {
-    if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      if (!this.decodeTraversalSymbols()) {
-        return false;
-      }
-    }
-
     if (!this.decodeStartFaces()) {
       return false;
     }
@@ -58,41 +50,16 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
       this.buffer.bitstreamVersion
     );
 
-    if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      let numSplitSymbols;
-      if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        numSplitSymbols = outBuffer.decodeUint32();
-        if (numSplitSymbols === undefined) return false;
-      } else {
-        numSplitSymbols = decodeVarint(outBuffer);
-        if (numSplitSymbols === undefined) return false;
-      }
-      if (numSplitSymbols >= this._numVertices) {
-        return false;
-      }
-      const mode = outBuffer.decodeInt8();
-      if (mode === undefined) return false;
-      if (mode === EDGEBREAKER_VALENCE_MODE_2_7) {
-        this._minValence = 2;
-        this._maxValence = 7;
-      } else {
-        // Unsupported mode.
-        return false;
-      }
-    } else {
-      this._minValence = 2;
-      this._maxValence = 7;
-    }
+    this._minValence = 2;
+    this._maxValence = 7;
 
     if (this._numVertices < 0) {
       return false;
     }
-    // Set the valences of all initial vertices to 0.
     this._vertexValences = new Array(this._numVertices).fill(0);
 
     const numUniqueValences = this._maxValence - this._minValence + 1;
 
-    // Decode all symbols for all contexts.
     this._contextSymbols = new Array(numUniqueValences);
     this._contextCounters = new Array(numUniqueValences);
 
@@ -120,7 +87,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
   }
 
   decodeSymbol() {
-    // First check if we have a valid context.
     if (this._activeContext !== -1) {
       const contextCounter = --this._contextCounters[this._activeContext];
       if (contextCounter < 0) {
@@ -132,14 +98,8 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
       }
       this._lastSymbol = edgeBreakerSymbolToTopologyId[symbolId];
     } else {
-      if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-        // We don't have a predicted symbol or the symbol was mis-predicted.
-        // Decode it directly.
-        this._lastSymbol = super.decodeSymbol();
-      } else {
-        // The first symbol must be E.
-        this._lastSymbol = TOPOLOGY_E;
-      }
+      // The first symbol is always E.
+      this._lastSymbol = TOPOLOGY_E;
     }
     return this._lastSymbol;
   }
@@ -149,7 +109,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
     const next = ct.next(corner);
     const prev = ct.previous(corner);
 
-    // Update valences.
     switch (this._lastSymbol) {
       case TOPOLOGY_C:
       case TOPOLOGY_S:
@@ -175,8 +134,7 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
         break;
     }
 
-    // Compute the new context that is going to be used to decode the next
-    // symbol.
+    // The clamped valence of the next vertex selects the entropy context.
     const activeValence = this._vertexValences[ct.vertex(next)];
     let clampedValence;
     if (activeValence < this._minValence) {
@@ -190,7 +148,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
   }
 
   mergeVertices(dest, source) {
-    // Update valences on the merged vertices.
     this._vertexValences[dest] += this._vertexValences[source];
   }
 

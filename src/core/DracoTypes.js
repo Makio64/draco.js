@@ -40,20 +40,3 @@ export function dataTypeLength(dt) {
       return -1;
   }
 }
-
-export function isDataTypeIntegral(dt) {
-  switch (dt) {
-    case DataType.INT8:
-    case DataType.UINT8:
-    case DataType.INT16:
-    case DataType.UINT16:
-    case DataType.INT32:
-    case DataType.UINT32:
-    case DataType.INT64:
-    case DataType.UINT64:
-    case DataType.BOOL:
-      return true;
-    default:
-      return false;
-  }
-}

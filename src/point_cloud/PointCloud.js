@@ -1,9 +1,6 @@
 // point_cloud/PointCloud.js - ported from point_cloud/point_cloud.h/cc
 
-import { GeometryMetadata } from '../metadata/GeometryMetadata.js';
-
-// Mirrors GeometryAttribute::Type enum values used for named attribute indexing.
-// These must match the C++ GeometryAttribute::Type enum.
+// Must match the C++ GeometryAttribute::Type enum count.
 const NAMED_ATTRIBUTES_COUNT = 8;
 
 class PointCloud {
@@ -12,9 +9,8 @@ class PointCloud {
 
     this.num_points_ = 0;
     this.attributes_ = [];
-    this.metadata_ = null;
 
-    // Array of arrays: named_attribute_index_[type] = [att_id, ...]
+    // named_attribute_index_[type] = [att_id, ...]
     this.named_attribute_index_ = [];
     for (let i = 0; i < NAMED_ATTRIBUTES_COUNT; ++i) {
 
@@ -24,7 +20,6 @@ class PointCloud {
 
   }
 
-  // Returns the number of named attributes of a given type.
   numNamedAttributes(type) {
 
     if (type < 0 || type >= NAMED_ATTRIBUTES_COUNT) {
@@ -35,7 +30,6 @@ class PointCloud {
 
   }
 
-  // Returns attribute id of the i-th named attribute with a given type or -1.
   getNamedAttributeId(type, i) {
 
     if (i === undefined) i = 0;
@@ -47,7 +41,6 @@ class PointCloud {
 
   }
 
-  // Returns the first or i-th named attribute of a given type or null.
   getNamedAttribute(type, i) {
 
     if (i === undefined) i = 0;
@@ -60,23 +53,6 @@ class PointCloud {
 
   }
 
-  // Returns the named attribute with a given unique id.
-  getNamedAttributeByUniqueId(type, uniqueId) {
-
-    const namedIndex = this.named_attribute_index_[type];
-    for (let i = 0; i < namedIndex.length; ++i) {
-
-      if (this.attributes_[namedIndex[i]].uniqueId === uniqueId) {
-        return this.attributes_[namedIndex[i]];
-      }
-
-    }
-
-    return null;
-
-  }
-
-  // Returns the attribute with a given unique id.
   getAttributeByUniqueId(uniqueId) {
 
     const attId = this.getAttributeIdByUniqueId(uniqueId);
@@ -114,7 +90,6 @@ class PointCloud {
 
   }
 
-  // Adds a new attribute to the point cloud. Returns the attribute id.
   addAttribute(pa) {
 
     this.setAttribute(this.attributes_.length, pa);
@@ -122,12 +97,10 @@ class PointCloud {
 
   }
 
-  // Assigns an attribute to a given attribute id.
   setAttribute(attId, pa) {
 
     if (this.attributes_.length <= attId) {
 
-      // Resize the array to accommodate the new attribute id.
       while (this.attributes_.length <= attId) {
         this.attributes_.push(null);
       }
@@ -145,46 +118,6 @@ class PointCloud {
 
   }
 
-  deleteAttribute(attId) {
-
-    if (attId < 0 || attId >= this.attributes_.length) {
-      return;
-    }
-
-    const attType = this.attributes_[attId].attributeType();
-    const uniqueId = this.attributes_[attId].uniqueId;
-    this.attributes_.splice(attId, 1);
-
-    // Remove metadata if applicable.
-    if (this.metadata_) {
-      this.metadata_.deleteAttributeMetadataByUniqueId(uniqueId);
-    }
-
-    // Remove from named attribute list.
-    if (attType < NAMED_ATTRIBUTES_COUNT) {
-
-      const idx = this.named_attribute_index_[attType].indexOf(attId);
-      if (idx !== -1) {
-        this.named_attribute_index_[attType].splice(idx, 1);
-      }
-
-    }
-
-    // Update ids of all subsequent named attributes.
-    for (let i = 0; i < NAMED_ATTRIBUTES_COUNT; ++i) {
-
-      for (let j = 0; j < this.named_attribute_index_[i].length; ++j) {
-
-        if (this.named_attribute_index_[i][j] > attId) {
-          this.named_attribute_index_[i][j]--;
-        }
-
-      }
-
-    }
-
-  }
-
   numPoints() {
 
     return this.num_points_;
@@ -194,18 +127,6 @@ class PointCloud {
   setNumPoints(num) {
 
     this.num_points_ = num;
-
-  }
-
-  setMetadata(metadata) {
-
-    this.metadata_ = metadata;
-
-  }
-
-  getMetadata() {
-
-    return this.metadata_;
 
   }
 

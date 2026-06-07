@@ -2,30 +2,39 @@
 
 A pure-JavaScript [Draco](https://github.com/google/draco) mesh **loader** for
 three.js. It's a drop-in `DRACOLoader` that decodes Draco-compressed triangle
-meshes (the EdgeBreaker connectivity used by glTF's `KHR_draco_mesh_compression`)
-directly in JavaScript.
+meshes — both the EdgeBreaker connectivity used by glTF's
+`KHR_draco_mesh_compression` and Draco's sequential connectivity — directly in
+JavaScript.
 
 **[Live demo →](https://mrdoob.github.io/draco.js/)**
 
 Why a JS port instead of the official WASM build?
 
-- **Small** — ~24 KB gzipped, vs ~104 KB for the `draco3d` WASM decoder + glue
-  (~4.3× smaller).
-- **Simple to ship** — one ES module. No `.wasm` fetch, no worker/glue setup,
-  no cross-origin or CSP headaches.
-- **Fast** — within ~1.4–1.6× of the WASM decoder on substantial meshes (it
-  decodes byte-for-byte identical output; see [Correctness](#correctness)).
+- **Small** — ~20 KB gzipped (66 KB minified), vs ~100 KB gzipped for the
+  `draco3d` WASM decoder + glue (~5× smaller).
+- **Simple to ship** — one ES module. No `.wasm` fetch, no cross-origin or CSP
+  headaches. The same file is also the decode worker, so even the parallel path
+  needs no separate worker file or glue.
+- **Fast** — within ~1.0–1.4× of the WASM decoder per mesh, byte-for-byte
+  identical output, and a built-in worker pool that decodes multi-primitive
+  loads in parallel and off the main thread ([see below](#web-workers)).
 
-WASM is still faster in absolute terms — this trades a modest amount of decode
-speed for a much smaller, simpler-to-deploy loader.
+You trade decode speed for a much smaller, simpler loader. This pays
+off most on pages with a single model, where the decoder is a one-time cost that
+isn't amortized across many meshes — the model often **displays sooner**
+end-to-end because the network savings outweigh the extra decode time.
 
 ## Status
 
-The EdgeBreaker triangle-mesh path is complete and is what glTF/Draco content
-uses in practice (positions, normals, colors, texture coords, generic
-attributes; quantization, octahedral-normal, and parallelogram/multi-parallelogram
-prediction). Point-cloud, KD-tree, and the sequential connectivity paths, plus
-metadata decoding, are not implemented yet.
+Targets **Draco bitstream version 2.2** — what current Draco encoders and glTF
+exporters produce. Older bitstreams (< 2.2) are rejected with an error.
+
+Not implemented:
+
+- **Point-cloud decoding** (sequential and KD-tree) — only triangle meshes are
+  decoded.
+- **Metadata content** — geometry metadata is parsed (so metadata-bearing files
+  still decode correctly) but is not surfaced on the returned geometry.
 
 ## Usage
 
@@ -49,28 +58,40 @@ It can also load standalone `.drc` files:
 const geometry = await new DRACOLoader().loadAsync( 'model.drc' ); // BufferGeometry
 ```
 
-## Build
+## Web workers
 
-`npm run build` bundles `src/DRACOLoader.js` (via Rollup) into `build/DRACOLoader.js`
-(readable ESM) and `build/DRACOLoader.min.js` (minified), with `three` kept
-external. Prebuilt copies are checked in.
+By default the loader decodes through an **adaptive worker pool**. Because the
+build is top-level dependency-free, the same single file doubles as its own
+module worker (spawned from `import.meta.url`) — so the parallel path needs
+nothing extra to fetch or configure.
 
-## Correctness
+Decode calls that arrive together are batched and routed as one:
 
-Output is validated against Google's reference `draco3d` WASM decoder: every
-sample is decoded by both and compared element-by-element — face indices must
-match exactly and per-point attribute values within a small epsilon. All
-samples match.
+- A **single mesh** or a **small batch** decodes on the **main thread** — a lone
+  Draco stream is sequential, so a worker could only add overhead. Never slower
+  than single-threaded here.
+- A **multi-primitive load with enough total work** (e.g. a glTF scene of many
+  Draco meshes) **fans out across the pool**, decoding in parallel across cores.
 
-## Project layout
+On a 14-core machine (decode only; ferrari = 51 primitives, LittlestTokyo = 71)
+that's **~2.7–2.8× faster** than single-threaded, with single meshes and tiny
+batches staying at single-thread speed. Reproduce with `npm run bench:parallel`.
+Where module workers aren't available (Node, older browsers) it falls back to
+synchronous decode.
 
+### Tuning
+
+```js
+const loader = new DRACOLoader();
+loader.setWorkerLimit( 8 );            // pool size (default navigator.hardwareConcurrency; 0 = always sync)
+loader.setWorkerThreshold( 256 * 1024 ); // min total bytes before a batch uses the pool
+loader.setWorkerMode( 'offload' );     // 'adaptive' (default, speed-first) | 'offload' (jank-free)
 ```
-src/          decoder source, mirroring draco/src/draco/ file-for-file
-build/        bundled output (build/DRACOLoader.js + .min.js)
-libs/         three.js's WASM Draco loader, vendored for the comparison
-samples/      .drc and Draco-compressed .glb test models
-index.html    JS-vs-WASM comparison viewer
-```
+
+`setWorkerMode('offload')` sends any decode at/above the threshold to a worker —
+**even a single mesh** — so a big decode never freezes the main thread (a touch
+slower wall-clock, but no frame hitch). Pair with `setWorkerThreshold(0)` to
+offload every decode.
 
 ## Credits
 

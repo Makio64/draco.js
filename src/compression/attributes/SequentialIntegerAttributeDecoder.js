@@ -5,7 +5,7 @@ import { GeometryAttribute } from '../../attributes/GeometryAttribute.js';
 import { PointAttribute } from '../../attributes/PointAttribute.js';
 import { DataType, dataTypeLength } from '../../core/DracoTypes.js';
 import { convertSymbolsToSignedInts } from '../../core/BitUtils.js';
-import { DRACO_BITSTREAM_VERSION, PredictionSchemeMethod, PredictionSchemeTransformType } from '../config/CompressionShared.js';
+import { PredictionSchemeMethod, PredictionSchemeTransformType } from '../config/CompressionShared.js';
 import { decodeSymbols } from '../entropy/SymbolDecoding.js';
 import { createPredictionSchemeForDecoder } from './prediction_schemes/PredictionSchemeDecoderFactory.js';
 import { PredictionSchemeWrapDecodingTransform } from './prediction_schemes/PredictionSchemeWrapDecodingTransform.js';
@@ -18,27 +18,14 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     this._predictionScheme = null;
   }
 
-  init(decoder, attributeId) {
-    if (!super.init(decoder, attributeId)) {
-      return false;
-    }
-    return true;
-  }
-
   transformAttributeToOriginalFormat(pointIds) {
-    if (this.decoder &&
-        this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      return true; // Don't revert the transform here for older files.
-    }
     return this._storeValues(pointIds.length);
   }
 
   decodeValues(pointIds, buffer) {
-    // Decode prediction scheme.
     const predictionSchemeMethod = buffer.decodeInt8();
     if (predictionSchemeMethod === undefined) return false;
 
-    // Check that decoded prediction scheme method type is valid.
     if (predictionSchemeMethod < PredictionSchemeMethod.PREDICTION_NONE ||
         predictionSchemeMethod >= PredictionSchemeMethod.NUM_PREDICTION_SCHEMES) {
       return false;
@@ -48,7 +35,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
       const predictionTransformType = buffer.decodeInt8();
       if (predictionTransformType === undefined) return false;
 
-      // Check that decoded prediction scheme transform type is valid.
       if (predictionTransformType < PredictionSchemeTransformType.PREDICTION_TRANSFORM_NONE ||
           predictionTransformType >= PredictionSchemeTransformType.NUM_PREDICTION_SCHEME_TRANSFORM_TYPES) {
         return false;
@@ -67,14 +53,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
 
     if (!this.decodeIntegerValues(pointIds, buffer)) {
       return false;
-    }
-
-    if (this.decoder &&
-        this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      // For older files, revert the transform right after we decode the data.
-      if (!this._storeValues(pointIds.length)) {
-        return false;
-      }
     }
     return true;
   }
@@ -96,20 +74,17 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     if (compressed === undefined) return false;
 
     if (compressed > 0) {
-      // Decode compressed values using symbol decoding.
-      // DecodeSymbols writes uint32 values into the provided array.
+      // decodeSymbols writes uint32 values into the provided array.
       const outUint32 = new Uint32Array(portableAttributeData.buffer,
         portableAttributeData.byteOffset, numValues);
       if (!decodeSymbols(numValues, numComponents, buffer, outUint32)) {
         return false;
       }
     } else {
-      // Decode the integer data directly.
       const numBytes = buffer.decodeUint8();
       if (numBytes === undefined) return false;
 
       if (numBytes === dataTypeLength(DataType.INT32)) {
-        // 4 bytes per value - decode directly.
         if (portableAttributeData.byteLength < 4 * numValues) {
           return false;
         }
@@ -126,7 +101,7 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
         for (let i = 0; i < numValues; i++) {
           const valueBytes = buffer.decodeBytes(numBytes);
           if (valueBytes === undefined) return false;
-          // Read the value from the raw bytes (little-endian), sign-extending.
+          // Little-endian; |= with << sign-extends into a 32-bit int.
           let val = 0;
           for (let b = 0; b < numBytes; b++) {
             val |= valueBytes[b] << (b * 8);
@@ -138,13 +113,11 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
 
     if (numValues > 0 && (this._predictionScheme === null ||
                           !this._predictionScheme.areCorrectionsPositive())) {
-      // Convert the values back to the original signed format.
-      // portableAttributeData is Int32Array; we need to interpret as Uint32 for conversion.
+      // Reinterpret the Int32Array as Uint32 for the signed conversion.
       const asUint32 = new Uint32Array(portableAttributeData.buffer, portableAttributeData.byteOffset, numValues);
       convertSymbolsToSignedInts(asUint32, numValues, portableAttributeData);
     }
 
-    // If the data was encoded with a prediction scheme, we must revert it.
     if (this._predictionScheme) {
       if (!this._predictionScheme.decodePredictionData(buffer)) {
         return false;
@@ -160,8 +133,7 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     return true;
   }
 
-  // Returns a prediction scheme that should be used for decoding of the
-  // integer values. Override in subclasses for different prediction schemes.
+  // Prediction scheme for decoding integer values; subclasses override for others.
   createIntPredictionScheme(method, transformType) {
     if (transformType !== PredictionSchemeTransformType.PREDICTION_TRANSFORM_WRAP) {
       return null; // For now we support only wrap transform.
@@ -172,12 +144,11 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     );
   }
 
-  // Returns the number of integer attribute components.
   getNumValueComponents() {
     return this.attribute.numComponents;
   }
 
-  // Called after all integer values are decoded. Stores values into the attribute.
+  // Stores decoded integer values into the attribute.
   _storeValues(numValues) {
     const dt = this.attribute.dataType;
     switch (dt) {
@@ -212,10 +183,9 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
       return;
     }
     const src = this.getPortableAttributeData(); // Int32Array of the decoded values.
-    // Copy straight into a typed view of the destination buffer (byteOffset 0,
-    // so aligned). TypedArray.set performs the target type's coercion per
-    // element -- identical to the old per-entry byte copy, without the
-    // per-value buffer.write() dispatch.
+    // TypedArray.set coerces per element to the target type -- same result as the
+    // per-entry byte copy, without per-value buffer.write() dispatch. dstAddr has
+    // byteOffset 0, so the typed view is aligned.
     const dstAddr = this.attribute.getAddress(0);
     const dst = new TypedArrayClass(dstAddr.buffer, dstAddr.byteOffset, total);
     dst.set(src);
@@ -238,7 +208,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
     if (this.portableAttribute.size === 0) {
       return null;
     }
-    // Return Int32Array view of the portable attribute data.
     const addr = this.portableAttribute.getAddress(0);
     return new Int32Array(addr.buffer, addr.byteOffset,
       this.portableAttribute.size * this.portableAttribute.numComponents);

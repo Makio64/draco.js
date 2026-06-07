@@ -1,9 +1,8 @@
 // compression/bit_coders/RAnsBitDecoder.js - ported from compression/bit_coders/rans_bit_decoder.h/cc
 
-import { AnsDecoder, ansReadInit, ansReadEnd, ANS_L_BASE, ANS_IO_BASE, ANS_P8_PRECISION } from '../entropy/ANSCoding.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
+import { AnsDecoder, ansReadInit, ansReadEnd, ANS_L_BASE, ANS_P8_PRECISION } from '../entropy/ANSCoding.js';
 
-// Class for decoding a sequence of bits that were encoded with RAnsBitEncoder.
+// Decodes bits encoded with RAnsBitEncoder.
 export class RAnsBitDecoder {
 
   constructor() {
@@ -12,7 +11,6 @@ export class RAnsBitDecoder {
     this.p_ = 0; // ANS_P8_PRECISION - probZero, precomputed
   }
 
-  // Sets |sourceBuffer| as the buffer to decode bits from.
   // Returns false when the data is invalid.
   startDecoding(sourceBuffer) {
     this.clear();
@@ -24,14 +22,8 @@ export class RAnsBitDecoder {
     this.probZero_ = probZero;
     this.p_ = ANS_P8_PRECISION - probZero;
 
-    let sizeInBytes;
-    if (sourceBuffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      sizeInBytes = sourceBuffer.decodeUint32();
-      if (sizeInBytes === undefined) return false;
-    } else {
-      sizeInBytes = sourceBuffer.decodeVarintUint32();
-      if (sizeInBytes === undefined) return false;
-    }
+    const sizeInBytes = sourceBuffer.decodeVarintUint32();
+    if (sizeInBytes === undefined) return false;
 
     if (sizeInBytes > sourceBuffer.remainingSize) {
       return false;
@@ -45,12 +37,11 @@ export class RAnsBitDecoder {
     return true;
   }
 
-  // Decode one bit. Returns true if the bit is a 1, otherwise false.
   decodeNextBit() {
     const ans = this.ansDecoder_;
     const p = this.p_;
     if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-      ans.state = ans.state * ANS_IO_BASE + ans.buf[--ans.bufOffset];
+      ans.state = (ans.state << 8) | ans.buf[--ans.bufOffset];
     }
     const x = ans.state;
     const quot = x >>> 8;
@@ -62,31 +53,6 @@ export class RAnsBitDecoder {
     }
     ans.state = x - xn - p;
     return false;
-  }
-
-  // Decode the next |nbits| and return the sequence in a uint32. |nbits| must be
-  // > 0 and <= 32.
-  decodeLeastSignificantBits32(nbits) {
-    const ans = this.ansDecoder_;
-    const p = this.p_;
-    let result = 0;
-    for (let i = 0; i < nbits; i++) {
-      if (ans.state < ANS_L_BASE && ans.bufOffset > 0) {
-        ans.state = ans.state * ANS_IO_BASE + ans.buf[--ans.bufOffset];
-      }
-      const x = ans.state;
-      const quot = x >>> 8;
-      const rem = x & 0xFF;
-      const xn = quot * p;
-      if (rem < p) {
-        ans.state = xn + rem;
-        result = (result << 1) + 1;
-      } else {
-        ans.state = x - xn - p;
-        result = result << 1;
-      }
-    }
-    return result;
   }
 
   endDecoding() {}

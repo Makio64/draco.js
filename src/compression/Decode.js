@@ -2,7 +2,6 @@
 
 import {
   EncodedGeometryType,
-  PointCloudEncodingMethod,
   MeshEncoderMethod,
   DracoHeader
 } from './config/CompressionShared.js';
@@ -11,92 +10,26 @@ import { DecoderBuffer } from '../core/DecoderBuffer.js';
 import { PointCloud } from '../point_cloud/PointCloud.js';
 import { Mesh } from '../mesh/Mesh.js';
 
-import { PointCloudSequentialDecoder } from './point_cloud/PointCloudSequentialDecoder.js';
-import { PointCloudKdTreeDecoder } from './point_cloud/PointCloudKdTreeDecoder.js';
 import { MeshSequentialDecoder } from './mesh/MeshSequentialDecoder.js';
 import { MeshEdgebreakerDecoder } from './mesh/MeshEdgebreakerDecoder.js';
+import { PointCloudDecoder } from './point_cloud/PointCloudDecoder.js';
 
-// Decodes the Draco header from the buffer. Returns { header, ok, message }.
-function decodeHeader(buffer) {
+// Reads the Draco header from a copy of inBuffer without advancing the original,
+// so the geometry type can be checked before picking a decoder.
+// Returns { ok, header, message }.
+function peekHeader(inBuffer) {
+
+  const tempBuffer = new DecoderBuffer();
+  tempBuffer.init(inBuffer.data, inBuffer.data.length);
+  tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
+  tempBuffer.advance(inBuffer.decodedSize); // match the original's position
 
   const header = new DracoHeader();
-
-  // Read 5-byte magic string "DRACO"
-  for (let i = 0; i < 5; ++i) {
-
-    const byte = buffer.decodeInt8();
-    if (byte === undefined) {
-      return { header: null, ok: false, message: 'Failed to read header magic bytes.' };
-    }
-
-    header.dracoString[i] = byte;
-
-  }
-
-  // Verify magic string
-  const magic = String.fromCharCode(
-    header.dracoString[0] & 0xFF,
-    header.dracoString[1] & 0xFF,
-    header.dracoString[2] & 0xFF,
-    header.dracoString[3] & 0xFF,
-    header.dracoString[4] & 0xFF
-  );
-
-  if (magic !== 'DRACO') {
-    return { header: null, ok: false, message: 'Not a Draco encoded file.' };
-  }
-
-  // Read version
-  header.versionMajor = buffer.decodeUint8();
-  if (header.versionMajor === undefined) {
-    return { header: null, ok: false, message: 'Failed to read version major.' };
-  }
-
-  header.versionMinor = buffer.decodeUint8();
-  if (header.versionMinor === undefined) {
-    return { header: null, ok: false, message: 'Failed to read version minor.' };
-  }
-
-  // Read encoder type
-  header.encoderType = buffer.decodeUint8();
-  if (header.encoderType === undefined) {
-    return { header: null, ok: false, message: 'Failed to read encoder type.' };
-  }
-
-  // Read encoder method
-  header.encoderMethod = buffer.decodeUint8();
-  if (header.encoderMethod === undefined) {
-    return { header: null, ok: false, message: 'Failed to read encoder method.' };
-  }
-
-  // Read flags
-  header.flags = buffer.decodeUint16();
-  if (header.flags === undefined) {
-    return { header: null, ok: false, message: 'Failed to read flags.' };
-  }
-
-  return { header, ok: true, message: '' };
+  const status = PointCloudDecoder.decodeHeader(tempBuffer, header);
+  return { ok: status.ok(), header, message: status.errorMsg };
 
 }
 
-// Creates a point cloud decoder based on the encoding method.
-function createPointCloudDecoder(method) {
-
-  if (method === PointCloudEncodingMethod.POINT_CLOUD_SEQUENTIAL_ENCODING) {
-
-    return new PointCloudSequentialDecoder();
-
-  } else if (method === PointCloudEncodingMethod.POINT_CLOUD_KD_TREE_ENCODING) {
-
-    return new PointCloudKdTreeDecoder();
-
-  }
-
-  throw new Error('Unsupported point cloud encoding method.');
-
-}
-
-// Creates a mesh decoder based on the encoding method.
 function createMeshDecoder(method) {
 
   if (method === MeshEncoderMethod.MESH_SEQUENTIAL_ENCODING) {
@@ -113,8 +46,7 @@ function createMeshDecoder(method) {
 
 }
 
-// Class responsible for decoding meshes and point clouds that were
-// compressed by a Draco encoder.
+// Decodes Draco-compressed meshes and point clouds.
 class Decoder {
 
   constructor() {
@@ -123,19 +55,10 @@ class Decoder {
 
   }
 
-  // Returns the geometry type encoded in the input buffer.
-  // The return value is one of EncodedGeometryType values:
-  // POINT_CLOUD, TRIANGULAR_MESH, or INVALID_GEOMETRY_TYPE on error.
+  // Returns an EncodedGeometryType value, or INVALID_GEOMETRY_TYPE on error.
   static getEncodedGeometryType(inBuffer) {
 
-    // Use a copy of the buffer so we don't advance the original position.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    // Restore position to match the original buffer's current position.
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
+    const result = peekHeader(inBuffer);
     if (!result.ok) {
       return EncodedGeometryType.INVALID_GEOMETRY_TYPE;
     }
@@ -148,8 +71,7 @@ class Decoder {
 
   }
 
-  // Decodes point cloud from the provided buffer. If the input contains a
-  // mesh, the returned instance will be a Mesh (which extends PointCloud).
+  // If the input is a mesh, pointCloud is a Mesh (which extends PointCloud).
   // Returns { pointCloud, ok, message }.
   decodePointCloudFromBuffer(inBuffer) {
 
@@ -181,7 +103,6 @@ class Decoder {
 
   }
 
-  // Decodes a triangular mesh from the provided buffer.
   // Returns { mesh, ok, message }.
   decodeMeshFromBuffer(inBuffer) {
 
@@ -195,41 +116,18 @@ class Decoder {
 
   }
 
-  // Decodes the buffer into a provided PointCloud geometry.
-  // Returns { ok, message }.
-  decodeBufferToPointCloud(inBuffer, outGeometry) {
+  // Point-cloud decoding is intentionally unimplemented: only triangle meshes
+  // are supported, and PointCloudDecoder exists only as the mesh decoders' base.
+  decodeBufferToPointCloud() {
 
-    // Read header from a temporary copy to check type without advancing inBuffer.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
-    if (!result.ok) {
-      return { ok: false, message: result.message };
-    }
-
-    if (result.header.encoderType !== EncodedGeometryType.POINT_CLOUD) {
-      return { ok: false, message: 'Input is not a point cloud.' };
-    }
-
-    const decoder = createPointCloudDecoder(result.header.encoderMethod);
-    return decoder.decode(this.options_, inBuffer, outGeometry);
+    return { ok: false, message: 'Point cloud decoding is not supported.' };
 
   }
 
-  // Decodes the buffer into a provided Mesh geometry.
   // Returns { ok, message }.
   decodeBufferToMesh(inBuffer, outGeometry) {
 
-    // Read header from a temporary copy to check type without advancing inBuffer.
-    const tempBuffer = new DecoderBuffer();
-    tempBuffer.init(inBuffer.data, inBuffer.data.length);
-    tempBuffer.bitstreamVersion = inBuffer.bitstreamVersion;
-    tempBuffer.advance(inBuffer.decodedSize);
-
-    const result = decodeHeader(tempBuffer);
+    const result = peekHeader(inBuffer);
     if (!result.ok) {
       return { ok: false, message: result.message };
     }
@@ -239,20 +137,11 @@ class Decoder {
     }
 
     const decoder = createMeshDecoder(result.header.encoderMethod);
-    return decoder.decodeMesh(this.options_, inBuffer, outGeometry);
+    const status = decoder.decodeMesh(this.options_, inBuffer, outGeometry);
+    return { ok: status.ok(), message: status.errorMsg };
 
   }
 
-  // When set, the decoder will skip the attribute transform for a given
-  // attribute type. For example, for quantized attributes the decoder would
-  // skip the dequantization step.
-  setSkipAttributeTransform(attType) {
-
-    this.options_.setAttributeBool(attType, 'skip_attribute_transform', true);
-
-  }
-
-  // Returns the options instance used by the decoder.
   options() {
 
     return this.options_;
@@ -261,4 +150,4 @@ class Decoder {
 
 }
 
-export { Decoder, decodeHeader };
+export { Decoder };

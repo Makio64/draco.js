@@ -1,10 +1,51 @@
-// src/compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalPredictorArea.js
-// Ported from draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
+// compression/attributes/prediction_schemes/MeshPredictionSchemeGeometricNormalPredictorArea.js - ported from compression/attributes/prediction_schemes/mesh_prediction_scheme_geometric_normal_predictor_area.h
 // and mesh_prediction_scheme_geometric_normal_predictor_base.h
 
+import { DataType } from '../../../core/DracoTypes.js';
 import { NormalPredictionMode } from '../../config/CompressionShared.js';
 
 const UPPER_BOUND = 1 << 29;
+
+// Precompute every entry's integer position into a flat Int32Array (the JS-port
+// form of the C++ predictor's per-call GetPositionForDataId()).
+function buildInt32PositionCache(att, map, numEntries, tempPos) {
+  const cache = new Int32Array(numEntries * 3);
+  const bufData = att.buffer && att.buffer.data;
+
+  if (att.dataType === DataType.INT32 && att.numComponents === 3 && bufData) {
+    const src = new Int32Array(bufData.buffer);
+    const srcStart = (bufData.byteOffset + att.byteOffset) >> 2;
+    const stride = att.byteStride >> 2;
+    const isIdentity = att.isMappingIdentity;
+    const indicesMap = att.indicesMap;
+    if (isIdentity) {
+      for (let d = 0; d < numEntries; ++d) {
+        const srcOffset = srcStart + map[d] * stride;
+        const o = d * 3;
+        cache[o] = src[srcOffset];
+        cache[o + 1] = src[srcOffset + 1];
+        cache[o + 2] = src[srcOffset + 2];
+      }
+    } else {
+      for (let d = 0; d < numEntries; ++d) {
+        const srcOffset = srcStart + indicesMap[map[d]] * stride;
+        const o = d * 3;
+        cache[o] = src[srcOffset];
+        cache[o + 1] = src[srcOffset + 1];
+        cache[o + 2] = src[srcOffset + 2];
+      }
+    }
+  } else {
+    for (let d = 0; d < numEntries; ++d) {
+      att.convertValue(att.mappedIndex(map[d]), tempPos);
+      const o = d * 3;
+      cache[o] = tempPos[0];
+      cache[o + 1] = tempPos[1];
+      cache[o + 2] = tempPos[2];
+    }
+  }
+  return cache;
+}
 
 /**
  * Predictor that estimates the normal via the surrounding triangles of a
@@ -12,48 +53,30 @@ const UPPER_BOUND = 1 << 29;
  */
 class MeshPredictionSchemeGeometricNormalPredictorArea {
 
-  /**
-   * @param {object} meshData - MeshPredictionSchemeData instance
-   */
   constructor(meshData) {
     this._posAttribute = null;
     this._entryToPointIdMap = null;
     this._meshData = meshData;
     this._normalPredictionMode = NormalPredictionMode.TRIANGLE_AREA;
     this._tempPos = new Array(3);
-    // Reusable scratch for the per-corner position fetches (hot loop).
-    this._posNext = new Array(3);
-    this._posPrev = new Array(3);
-    // Flat Int32 position cache indexed by data id (built once per decode).
-    // The predictor reads the position of a corner's vertex O(valence) times
-    // per ring; caching turns O(corners*valence) convertValue calls into one
-    // per data entry.
-    this._posCache = null;
+    this._posCache = null;            // flat Int32 positions, indexed by data id
+    this._cornerToVertex = null;
+    this._oppositeCorners = null;
+    this._cornerToOffset = null;      // corner -> posCache offset, precomputed
   }
 
-  /**
-   * @param {object} positionAttribute - PointAttribute for positions
-   */
   setPositionAttribute(positionAttribute) {
     this._posAttribute = positionAttribute;
   }
 
-  /**
-   * @param {Array} map
-   */
   setEntryToPointIdMap(map) {
     this._entryToPointIdMap = map;
   }
 
-  /** @returns {boolean} */
   isInitialized() {
     return this._posAttribute !== null && this._entryToPointIdMap !== null;
   }
 
-  /**
-   * @param {number} mode
-   * @returns {boolean}
-   */
   setNormalPredictionMode(mode) {
     if (mode === NormalPredictionMode.ONE_TRIANGLE ||
         mode === NormalPredictionMode.TRIANGLE_AREA) {
@@ -63,139 +86,131 @@ class MeshPredictionSchemeGeometricNormalPredictorArea {
     return false;
   }
 
-  /** @returns {number} */
-  getNormalPredictionMode() {
-    return this._normalPredictionMode;
-  }
-
-  /**
-   * Precomputes the integer position of every data entry once, so the hot
-   * per-corner ring traversal reads from a flat Int32Array instead of going
-   * through mappedIndex + convertValue on every fetch.
-   * @param {number} numEntries
-   */
   buildPositionCache(numEntries) {
-    const cache = new Int32Array(numEntries * 3);
-    const tmp = this._tempPos;
-    const att = this._posAttribute;
-    const map = this._entryToPointIdMap;
-    for (let d = 0; d < numEntries; ++d) {
-      att.convertValue(att.mappedIndex(map[d]), tmp);
-      const o = d * 3;
-      cache[o] = tmp[0];
-      cache[o + 1] = tmp[1];
-      cache[o + 2] = tmp[2];
+    this._posCache = buildInt32PositionCache(
+      this._posAttribute, this._entryToPointIdMap, numEntries, this._tempPos);
+    const table = this._meshData.cornerTable;
+    this._cornerToVertex = table.cornerToVertexArray();
+    this._oppositeCorners = table.oppositeCornerArray();
+    // Precompute corner -> posCache offset once so the ring walk folds the
+    // vertexToDataMap[cornerToVertex[c]]*3 double indirection into one load.
+    const cornerToVertex = this._cornerToVertex;
+    const vertexToDataMap = this._meshData.vertexToDataMap;
+    const nc = cornerToVertex.length;
+    const c2o = new Int32Array(nc);
+    for (let c = 0; c < nc; ++c) {
+      const v = cornerToVertex[c];
+      c2o[c] = v < 0 ? -1 : vertexToDataMap[v] * 3;
     }
-    this._posCache = cache;
+    this._cornerToOffset = c2o;
   }
 
-  /**
-   * Gets the 3D position for a given data id.
-   * @private
-   */
-  _getPositionForDataId(dataId, out) {
-    const c = this._posCache;
-    const o = dataId * 3;
-    out[0] = c[o];
-    out[1] = c[o + 1];
-    out[2] = c[o + 2];
-  }
-
-  /**
-   * Gets the 3D position for a given corner.
-   * @private
-   */
-  _getPositionForCorner(ci, out) {
-    const table = this._meshData.cornerTable;
-    const vertId = table.vertex(ci);
-    const dataId = this._meshData.vertexToDataMap[vertId];
-    this._getPositionForDataId(dataId, out);
-  }
-
-  /**
-   * Computes predicted normal for a given corner.
-   * @param {number} cornerId
-   * @param {Int32Array} prediction - output [x, y, z]
-   */
   computePredictedValue(cornerId, prediction) {
-    const table = this._meshData.cornerTable;
-    const posCent = this._tempPos;
-    const posNext = this._posNext;
-    const posPrev = this._posPrev;
-    this._getPositionForCorner(cornerId, posCent);
+    const oppositeCorners = this._oppositeCorners;
+    const cornerToOffset = this._cornerToOffset;
+    const posCache = this._posCache;
+    const centerOffset = cornerToOffset[cornerId];
+    const centX = posCache[centerOffset];
+    const centY = posCache[centerOffset + 1];
+    const centZ = posCache[centerOffset + 2];
 
     let normalX = 0, normalY = 0, normalZ = 0;
 
-    // Iterate over vertex corners.
     if (this._normalPredictionMode === NormalPredictionMode.ONE_TRIANGLE) {
-      // Only use the single triangle at cornerId.
-      const cNext = table.next(cornerId);
-      const cPrev = table.previous(cornerId);
-      this._getPositionForCorner(cNext, posNext);
-      this._getPositionForCorner(cPrev, posPrev);
+      const rem = cornerId - ((cornerId / 3) | 0) * 3;
+      const cNext = rem === 2 ? cornerId - 2 : cornerId + 1;
+      const cPrev = rem === 0 ? cornerId + 2 : cornerId - 1;
+      let posOffset = cornerToOffset[cNext];
+      const nextX = posCache[posOffset];
+      const nextY = posCache[posOffset + 1];
+      const nextZ = posCache[posOffset + 2];
+      posOffset = cornerToOffset[cPrev];
+      const prevX = posCache[posOffset];
+      const prevY = posCache[posOffset + 1];
+      const prevZ = posCache[posOffset + 2];
 
-      const dNextX = posNext[0] - posCent[0];
-      const dNextY = posNext[1] - posCent[1];
-      const dNextZ = posNext[2] - posCent[2];
-      const dPrevX = posPrev[0] - posCent[0];
-      const dPrevY = posPrev[1] - posCent[1];
-      const dPrevZ = posPrev[2] - posCent[2];
+      const dNextX = nextX - centX;
+      const dNextY = nextY - centY;
+      const dNextZ = nextZ - centZ;
+      const dPrevX = prevX - centX;
+      const dPrevY = prevY - centY;
+      const dPrevZ = prevZ - centZ;
 
-      // Cross product.
       normalX = dNextY * dPrevZ - dNextZ * dPrevY;
       normalY = dNextZ * dPrevX - dNextX * dPrevZ;
       normalZ = dNextX * dPrevY - dNextY * dPrevX;
     } else {
-      // TRIANGLE_AREA: iterate over all corners around the vertex exactly like
-      // C++ VertexCornersIterator(corner_table, corner_id): swing LEFT from the
-      // start corner until a boundary or a full loop, then (only if an open
-      // boundary was reached) swing RIGHT from the start corner to cover the
-      // other side. Only swinging right (as before) silently dropped every
-      // triangle to the left of the start corner for boundary vertices, which
-      // corrupted the predicted normal on any mesh with open edges.
+      // TRIANGLE_AREA: visit every corner around the vertex like C++
+      // VertexCornersIterator -- swing LEFT to a boundary/full loop, then (only
+      // if an open boundary was hit) swing RIGHT for the other side. Right-only
+      // would drop triangles left of the start corner on boundary vertices.
       let currentCorner = cornerId;
       let leftTraversal = true;
 
       while (currentCorner >= 0) {
-        const cNext = table.next(currentCorner);
-        const cPrev = table.previous(currentCorner);
-        this._getPositionForCorner(cNext, posNext);
-        this._getPositionForCorner(cPrev, posPrev);
+        const rem = currentCorner - ((currentCorner / 3) | 0) * 3;
+        const cNext = rem === 2 ? currentCorner - 2 : currentCorner + 1;
+        const cPrev = rem === 0 ? currentCorner + 2 : currentCorner - 1;
+        let posOffset = cornerToOffset[cNext];
+        const nextX = posCache[posOffset];
+        const nextY = posCache[posOffset + 1];
+        const nextZ = posCache[posOffset + 2];
+        posOffset = cornerToOffset[cPrev];
+        const prevX = posCache[posOffset];
+        const prevY = posCache[posOffset + 1];
+        const prevZ = posCache[posOffset + 2];
 
-        const dNextX = posNext[0] - posCent[0];
-        const dNextY = posNext[1] - posCent[1];
-        const dNextZ = posNext[2] - posCent[2];
-        const dPrevX = posPrev[0] - posCent[0];
-        const dPrevY = posPrev[1] - posCent[1];
-        const dPrevZ = posPrev[2] - posCent[2];
+        const dNextX = nextX - centX;
+        const dNextY = nextY - centY;
+        const dNextZ = nextZ - centZ;
+        const dPrevX = prevX - centX;
+        const dPrevY = prevY - centY;
+        const dPrevZ = prevZ - centZ;
 
-        // Cross product.
         normalX += dNextY * dPrevZ - dNextZ * dPrevY;
         normalY += dNextZ * dPrevX - dNextX * dPrevZ;
         normalZ += dNextX * dPrevY - dNextY * dPrevX;
 
         // Advance like VertexCornersIterator::Next().
         if (leftTraversal) {
-          currentCorner = table.swingLeft(currentCorner);
+          const opp = oppositeCorners[cNext];
+          if (opp < 0) {
+            currentCorner = -1;
+          } else {
+            const oppRem = opp - ((opp / 3) | 0) * 3;
+            currentCorner = oppRem === 2 ? opp - 2 : opp + 1;
+          }
           if (currentCorner < 0) {
             // Open boundary reached; cover the other side from the start.
-            currentCorner = table.swingRight(cornerId);
+            const startRem = cornerId - ((cornerId / 3) | 0) * 3;
+            const startPrev = startRem === 0 ? cornerId + 2 : cornerId - 1;
+            const startOpp = oppositeCorners[startPrev];
+            if (startOpp < 0) {
+              currentCorner = -1;
+            } else {
+              const startOppRem = startOpp - ((startOpp / 3) | 0) * 3;
+              currentCorner = startOppRem === 0 ? startOpp + 2 : startOpp - 1;
+            }
             leftTraversal = false;
           } else if (currentCorner === cornerId) {
             // Returned to the start: full ring visited.
             currentCorner = -1;
           }
         } else {
-          currentCorner = table.swingRight(currentCorner);
+          const opp = oppositeCorners[cPrev];
+          if (opp < 0) {
+            currentCorner = -1;
+          } else {
+            const oppRem = opp - ((opp / 3) | 0) * 3;
+            currentCorner = oppRem === 0 ? opp + 2 : opp - 1;
+          }
         }
       }
     }
 
-    // Convert to int32, making sure entries are not too large. This mirrors the
-    // C++ which does the clamp with int64 INTEGER division: the quotient is
-    // floored and each component is divided with truncation toward zero. A naive
-    // float division diverges whenever UPPER_BOUND < absSum < 2 * UPPER_BOUND,
-    // where the C++ quotient is exactly 1 and the normal is left unchanged.
+    // Clamp to int32 with int64 INTEGER division like C++: quotient floored,
+    // each component truncated toward zero. Naive float division diverges for
+    // UPPER_BOUND < absSum < 2*UPPER_BOUND, where C++ quotient is 1 (no change).
     let absSum;
     if (this._normalPredictionMode === NormalPredictionMode.ONE_TRIANGLE) {
       // C++ casts AbsSum() to int32_t before the comparison in this branch.

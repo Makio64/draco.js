@@ -14,29 +14,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
     this._range = 0;
   }
 
-  type() {
-    return AttributeTransformType.QUANTIZATION_TRANSFORM;
-  }
-
-  // Try to init transform from attribute's existing transform data.
-  initFromAttribute(attribute) {
-    const transformData = attribute.getAttributeTransformData();
-    if (!transformData || transformData.transformType !== AttributeTransformType.QUANTIZATION_TRANSFORM) {
-      return false;
-    }
-    let byteOffset = 0;
-    this._quantizationBits = transformData.getParameterValue(byteOffset, 'int32');
-    byteOffset += 4;
-    this._minValues = new Array(attribute.numComponents);
-    for (let i = 0; i < attribute.numComponents; i++) {
-      this._minValues[i] = transformData.getParameterValue(byteOffset, 'float32');
-      byteOffset += 4;
-    }
-    this._range = transformData.getParameterValue(byteOffset, 'float32');
-    return true;
-  }
-
-  // Copy parameter values into the provided AttributeTransformData instance.
   copyToAttributeTransformData(outData) {
     outData.transformType = AttributeTransformType.QUANTIZATION_TRANSFORM;
     outData.appendParameterValue(this._quantizationBits, 'int32');
@@ -46,24 +23,20 @@ class AttributeQuantizationTransform extends AttributeTransform {
     outData.appendParameterValue(this._range, 'float32');
   }
 
-  // Decodes quantization parameters from the decoder buffer.
   decodeParameters(attribute, decoderBuffer) {
     const numComponents = attribute.numComponents;
     this._minValues = new Array(numComponents);
 
-    // Read min values (float32 per component).
     for (let i = 0; i < numComponents; i++) {
       const val = decoderBuffer.decodeFloat32();
       if (val === undefined) return false;
       this._minValues[i] = val;
     }
 
-    // Read range (float32).
     const range = decoderBuffer.decodeFloat32();
     if (range === undefined) return false;
     this._range = range;
 
-    // Read quantization bits (uint8).
     const qBits = decoderBuffer.decodeUint8();
     if (qBits === undefined) return false;
     if (!AttributeQuantizationTransform._isQuantizationValid(qBits)) {
@@ -73,7 +46,6 @@ class AttributeQuantizationTransform extends AttributeTransform {
     return true;
   }
 
-  // Inverse transform: dequantizes uint32 values back to float32.
   inverseTransformAttribute(attribute, targetAttribute) {
     if (targetAttribute.dataType !== DataType.FLOAT32) {
       return false;
@@ -100,28 +72,44 @@ class AttributeQuantizationTransform extends AttributeTransform {
     const dstAddr = targetAttribute.getAddress(0);
     const dstF32 = new Float32Array(dstAddr.buffer, dstAddr.byteOffset, total);
 
+    // Mirror Draco C++ float32 arithmetic so the result is bit-identical to the
+    // WASM decoder: `value` (int) is converted to float, multiplied by the
+    // float `delta` (both rounded to float32), then added to the float32 min.
+    // The Float32Array store performs the final round of the addition.
+    const fround = Math.fround;
+
+    // Specialize nc=3/2 (positions/texcoords) with minValues hoisted to locals;
+    // same operands/order as the generic path below, so bit-identical.
+    if (numComponents === 3) {
+      const m0 = minValues[0], m1 = minValues[1], m2 = minValues[2];
+      for (let o = 0; o < total; o += 3) {
+        dstF32[o] = fround(fround(srcI32[o]) * delta) + m0;
+        dstF32[o + 1] = fround(fround(srcI32[o + 1]) * delta) + m1;
+        dstF32[o + 2] = fround(fround(srcI32[o + 2]) * delta) + m2;
+      }
+      return true;
+    }
+    if (numComponents === 2) {
+      const m0 = minValues[0], m1 = minValues[1];
+      for (let o = 0; o < total; o += 2) {
+        dstF32[o] = fround(fround(srcI32[o]) * delta) + m0;
+        dstF32[o + 1] = fround(fround(srcI32[o + 1]) * delta) + m1;
+      }
+      return true;
+    }
+
     let o = 0;
     for (let i = 0; i < numValues; i++) {
       for (let c = 0; c < numComponents; c++) {
-        dstF32[o] = srcI32[o] * delta + minValues[c];
+        dstF32[o] = fround(fround(srcI32[o]) * delta) + minValues[c];
         o++;
       }
     }
     return true;
   }
 
-  getTransformedDataType(/* attribute */) {
-    return DataType.UINT32;
-  }
-
-  getTransformedNumComponents(attribute) {
-    return attribute.numComponents;
-  }
-
   get quantizationBits() { return this._quantizationBits; }
   get range() { return this._range; }
-  get minValues() { return this._minValues; }
-  get isInitialized() { return this._quantizationBits !== -1; }
 
   minValue(axis) { return this._minValues[axis]; }
 

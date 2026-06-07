@@ -1,7 +1,6 @@
 // attributes/GeometryAttribute.js - ported from attributes/geometry_attribute.h/cc
 
-import { DataType, dataTypeLength } from '../core/DracoTypes.js';
-import { DataBuffer } from '../core/DataBuffer.js';
+import { DataType } from '../core/DracoTypes.js';
 
 const Type = {
   INVALID: -1,
@@ -36,34 +35,12 @@ class GeometryAttribute {
     this._attributeType = attributeType;
   }
 
-  isValid() {
-    return this._buffer !== null;
-  }
-
-  // Returns the byte position of the attribute entry in the data buffer.
-  getBytePos(attIndex) {
-    return this._byteOffset + this._byteStride * attIndex;
-  }
-
-  // Returns a Uint8Array subarray pointing to the attribute entry in the buffer.
+  // Returns a Uint8Array view of the buffer starting at the attribute entry.
   getAddress(attIndex) {
-    const bytePos = this.getBytePos(attIndex);
+    const bytePos = this._byteOffset + this._byteStride * attIndex;
     return this._buffer.data.subarray(bytePos);
   }
 
-  // Fills outData (Uint8Array) with the raw value of the requested attribute entry.
-  getValue(attIndex, outData) {
-    const bytePos = this._byteOffset + this._byteStride * attIndex;
-    this._buffer.read(bytePos, outData, this._byteStride);
-  }
-
-  // Sets a value of an attribute entry. value should be a Uint8Array or typed array.
-  setAttributeValue(entryIndex, value) {
-    const bytePos = entryIndex * this._byteStride;
-    this._buffer.write(bytePos, value, this._byteStride);
-  }
-
-  // Copies data from the source attribute to this attribute.
   copyFrom(srcAtt) {
     this._numComponents = srcAtt._numComponents;
     this._dataType = srcAtt._dataType;
@@ -84,7 +61,6 @@ class GeometryAttribute {
     return true;
   }
 
-  // Sets a new internal storage for the attribute.
   resetBuffer(buffer, byteStride, byteOffset) {
     this._buffer = buffer;
     this._byteStride = byteStride;
@@ -92,21 +68,16 @@ class GeometryAttribute {
   }
 
   get attributeType() { return this._attributeType; }
-  set attributeType(type) { this._attributeType = type; }
 
   get dataType() { return this._dataType; }
 
   get numComponents() { return this._numComponents; }
-
-  get normalized() { return this._normalized; }
-  set normalized(value) { this._normalized = value; }
 
   get buffer() { return this._buffer; }
 
   get byteStride() { return this._byteStride; }
 
   get byteOffset() { return this._byteOffset; }
-  set byteOffset(value) { this._byteOffset = value; }
 
   get uniqueId() { return this._uniqueId; }
   set uniqueId(id) { this._uniqueId = id; }

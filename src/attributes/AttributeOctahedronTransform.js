@@ -3,78 +3,8 @@
 import { AttributeTransform } from './AttributeTransform.js';
 import { AttributeTransformType } from './AttributeTransformType.js';
 import { DataType } from '../core/DracoTypes.js';
-
-// Inline OctahedronToolBox math (ported from normal_compression_utils.h).
-// Only the decode-side method QuantizedOctahedralCoordsToUnitVector is needed.
-class OctahedronToolBox {
-
-  constructor() {
-    this._quantizationBits = -1;
-    this._maxQuantizedValue = -1;
-    this._maxValue = -1;
-    this._dequantizationScale = 1.0;
-    this._centerValue = -1;
-  }
-
-  setQuantizationBits(q) {
-    if (q < 2 || q > 30) {
-      return false;
-    }
-    this._quantizationBits = q;
-    this._maxQuantizedValue = ((1 << q) >>> 0) - 1;
-    this._maxValue = this._maxQuantizedValue - 1;
-    this._dequantizationScale = 2.0 / this._maxValue;
-    this._centerValue = (this._maxValue / 2) | 0;
-    return true;
-  }
-
-  get isInitialized() { return this._quantizationBits !== -1; }
-  get quantizationBits() { return this._quantizationBits; }
-  get maxQuantizedValue() { return this._maxQuantizedValue; }
-  get maxValue() { return this._maxValue; }
-  get centerValue() { return this._centerValue; }
-
-  // Converts quantized octahedral coordinates to a unit vector.
-  quantizedOctahedralCoordsToUnitVector(inS, inT, outVector) {
-    this._octahedralCoordsToUnitVector(
-      inS * this._dequantizationScale - 1.0,
-      inT * this._dequantizationScale - 1.0,
-      outVector
-    );
-  }
-
-  _octahedralCoordsToUnitVector(inSScaled, inTScaled, outVector) {
-    let y = inSScaled;
-    let z = inTScaled;
-
-    // Remaining coordinate can be computed by projecting (y, z) onto the
-    // surface of the octahedron.
-    const x = 1.0 - Math.abs(y) - Math.abs(z);
-
-    // x is a signed distance from the diagonal edges of the diamond.
-    // Positive => right hemisphere, negative => left hemisphere.
-    let xOffset = -x;
-    if (xOffset < 0) xOffset = 0;
-
-    // Mirror (y, z) along nearest diagonal edge for points on left hemisphere.
-    y += y < 0 ? xOffset : -xOffset;
-    z += z < 0 ? xOffset : -xOffset;
-
-    // Normalize the computed vector.
-    const normSquared = x * x + y * y + z * z;
-    if (normSquared < 1e-6) {
-      outVector[0] = 0;
-      outVector[1] = 0;
-      outVector[2] = 0;
-    } else {
-      const d = 1.0 / Math.sqrt(normSquared);
-      outVector[0] = x * d;
-      outVector[1] = y * d;
-      outVector[2] = z * d;
-    }
-  }
-
-}
+// Reuse the shared OctahedronToolBox (decode math is identical) instead of a hand-synced inline copy.
+import { OctahedronToolBox } from '../compression/attributes/NormalCompressionUtils.js';
 
 class AttributeOctahedronTransform extends AttributeTransform {
 
@@ -83,27 +13,11 @@ class AttributeOctahedronTransform extends AttributeTransform {
     this._quantizationBits = -1;
   }
 
-  type() {
-    return AttributeTransformType.OCTAHEDRON_TRANSFORM;
-  }
-
-  // Try to init transform from attribute's existing transform data.
-  initFromAttribute(attribute) {
-    const transformData = attribute.getAttributeTransformData();
-    if (!transformData || transformData.transformType !== AttributeTransformType.OCTAHEDRON_TRANSFORM) {
-      return false;
-    }
-    this._quantizationBits = transformData.getParameterValue(0, 'int32');
-    return true;
-  }
-
-  // Copy parameter values into the provided AttributeTransformData instance.
   copyToAttributeTransformData(outData) {
     outData.transformType = AttributeTransformType.OCTAHEDRON_TRANSFORM;
     outData.appendParameterValue(this._quantizationBits, 'int32');
   }
 
-  // Decodes quantization bits from the decoder buffer.
   decodeParameters(attribute, decoderBuffer) {
     const qBits = decoderBuffer.decodeUint8();
     if (qBits === undefined) return false;
@@ -111,7 +25,6 @@ class AttributeOctahedronTransform extends AttributeTransform {
     return true;
   }
 
-  // Inverse transform: converts octahedral coordinates to unit vectors (float32).
   inverseTransformAttribute(attribute, targetAttribute) {
     if (targetAttribute.dataType !== DataType.FLOAT32) {
       return false;
@@ -150,17 +63,6 @@ class AttributeOctahedronTransform extends AttributeTransform {
     }
     return true;
   }
-
-  getTransformedDataType(/* attribute */) {
-    return DataType.UINT32;
-  }
-
-  getTransformedNumComponents(/* attribute */) {
-    return 2;
-  }
-
-  get quantizationBits() { return this._quantizationBits; }
-  get isInitialized() { return this._quantizationBits !== -1; }
 
 }
 

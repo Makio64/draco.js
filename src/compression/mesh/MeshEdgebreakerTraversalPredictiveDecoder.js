@@ -41,7 +41,6 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
     if (numSplitSymbols >= this._numVertices) {
       return false;
     }
-    // Set the valences of all initial vertices to 0.
     this._vertexValences = new Array(this._numVertices).fill(0);
     this._predictionDecoder = this._createRAnsBitDecoder();
     if (this._predictionDecoder === null) {
@@ -54,16 +53,14 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
   }
 
   decodeSymbol() {
-    // First check if we have a predicted symbol.
     if (this._predictedSymbol !== -1) {
-      // Double check that the predicted symbol was predicted correctly.
+      // The bit confirms whether the prediction was correct.
       if (this._predictionDecoder.decodeNextBit()) {
         this._lastSymbol = this._predictedSymbol;
         return this._predictedSymbol;
       }
     }
-    // We don't have a predicted symbol or the symbol was mis-predicted.
-    // Decode it directly.
+    // No prediction or mis-predicted: decode directly.
     this._lastSymbol = super.decodeSymbol();
     return this._lastSymbol;
   }
@@ -73,7 +70,6 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
     const next = ct.next(corner);
     const prev = ct.previous(corner);
 
-    // Update valences.
     switch (this._lastSymbol) {
       case TOPOLOGY_C:
       case TOPOLOGY_S:
@@ -99,7 +95,6 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
         break;
     }
 
-    // Compute the new predicted symbol.
     if (this._lastSymbol === TOPOLOGY_C || this._lastSymbol === TOPOLOGY_R) {
       const pivot = ct.vertex(ct.next(corner));
       if (this._vertexValences[pivot] < 6) {
@@ -113,7 +108,6 @@ class MeshEdgebreakerTraversalPredictiveDecoder extends MeshEdgebreakerTraversal
   }
 
   mergeVertices(dest, source) {
-    // Update valences on the merged vertices.
     this._vertexValences[dest] += this._vertexValences[source];
   }
 

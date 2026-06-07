@@ -9,17 +9,10 @@ export class Dequantizer {
 
   initFromRange(range, maxQuantizedValue) {
     if (maxQuantizedValue <= 0) return false;
-    this._delta = range / maxQuantizedValue;
+    // C++ computes delta_ as `range / static_cast<float>(max_quantized_value)` in float32.
+    // JS double division is 1-2 ULP off the WASM decoder, so fround every step.
+    this._delta = Math.fround(range / Math.fround(maxQuantizedValue));
     return true;
-  }
-
-  initFromDelta(delta) {
-    this._delta = delta;
-    return true;
-  }
-
-  dequantizeFloat(val) {
-    return val * this._delta;
   }
 
   get delta() {
