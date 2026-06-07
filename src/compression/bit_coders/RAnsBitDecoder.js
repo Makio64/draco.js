@@ -1,7 +1,6 @@
 // compression/bit_coders/RAnsBitDecoder.js - ported from compression/bit_coders/rans_bit_decoder.h/cc
 
 import { AnsDecoder, ansReadInit, ansReadEnd, ANS_L_BASE, ANS_P8_PRECISION } from '../entropy/ANSCoding.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
 // Decodes bits encoded with RAnsBitEncoder.
 export class RAnsBitDecoder {
@@ -23,14 +22,8 @@ export class RAnsBitDecoder {
     this.probZero_ = probZero;
     this.p_ = ANS_P8_PRECISION - probZero;
 
-    let sizeInBytes;
-    if (sourceBuffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      sizeInBytes = sourceBuffer.decodeUint32();
-      if (sizeInBytes === undefined) return false;
-    } else {
-      sizeInBytes = sourceBuffer.decodeVarintUint32();
-      if (sizeInBytes === undefined) return false;
-    }
+    const sizeInBytes = sourceBuffer.decodeVarintUint32();
+    if (sizeInBytes === undefined) return false;
 
     if (sizeInBytes > sourceBuffer.remainingSize) {
       return false;

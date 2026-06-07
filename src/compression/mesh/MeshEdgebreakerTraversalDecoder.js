@@ -1,7 +1,6 @@
 // compression/mesh/MeshEdgebreakerTraversalDecoder.js - ported from mesh/mesh_edgebreaker_traversal_decoder.h
 
 import { DecoderBuffer } from '../../core/DecoderBuffer.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 import { TOPOLOGY_C } from './MeshEdgebreakerShared.js';
 import { RAnsBitDecoder } from '../bit_coders/RAnsBitDecoder.js';
 
@@ -12,7 +11,6 @@ class MeshEdgebreakerTraversalDecoder {
     this._buffer = new DecoderBuffer();
     this._symbolBuffer = new DecoderBuffer();
     this._startFaceDecoder = null; // RAnsBitDecoder
-    this._startFaceBuffer = new DecoderBuffer();
     this._attributeConnectivityDecoders = null; // Array of RAnsBitDecoder
     this._numAttributeData = 0;
     this._decoderImpl = null;
@@ -59,13 +57,8 @@ class MeshEdgebreakerTraversalDecoder {
   }
 
   decodeStartFaceConfiguration() {
-    if (this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      const faceConfiguration = this._startFaceBuffer.decodeLeastSignificantBits32(1);
-      return faceConfiguration ? true : false;
-    } else {
-      if (this._startFaceDecoder === null) return false;
-      return this._startFaceDecoder.decodeNextBit() ? true : false;
-    }
+    if (this._startFaceDecoder === null) return false;
+    return this._startFaceDecoder.decodeNextBit() ? true : false;
   }
 
   decodeSymbol() {
@@ -91,12 +84,8 @@ class MeshEdgebreakerTraversalDecoder {
     if (this._symbolBuffer.bitDecoderActive) {
       this._symbolBuffer.endBitDecoding();
     }
-    if (this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      this._startFaceBuffer.endBitDecoding();
-    } else {
-      if (this._startFaceDecoder !== null) {
-        this._startFaceDecoder.endDecoding();
-      }
+    if (this._startFaceDecoder !== null) {
+      this._startFaceDecoder.endDecoding();
     }
   }
 
@@ -128,28 +117,7 @@ class MeshEdgebreakerTraversalDecoder {
   }
 
   decodeStartFaces() {
-    if (this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
-      this._startFaceBuffer.init(
-        this._buffer.dataHead,
-        this._buffer.remainingSize,
-        this._buffer.bitstreamVersion
-      );
-      const traversalSize = this._startFaceBuffer.startBitDecoding(true);
-      if (traversalSize === undefined) {
-        return false;
-      }
-      this._buffer.init(
-        this._startFaceBuffer.dataHead,
-        this._startFaceBuffer.remainingSize,
-        this._startFaceBuffer.bitstreamVersion
-      );
-      if (traversalSize > this._buffer.remainingSize) {
-        return false;
-      }
-      this._buffer.advance(traversalSize);
-      return true;
-    }
-    // Version >= 2.2 codes start faces with an RAnsBitDecoder.
+    // Start faces are coded with an RAnsBitDecoder.
     try {
       this._startFaceDecoder = this._createRAnsBitDecoder();
       if (this._startFaceDecoder === null) {

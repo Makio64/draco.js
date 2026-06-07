@@ -5,7 +5,6 @@ import { GeometryAttribute, GeometryAttributeType } from '../../attributes/Geome
 import { PointAttribute } from '../../attributes/PointAttribute.js';
 import { DataType, dataTypeLength } from '../../core/DracoTypes.js';
 import { decodeVarint } from '../../core/VarintDecoding.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
 // Base class for AttributesDecoders; shared functionality for all of them.
 class AttributesDecoder extends AttributesDecoderInterface {
@@ -28,14 +27,8 @@ class AttributesDecoder extends AttributesDecoderInterface {
   decodeAttributesDecoderData(buffer) {
     let numAttributes;
 
-    if (this._pointCloudDecoder.bitstreamVersion() <
-        DRACO_BITSTREAM_VERSION(2, 0)) {
-      numAttributes = buffer.decodeUint32();
-      if (numAttributes === undefined) return false;
-    } else {
-      numAttributes = decodeVarint(buffer, false);
-      if (numAttributes === undefined) return false;
-    }
+    numAttributes = decodeVarint(buffer, false);
+    if (numAttributes === undefined) return false;
 
     if (numAttributes === 0) {
       return false;
@@ -79,17 +72,9 @@ class AttributesDecoder extends AttributesDecoderInterface {
         dataTypeLength(dataType) * numComponents, 0
       );
 
-      let uniqueId;
-      if (this._pointCloudDecoder.bitstreamVersion() <
-          DRACO_BITSTREAM_VERSION(1, 3)) {
-        uniqueId = buffer.decodeUint16();
-        if (uniqueId === undefined) return false;
-        ga.uniqueId = uniqueId;
-      } else {
-        uniqueId = decodeVarint(buffer, false);
-        if (uniqueId === undefined) return false;
-        ga.uniqueId = uniqueId;
-      }
+      const uniqueId = decodeVarint(buffer, false);
+      if (uniqueId === undefined) return false;
+      ga.uniqueId = uniqueId;
 
       const pa = new PointAttribute(ga);
       const attId = pc.addAttribute(pa);

@@ -3,10 +3,7 @@
 import { SequentialIntegerAttributeDecoder } from './SequentialIntegerAttributeDecoder.js';
 import { AttributeOctahedronTransform } from '../../attributes/AttributeOctahedronTransform.js';
 import { DataType } from '../../core/DracoTypes.js';
-import {
-  DRACO_BITSTREAM_VERSION,
-  PredictionSchemeTransformType
-} from '../config/CompressionShared.js';
+import { PredictionSchemeTransformType } from '../config/CompressionShared.js';
 import { createPredictionSchemeForDecoder } from './prediction_schemes/PredictionSchemeDecoderFactory.js';
 import { PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform } from './prediction_schemes/PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform.js';
 import { PredictionSchemeNormalOctahedronDecodingTransform } from './prediction_schemes/PredictionSchemeNormalOctahedronDecodingTransform.js';
@@ -38,23 +35,10 @@ class SequentialNormalAttributeDecoder extends SequentialIntegerAttributeDecoder
     return 2;
   }
 
-  decodeIntegerValues(pointIds, buffer) {
-    if (this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      // Older bitstreams have no portableAttribute decoded yet, so we pass the
-      // raw attribute to decodeParameters() instead.
-      if (!this._octahedralTransform.decodeParameters(this.attribute, buffer)) {
-        return false;
-      }
-    }
-    return super.decodeIntegerValues(pointIds, buffer);
-  }
-
   decodeDataNeededByPortableTransform(pointIds, buffer) {
-    if (this.decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 0)) {
-      if (!this._octahedralTransform.decodeParameters(
-            this.getPortableAttribute(), buffer)) {
-        return false;
-      }
+    if (!this._octahedralTransform.decodeParameters(
+          this.getPortableAttribute(), buffer)) {
+      return false;
     }
 
     return this._octahedralTransform.transferToAttribute(this.portableAttribute);

@@ -137,7 +137,8 @@ class Decoder {
     }
 
     const decoder = createMeshDecoder(result.header.encoderMethod);
-    return decoder.decodeMesh(this.options_, inBuffer, outGeometry);
+    const status = decoder.decodeMesh(this.options_, inBuffer, outGeometry);
+    return { ok: status.ok(), message: status.errorMsg };
 
   }
 

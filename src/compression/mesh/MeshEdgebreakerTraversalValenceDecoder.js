@@ -1,14 +1,12 @@
 // compression/mesh/MeshEdgebreakerTraversalValenceDecoder.js - ported from mesh/mesh_edgebreaker_traversal_valence_decoder.h
 
 import { MeshEdgebreakerTraversalDecoder } from './MeshEdgebreakerTraversalDecoder.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 import { decodeVarint } from '../../core/VarintDecoding.js';
 import { decodeSymbols } from '../entropy/SymbolDecoding.js';
 import {
   TOPOLOGY_C, TOPOLOGY_S, TOPOLOGY_L, TOPOLOGY_R, TOPOLOGY_E,
   TOPOLOGY_INVALID,
-  edgeBreakerSymbolToTopologyId,
-  EDGEBREAKER_VALENCE_MODE_2_7
+  edgeBreakerSymbolToTopologyId
 } from './MeshEdgebreakerShared.js';
 
 // Decoder for traversal encoded with MeshEdgebreakerTraversalValenceEncoder.
@@ -40,12 +38,6 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
   }
 
   start(outBuffer) {
-    if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      if (!this.decodeTraversalSymbols()) {
-        return false;
-      }
-    }
-
     if (!this.decodeStartFaces()) {
       return false;
     }
@@ -58,30 +50,8 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
       this.buffer.bitstreamVersion
     );
 
-    if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      let numSplitSymbols;
-      if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        numSplitSymbols = outBuffer.decodeUint32();
-        if (numSplitSymbols === undefined) return false;
-      } else {
-        numSplitSymbols = decodeVarint(outBuffer);
-        if (numSplitSymbols === undefined) return false;
-      }
-      if (numSplitSymbols >= this._numVertices) {
-        return false;
-      }
-      const mode = outBuffer.decodeInt8();
-      if (mode === undefined) return false;
-      if (mode === EDGEBREAKER_VALENCE_MODE_2_7) {
-        this._minValence = 2;
-        this._maxValence = 7;
-      } else {
-        return false; // Unsupported mode.
-      }
-    } else {
-      this._minValence = 2;
-      this._maxValence = 7;
-    }
+    this._minValence = 2;
+    this._maxValence = 7;
 
     if (this._numVertices < 0) {
       return false;
@@ -128,12 +98,8 @@ class MeshEdgebreakerTraversalValenceDecoder extends MeshEdgebreakerTraversalDec
       }
       this._lastSymbol = edgeBreakerSymbolToTopologyId[symbolId];
     } else {
-      if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-        this._lastSymbol = super.decodeSymbol();
-      } else {
-        // The first symbol is always E.
-        this._lastSymbol = TOPOLOGY_E;
-      }
+      // The first symbol is always E.
+      this._lastSymbol = TOPOLOGY_E;
     }
     return this._lastSymbol;
   }

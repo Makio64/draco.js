@@ -1,6 +1,5 @@
 // compression/attributes/SequentialAttributeDecoder.js - ported from compression/attributes/sequential_attribute_decoder.h/cc
 
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
 // A base class for decoding attribute values encoded by the
 // SequentialAttributeEncoder.
@@ -80,15 +79,9 @@ class SequentialAttributeDecoder {
       if (attId === -1) {
         return false; // Requested attribute does not exist.
       }
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-        if (!ps.setParentAttribute(this._decoder.pointCloud().attribute(attId))) {
-          return false;
-        }
-      } else {
-        const pa = this._decoder.getPortableAttribute(attId);
-        if (pa === null || !ps.setParentAttribute(pa)) {
-          return false;
-        }
+      const pa = this._decoder.getPortableAttribute(attId);
+      if (pa === null || !ps.setParentAttribute(pa)) {
+        return false;
       }
     }
     return true;

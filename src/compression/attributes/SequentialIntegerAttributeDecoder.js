@@ -5,7 +5,7 @@ import { GeometryAttribute } from '../../attributes/GeometryAttribute.js';
 import { PointAttribute } from '../../attributes/PointAttribute.js';
 import { DataType, dataTypeLength } from '../../core/DracoTypes.js';
 import { convertSymbolsToSignedInts } from '../../core/BitUtils.js';
-import { DRACO_BITSTREAM_VERSION, PredictionSchemeMethod, PredictionSchemeTransformType } from '../config/CompressionShared.js';
+import { PredictionSchemeMethod, PredictionSchemeTransformType } from '../config/CompressionShared.js';
 import { decodeSymbols } from '../entropy/SymbolDecoding.js';
 import { createPredictionSchemeForDecoder } from './prediction_schemes/PredictionSchemeDecoderFactory.js';
 import { PredictionSchemeWrapDecodingTransform } from './prediction_schemes/PredictionSchemeWrapDecodingTransform.js';
@@ -19,10 +19,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
   }
 
   transformAttributeToOriginalFormat(pointIds) {
-    if (this.decoder &&
-        this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      return true; // Don't revert the transform here for older files.
-    }
     return this._storeValues(pointIds.length);
   }
 
@@ -57,14 +53,6 @@ class SequentialIntegerAttributeDecoder extends SequentialAttributeDecoder {
 
     if (!this.decodeIntegerValues(pointIds, buffer)) {
       return false;
-    }
-
-    if (this.decoder &&
-        this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      // For older files, revert the transform right after we decode the data.
-      if (!this._storeValues(pointIds.length)) {
-        return false;
-      }
     }
     return true;
   }

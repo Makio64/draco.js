@@ -27,15 +27,3 @@ export class TopologySplitEventData {
   }
 
 }
-
-// Info about the first symbol that reached a vertex of a so-far unvisited hole.
-export class HoleEventData {
-
-  constructor(symbolId) {
-    this.symbolId = symbolId !== undefined ? symbolId : 0;
-  }
-
-}
-
-// Valence-based edgebreaker coding modes.
-export const EDGEBREAKER_VALENCE_MODE_2_7 = 0;

@@ -17,12 +17,6 @@ class PredictionSchemeNormalOctahedronDecodingTransform extends PredictionScheme
     const maxQuantizedValue = buffer.decodeInt32();
     if (maxQuantizedValue === undefined) return false;
 
-    if (buffer.bitstreamVersion < 0x0202) { // DRACO_BITSTREAM_VERSION(2, 2)
-      // center_value is read but ignored.
-      const centerValue = buffer.decodeInt32();
-      if (centerValue === undefined) return false;
-    }
-
     return this._setMaxQuantizedValue(maxQuantizedValue);
   }
 

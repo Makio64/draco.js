@@ -2,11 +2,11 @@
 
 import { DecoderBuffer } from '../../core/DecoderBuffer.js';
 import { decodeVarint } from '../../core/VarintDecoding.js';
-import { DRACO_BITSTREAM_VERSION, MeshTraversalMethod } from '../config/CompressionShared.js';
+import { MeshTraversalMethod } from '../config/CompressionShared.js';
 import { MeshAttributeElementType } from '../../mesh/Mesh.js';
 import {
   TOPOLOGY_C, TOPOLOGY_S, TOPOLOGY_L, TOPOLOGY_R, TOPOLOGY_E,
-  TopologySplitEventData, HoleEventData,
+  TopologySplitEventData,
   RIGHT_FACE_EDGE
 } from './MeshEdgebreakerShared.js';
 import { SequentialAttributeDecodersController } from '../attributes/SequentialAttributeDecodersController.js';
@@ -17,14 +17,6 @@ import { MeshAttributeIndicesEncodingObserver } from './traverser/MeshAttributeI
 import { MeshAttributeCornerTable } from '../../mesh/MeshAttributeCornerTable.js';
 
 const kInvalidCornerIndex = -1;
-const kInvalidVertexIndex = -1;
-
-// varint in bitstream >= 2.0, raw little-endian uint32 below it; undefined on short read.
-function decodeVarintOrUint32(buffer, bitstreamVersion) {
-  return bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)
-    ? buffer.decodeUint32()
-    : decodeVarint(buffer);
-}
 
 // Edgebreaker decoder; based on Isenburg et al'02 "Spirale Reversi: Reverse
 // decoding of the Edgebreaker encoding".
@@ -35,7 +27,6 @@ class MeshEdgebreakerDecoderImpl {
     this._cornerTable = null;
     this._cornerTraversalStack = [];
     this._topologySplitData = [];
-    this._holeEventData = [];
     this._initFaceConfigurations = [];
     this._initCorners = [];
     this._isVertHole = [];
@@ -119,14 +110,10 @@ class MeshEdgebreakerDecoderImpl {
       this._posDataDecoderId = attDecoderId;
     }
 
-    let traversalMethod = MeshTraversalMethod.MESH_TRAVERSAL_DEPTH_FIRST;
-    if (this._decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(1, 2)) {
-      const traversalMethodEncoded = this._decoder.buffer().decodeUint8();
-      if (traversalMethodEncoded === undefined) return false;
-      if (traversalMethodEncoded >= MeshTraversalMethod.NUM_TRAVERSAL_METHODS) {
-        return false;
-      }
-      traversalMethod = traversalMethodEncoded;
+    const traversalMethod = this._decoder.buffer().decodeUint8();
+    if (traversalMethod === undefined) return false;
+    if (traversalMethod >= MeshTraversalMethod.NUM_TRAVERSAL_METHODS) {
+      return false;
     }
 
     const mesh = this._decoder.mesh();
@@ -185,20 +172,11 @@ class MeshEdgebreakerDecoderImpl {
   }
 
   decodeConnectivity() {
-    // Bitstreams < 2.2 prefix an unused new-vertex count here; read only to advance the cursor.
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      const numNewVerts = decodeVarintOrUint32(
-        this._decoder.buffer(), this._decoder.bitstreamVersion());
-      if (numNewVerts === undefined) return false;
-    }
-
-    const numEncodedVertices = decodeVarintOrUint32(
-      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    const numEncodedVertices = decodeVarint(this._decoder.buffer());
     if (numEncodedVertices === undefined) return false;
     this._numEncodedVertices = numEncodedVertices;
 
-    const numFaces = decodeVarintOrUint32(
-      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    const numFaces = decodeVarint(this._decoder.buffer());
     if (numFaces === undefined) return false;
 
     if (numFaces > 0x7FFFFFFF / 3) {
@@ -220,8 +198,7 @@ class MeshEdgebreakerDecoderImpl {
     const numAttributeData = this._decoder.buffer().decodeUint8();
     if (numAttributeData === undefined) return false;
 
-    const numEncodedSymbols = decodeVarintOrUint32(
-      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    const numEncodedSymbols = decodeVarint(this._decoder.buffer());
     if (numEncodedSymbols === undefined) return false;
 
     if (numFaces < numEncodedSymbols) {
@@ -232,8 +209,7 @@ class MeshEdgebreakerDecoderImpl {
       return false;
     }
 
-    const numEncodedSplitSymbols = decodeVarintOrUint32(
-      this._decoder.buffer(), this._decoder.bitstreamVersion());
+    const numEncodedSplitSymbols = decodeVarint(this._decoder.buffer());
     if (numEncodedSplitSymbols === undefined) return false;
 
     if (numEncodedSplitSymbols > numEncodedSymbols) {
@@ -242,7 +218,6 @@ class MeshEdgebreakerDecoderImpl {
     this._cornerTable = new CornerTable();
     this._vertexTraversalCache = new Map();
     this._topologySplitData = [];
-    this._holeEventData = [];
     this._initFaceConfigurations = [];
     this._initCorners = [];
 
@@ -265,31 +240,8 @@ class MeshEdgebreakerDecoderImpl {
     this._isVertHole = new Uint8Array(
       this._numEncodedVertices + numEncodedSplitSymbols).fill(1);
 
-    let topologySplitDecodedBytes = -1;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      const encodedConnectivitySize = decodeVarintOrUint32(
-        this._decoder.buffer(), this._decoder.bitstreamVersion());
-      if (encodedConnectivitySize === undefined) return false;
-      if (encodedConnectivitySize === 0 ||
-          encodedConnectivitySize > this._decoder.buffer().remainingSize) {
-        return false;
-      }
-      const eventBuffer = new DecoderBuffer();
-      const head = this._decoder.buffer().dataHead;
-      eventBuffer.init(
-        head.subarray(encodedConnectivitySize),
-        this._decoder.buffer().remainingSize - encodedConnectivitySize,
-        this._decoder.buffer().bitstreamVersion
-      );
-      topologySplitDecodedBytes =
-        this._decodeHoleAndTopologySplitEvents(eventBuffer);
-      if (topologySplitDecodedBytes === -1) {
-        return false;
-      }
-    } else {
-      if (this._decodeHoleAndTopologySplitEvents(this._decoder.buffer()) === -1) {
-        return false;
-      }
+    if (this._decodeHoleAndTopologySplitEvents(this._decoder.buffer()) === -1) {
+      return false;
     }
 
     this._traversalDecoder.init(this);
@@ -314,21 +266,8 @@ class MeshEdgebreakerDecoderImpl {
       this._decoder.buffer().bitstreamVersion
     );
 
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      // Skip topology split data that was already decoded earlier.
-      this._decoder.buffer().advance(topologySplitDecodedBytes);
-    }
-
     if (this._attributeData.length > 0) {
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 1)) {
-        for (let ci = 0; ci < this._cornerTable.numCorners(); ci += 3) {
-          if (!this._decodeAttributeConnectivitiesOnFaceLegacy(ci)) {
-            return false;
-          }
-        }
-      } else {
-        this._decodeAttributeConnectivities();
-      }
+      this._decodeAttributeConnectivities();
     }
     this._traversalDecoder.done();
 
@@ -741,113 +680,39 @@ class MeshEdgebreakerDecoderImpl {
     return numVertices;
   }
 
+  // Hole events were removed from the bitstream in 2.1; for 2.2 this only
+  // decodes the inline topology-split events.
   _decodeHoleAndTopologySplitEvents(decoderBuffer) {
-    const numTopologySplits = decodeVarintOrUint32(
-      decoderBuffer, this._decoder.bitstreamVersion());
+    const numTopologySplits = decodeVarint(decoderBuffer);
     if (numTopologySplits === undefined) return -1;
 
     if (numTopologySplits > 0) {
       if (numTopologySplits > this._cornerTable.numFaces()) {
         return -1;
       }
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(1, 2)) {
-        for (let i = 0; i < numTopologySplits; ++i) {
-          const eventData = new TopologySplitEventData();
-          eventData.splitSymbolId = decoderBuffer.decodeUint32();
-          if (eventData.splitSymbolId === undefined) return -1;
-          eventData.sourceSymbolId = decoderBuffer.decodeUint32();
-          if (eventData.sourceSymbolId === undefined) return -1;
-          const edgeData = decoderBuffer.decodeUint8();
-          if (edgeData === undefined) return -1;
-          eventData.sourceEdge = edgeData & 1;
-          this._topologySplitData.push(eventData);
-        }
-      } else {
-        // Source and split symbol ids use delta + varint coding.
-        let lastSourceSymbolId = 0;
-        for (let i = 0; i < numTopologySplits; ++i) {
-          const eventData = new TopologySplitEventData();
-          const delta = decodeVarint(decoderBuffer);
-          if (delta === undefined) return -1;
-          eventData.sourceSymbolId = delta + lastSourceSymbolId;
-          const delta2 = decodeVarint(decoderBuffer);
-          if (delta2 === undefined) return -1;
-          if (delta2 > eventData.sourceSymbolId) return -1;
-          eventData.splitSymbolId = eventData.sourceSymbolId - delta2;
-          lastSourceSymbolId = eventData.sourceSymbolId;
-          this._topologySplitData.push(eventData);
-        }
-        // Split edges come from a direct bit decoder.
-        decoderBuffer.startBitDecoding(false);
-        for (let i = 0; i < numTopologySplits; ++i) {
-          let edgeData;
-          if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-            edgeData = decoderBuffer.decodeLeastSignificantBits32(2);
-          } else {
-            edgeData = decoderBuffer.decodeLeastSignificantBits32(1);
-          }
-          this._topologySplitData[i].sourceEdge = edgeData & 1;
-        }
-        decoderBuffer.endBitDecoding();
+      // Source and split symbol ids use delta + varint coding.
+      let lastSourceSymbolId = 0;
+      for (let i = 0; i < numTopologySplits; ++i) {
+        const eventData = new TopologySplitEventData();
+        const delta = decodeVarint(decoderBuffer);
+        if (delta === undefined) return -1;
+        eventData.sourceSymbolId = delta + lastSourceSymbolId;
+        const delta2 = decodeVarint(decoderBuffer);
+        if (delta2 === undefined) return -1;
+        if (delta2 > eventData.sourceSymbolId) return -1;
+        eventData.splitSymbolId = eventData.sourceSymbolId - delta2;
+        lastSourceSymbolId = eventData.sourceSymbolId;
+        this._topologySplitData.push(eventData);
       }
-    }
-
-    let numHoleEvents = 0;
-    if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0)) {
-      numHoleEvents = decoderBuffer.decodeUint32();
-      if (numHoleEvents === undefined) return -1;
-    } else if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 1)) {
-      numHoleEvents = decodeVarint(decoderBuffer);
-      if (numHoleEvents === undefined) return -1;
-    }
-
-    if (numHoleEvents > 0) {
-      if (this._decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(1, 2)) {
-        for (let i = 0; i < numHoleEvents; ++i) {
-          const symbolId = decoderBuffer.decodeInt32();
-          if (symbolId === undefined) return -1;
-          this._holeEventData.push(new HoleEventData(symbolId));
-        }
-      } else {
-        let lastSymbolId = 0;
-        for (let i = 0; i < numHoleEvents; ++i) {
-          const delta = decodeVarint(decoderBuffer);
-          if (delta === undefined) return -1;
-          const eventData = new HoleEventData(delta + lastSymbolId);
-          lastSymbolId = eventData.symbolId;
-          this._holeEventData.push(eventData);
-        }
+      // Split edges come from a direct bit decoder.
+      decoderBuffer.startBitDecoding(false);
+      for (let i = 0; i < numTopologySplits; ++i) {
+        const edgeData = decoderBuffer.decodeLeastSignificantBits32(1);
+        this._topologySplitData[i].sourceEdge = edgeData & 1;
       }
+      decoderBuffer.endBitDecoding();
     }
     return decoderBuffer.decodedSize;
-  }
-
-  _decodeAttributeConnectivitiesOnFaceLegacy(corner) {
-    const corners = [
-      corner,
-      this._cornerTable.next(corner),
-      this._cornerTable.previous(corner)
-    ];
-
-    for (let c = 0; c < 3; ++c) {
-      const oppCorner = this._cornerTable.opposite(corners[c]);
-      if (oppCorner === kInvalidCornerIndex) {
-        // Boundary edge is automatically an attribute seam.
-        for (let i = 0; i < this._attributeData.length; ++i) {
-          const ad = this._attributeData[i];
-          ad.attributeSeamCorners[ad.numSeamCorners++] = corners[c];
-        }
-        continue;
-      }
-      for (let i = 0; i < this._attributeData.length; ++i) {
-        const isSeam = this._traversalDecoder.decodeAttributeSeam(i);
-        if (isSeam) {
-          const ad = this._attributeData[i];
-          ad.attributeSeamCorners[ad.numSeamCorners++] = corners[c];
-        }
-      }
-    }
-    return true;
   }
 
   // Decode every face's attribute seam connectivity in one flat pass over

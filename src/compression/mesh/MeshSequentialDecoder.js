@@ -1,7 +1,6 @@
 // compression/mesh/MeshSequentialDecoder.js - ported from mesh/mesh_sequential_decoder.h/cc
 
 import { MeshDecoder } from './MeshDecoder.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 import { decodeVarint } from '../../core/VarintDecoding.js';
 import { decodeSymbols } from '../entropy/SymbolDecoding.js';
 import { SequentialAttributeDecodersController } from '../attributes/SequentialAttributeDecodersController.js';
@@ -17,17 +16,10 @@ class MeshSequentialDecoder extends MeshDecoder {
     let numFaces;
     let numPoints;
 
-    if (this.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 2)) {
-      numFaces = this.buffer().decodeUint32();
-      if (numFaces === undefined) return false;
-      numPoints = this.buffer().decodeUint32();
-      if (numPoints === undefined) return false;
-    } else {
-      numFaces = decodeVarint(this.buffer());
-      if (numFaces === undefined) return false;
-      numPoints = decodeVarint(this.buffer());
-      if (numPoints === undefined) return false;
-    }
+    numFaces = decodeVarint(this.buffer());
+    if (numFaces === undefined) return false;
+    numPoints = decodeVarint(this.buffer());
+    if (numPoints === undefined) return false;
 
     // Compressed sequential encoding can only handle (2^32 - 1) / 3 indices.
     if (numFaces > 0xFFFFFFFF / 3) {
@@ -67,8 +59,7 @@ class MeshSequentialDecoder extends MeshDecoder {
           }
           this.mesh().addFace(face);
         }
-      } else if (numPoints < (1 << 21) &&
-                 this.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 2)) {
+      } else if (numPoints < (1 << 21)) {
         for (let i = 0; i < numFaces; ++i) {
           const face = [0, 0, 0];
           for (let j = 0; j < 3; ++j) {

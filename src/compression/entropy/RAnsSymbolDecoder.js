@@ -1,7 +1,6 @@
 // compression/entropy/RAnsSymbolDecoder.js - ported from compression/entropy/rans_symbol_decoder.h
 
 import { RAnsDecoder } from './ANSCoding.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
 // rANS precision for the given unique-symbols bit length, clamped to [12, 20].
 function computeRAnsPrecisionFromUniqueSymbolsBitLength(symbolsBitLength) {
@@ -33,14 +32,9 @@ export class RAnsSymbolDecoder {
       return false;
     }
 
-    if (buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)) {
-      this.numSymbols_ = buffer.decodeUint32();
-      if (this.numSymbols_ === undefined) return false;
-    } else {
-      const val = buffer.decodeVarintUint32();
-      if (val === undefined) return false;
-      this.numSymbols_ = val;
-    }
+    const val = buffer.decodeVarintUint32();
+    if (val === undefined) return false;
+    this.numSymbols_ = val;
 
     // Reject an unreasonably high symbol count.
     if (Math.trunc(this.numSymbols_ / 64) > buffer.remainingSize) {
@@ -88,15 +82,8 @@ export class RAnsSymbolDecoder {
 
   // Starts decoding, advancing buffer past the encoded data.
   startDecoding(buffer) {
-    let bytesEncoded;
-
-    if (buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 0)) {
-      bytesEncoded = buffer.decodeUint64();
-      if (bytesEncoded === undefined) return false;
-    } else {
-      bytesEncoded = buffer.decodeVarintUint64();
-      if (bytesEncoded === undefined) return false;
-    }
+    const bytesEncoded = buffer.decodeVarintUint64();
+    if (bytesEncoded === undefined) return false;
 
     if (bytesEncoded > buffer.remainingSize) {
       return false;

@@ -3,7 +3,6 @@
 import { SequentialIntegerAttributeDecoder } from './SequentialIntegerAttributeDecoder.js';
 import { AttributeQuantizationTransform } from '../../attributes/AttributeQuantizationTransform.js';
 import { DataType } from '../../core/DracoTypes.js';
-import { DRACO_BITSTREAM_VERSION } from '../config/CompressionShared.js';
 
 // Decoder for attribute values encoded with the
 // SequentialQuantizationAttributeEncoder.
@@ -26,19 +25,9 @@ class SequentialQuantizationAttributeDecoder extends SequentialIntegerAttributeD
     return true;
   }
 
-  decodeIntegerValues(pointIds, buffer) {
-    if (this.decoder.bitstreamVersion() < DRACO_BITSTREAM_VERSION(2, 0) &&
-        !this._decodeQuantizedDataInfo()) {
-      return false;
-    }
-    return super.decodeIntegerValues(pointIds, buffer);
-  }
-
   decodeDataNeededByPortableTransform(pointIds, buffer) {
-    if (this.decoder.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(2, 0)) {
-      if (!this._decodeQuantizedDataInfo()) {
-        return false;
-      }
+    if (!this._decodeQuantizedDataInfo()) {
+      return false;
     }
 
     return this._quantizationTransform.transferToAttribute(this.portableAttribute);

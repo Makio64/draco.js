@@ -96,7 +96,7 @@ class PointCloudDecoder {
         ? kDracoPointCloudBitstreamVersionMinor
         : kDracoMeshBitstreamVersionMinor;
 
-    // Version compatibility check (older bitstreams are still supported).
+    // Version compatibility check.
     if (this._versionMajor < 1 || this._versionMajor > maxSupportedMajorVersion) {
       return new Status(StatusCode.UNKNOWN_VERSION, 'Unknown major version.');
     }
@@ -108,8 +108,15 @@ class PointCloudDecoder {
     this._buffer.bitstreamVersion =
       DRACO_BITSTREAM_VERSION(this._versionMajor, this._versionMinor);
 
-    if (this.bitstreamVersion() >= DRACO_BITSTREAM_VERSION(1, 3) &&
-        (header.flags & METADATA_FLAG_MASK)) {
+    // Only the current Draco 2.2 mesh bitstream is supported; pre-2.2 decode
+    // paths were removed, so older meshes are rejected rather than mis-decoded.
+    if (header.encoderType === EncodedGeometryType.TRIANGULAR_MESH &&
+        this._buffer.bitstreamVersion < DRACO_BITSTREAM_VERSION(2, 2)) {
+      return new Status(StatusCode.UNKNOWN_VERSION,
+        'Unsupported bitstream version (only Draco 2.2 meshes are supported).');
+    }
+
+    if (header.flags & METADATA_FLAG_MASK) {
       const metadataStatus = this._decodeMetadata();
       if (!metadataStatus.ok()) {
         return metadataStatus;
