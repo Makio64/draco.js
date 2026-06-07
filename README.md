@@ -15,14 +15,12 @@ Why a JS port instead of the official WASM build?
 - **Simple to ship** — one ES module. No `.wasm` fetch, no worker/glue setup,
   no cross-origin or CSP headaches.
 - **Fast** — within ~1.0–1.4× of the WASM decoder on substantial meshes, and
-  effectively at parity on the largest, with byte-for-byte identical output
-  (see [Correctness](#correctness)).
+  effectively at parity on the largest, with byte-for-byte identical output.
 
-You trade, at most, a modest amount of decode speed for a much smaller,
-simpler-to-deploy loader — a trade that pays off most on spotty mobile
-connections, where transferring ~100 KB takes far longer than ~20 KB. Even when
-JS decode is slower than WASM, the model often **displays sooner** end-to-end:
-the network savings outweigh the extra decode time.
+You trade decode speed for a much smaller, simpler loader. This pays
+off most on pages with a single model, where the decoder is a one-time cost that
+isn't amortized across many meshes — the model often **displays sooner**
+end-to-end because the network savings outweigh the extra decode time.
 
 ## Status
 
@@ -56,32 +54,6 @@ It can also load standalone `.drc` files:
 
 ```js
 const geometry = await new DRACOLoader().loadAsync( 'model.drc' ); // BufferGeometry
-```
-
-## Build
-
-`npm run build` bundles `src/DRACOLoader.js` (via Rollup) into `build/DRACOLoader.js`
-(readable ESM) and `build/DRACOLoader.min.js` (minified), with `three` kept
-external. Prebuilt copies are checked in.
-
-## Correctness
-
-Output is **byte-for-byte identical** to Google's reference `draco3d` WASM
-decoder. `npm run verify` decodes every sample with both and compares
-element-by-element — face indices and every per-point attribute value match
-exactly (`eps 0`) across all 260 test primitives. `npm run bench` separately
-times decoding and guards against output regressions via a sha256 of the
-decoded geometry.
-
-## Project layout
-
-```
-src/          decoder source, mirroring draco/src/draco/ file-for-file
-build/        bundled output (build/DRACOLoader.js + .min.js)
-tools/        bench (timing + regression), verify-wasm / verify-bundle (parity)
-libs/         three.js's WASM Draco loader, vendored for the comparison
-samples/      .drc and Draco-compressed .glb test models
-index.html    JS-vs-WASM comparison viewer
 ```
 
 ## Credits
