@@ -5,7 +5,6 @@ import { PredictionSchemeDeltaDecoder } from './PredictionSchemeDeltaDecoder.js'
 import { MeshPredictionSchemeParallelogramDecoder } from './MeshPredictionSchemeParallelogramDecoder.js';
 import { MeshPredictionSchemeMultiParallelogramDecoder } from './MeshPredictionSchemeMultiParallelogramDecoder.js';
 import { MeshPredictionSchemeConstrainedMultiParallelogramDecoder } from './MeshPredictionSchemeConstrainedMultiParallelogramDecoder.js';
-import { MeshPredictionSchemeTexCoordsDecoder } from './MeshPredictionSchemeTexCoordsDecoder.js';
 import { MeshPredictionSchemeTexCoordsPortableDecoder } from './MeshPredictionSchemeTexCoordsPortableDecoder.js';
 import { MeshPredictionSchemeGeometricNormalDecoder } from './MeshPredictionSchemeGeometricNormalDecoder.js';
 import { MeshPredictionSchemeData } from './MeshPredictionSchemeData.js';
@@ -39,11 +38,6 @@ function createMeshPredictionSchemeDecoder(method, attribute, transform,
     case PredictionSchemeMethod.MESH_PREDICTION_CONSTRAINED_MULTI_PARALLELOGRAM:
       return new MeshPredictionSchemeConstrainedMultiParallelogramDecoder(
         attribute, transform, meshData
-      );
-
-    case PredictionSchemeMethod.MESH_PREDICTION_TEX_COORDS_DEPRECATED:
-      return new MeshPredictionSchemeTexCoordsDecoder(
-        attribute, transform, meshData, bitstreamVersion
       );
 
     case PredictionSchemeMethod.MESH_PREDICTION_TEX_COORDS_PORTABLE:
